@@ -53,6 +53,7 @@
   var currentDashboardName = null;
   var currentDashboardData = null;
   var currentUserRole = null;
+  var currentUserId = null;
   var currentDashboardPage = 1;
   var currentDashboardPageSize = 50;
 
@@ -939,6 +940,8 @@
   }
 
   function loadDomainsPage(meData) {
+    currentUserId = meData.user.id;
+    currentUserRole = meData.user.role;
     var isSuperAdmin = meData.user.role === 'super-admin';
     userInfo.textContent = 'Logged in as ' + escapeHtml(meData.user.username) + ' (' + meData.user.role + ')';
     hideArchiveForm();
@@ -1709,7 +1712,7 @@
                 '<button type="button" class="user-edit-btn" data-user-id="' + escapeHtml(u.id) + '" data-username="' + escapeHtml(u.username) + '" data-role="' + escapeHtml(u.role) + '">Edit</button> ' +
                 '<button type="button" class="user-reset-btn" data-user-id="' + escapeHtml(u.id) + '" data-username="' + escapeHtml(u.username) + '">Reset password</button> ' +
                 '<button type="button" class="user-domains-btn" data-user-id="' + escapeHtml(u.id) + '" data-username="' + escapeHtml(u.username) + '" data-domain-ids="' + escapeHtml((u.domain_ids || []).join(',')) + '">Domains</button> ' +
-                (u.id !== meData.user.id ? '<button type="button" class="user-delete-btn" data-user-id="' + escapeHtml(u.id) + '" data-username="' + escapeHtml(u.username) + '">Delete</button>' : '') +
+                (u.id !== currentUserId ? '<button type="button" class="user-delete-btn" data-user-id="' + escapeHtml(u.id) + '" data-username="' + escapeHtml(u.username) + '">Delete</button>' : '') +
               '</td>' +
             '</tr>';
           }).join('') + '</tbody></table>';
