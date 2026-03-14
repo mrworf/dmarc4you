@@ -1,0 +1,35 @@
+# DMARC Analyzer configuration
+# Copy to config.yaml or set DMARC_CONFIG env var to your file path.
+# All options can be overridden via DMARC_* environment variables.
+
+database:
+  # Path to SQLite database file. Created if it does not exist.
+  # Env: DMARC_DATABASE_PATH
+  path: data/dmarc.db
+
+log:
+  # Log level: VERBOSE | INFO | WARN | ERROR
+  # VERBOSE maps to Python DEBUG level.
+  # Env: DMARC_LOG_LEVEL
+  level: INFO
+
+auth:
+  # Secret key for signing session cookies. MUST be changed in production.
+  # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+  # Env: DMARC_SESSION_SECRET
+  session_secret: change-me-in-production
+
+  # Name of the session cookie.
+  # Env: DMARC_SESSION_COOKIE
+  session_cookie_name: dmarc_session
+
+  # Session lifetime in days.
+  # Env: DMARC_SESSION_MAX_AGE_DAYS
+  session_max_age_days: 7
+
+archive:
+  # Optional path to store raw report artifacts.
+  # When set, ingested reports are archived to this directory.
+  # Leave unset or null to disable artifact archival.
+  # Env: DMARC_ARCHIVE_STORAGE_PATH
+  storage_path: null

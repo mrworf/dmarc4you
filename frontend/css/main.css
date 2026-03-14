@@ -1,0 +1,19 @@
+.hidden { display: none; }
+.error { color: #c00; }
+#app { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+label { display: block; margin: 0.5rem 0; }
+input { margin-left: 0.5rem; }
+ul { list-style: none; padding: 0; }
+ul li { padding: 0.25rem 0; border-bottom: 1px solid #eee; }
+#dashboard-domains-fieldset label { display: inline-block; margin-right: 1rem; }
+#apikey-domains-fieldset label { display: inline-block; margin-right: 1rem; }
+#user-domains-fieldset label { display: inline-block; margin-right: 1rem; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ddd; padding: 0.25rem 0.5rem; text-align: left; }
+button { margin-right: 0.25rem; cursor: pointer; }
+select { margin-left: 0.5rem; }
+#user-created-msg, #apikey-created-msg { background: #e8f5e9; padding: 0.5rem; border-radius: 4px; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal-content { background: #fff; padding: 1.5rem; border-radius: 8px; max-width: 50rem; max-height: 80vh; overflow: auto; }
+.modal-content h2 { margin-top: 0; }
+.report-link { cursor: pointer; color: #0066cc; text-decoration: underline; }

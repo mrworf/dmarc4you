@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DMARC Analyzer</title>
+  <link rel="stylesheet" href="/css/main.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="login-view" class="hidden">
+      <h1>DMARC Analyzer</h1>
+      <form id="login-form">
+        <label>Username <input type="text" name="username" required /></label>
+        <label>Password <input type="password" name="password" required /></label>
+        <button type="submit">Log in</button>
+      </form>
+      <p id="login-error" class="error hidden"></p>
+    </div>
+    <div id="domains-view" class="hidden">
+      <h1>Domains</h1>
+      <p id="user-info"></p>
+      <p><a href="#" id="link-dashboards">Dashboards</a> · <a href="#" id="link-ingest-jobs">Ingest jobs</a> · <a href="#" id="link-search">Search</a> · <a href="#" id="link-upload">Upload</a> <span id="audit-link-wrap"></span> <span id="apikeys-link-wrap"></span> <span id="users-link-wrap"></span></p>
+      <ul id="domains-list"></ul>
+      <div id="archive-domain-form" class="hidden">
+        <h3>Archive domain: <span id="archive-domain-name"></span></h3>
+        <form id="archive-domain-form-inner">
+          <input type="hidden" name="domain_id" id="archive-domain-id" />
+          <label>Retention days (optional) <input type="number" name="retention_days" id="archive-retention-days" min="1" placeholder="e.g. 90" /></label>
+          <button type="submit">Archive</button>
+          <button type="button" id="archive-domain-cancel">Cancel</button>
+        </form>
+        <p id="archive-domain-error" class="error hidden"></p>
+      </div>
+      <div id="set-retention-form" class="hidden">
+        <h3>Set retention: <span id="set-retention-domain-name"></span></h3>
+        <form id="set-retention-form-inner">
+          <input type="hidden" name="domain_id" id="set-retention-domain-id" />
+          <label>Retention days <input type="number" name="retention_days" id="set-retention-days" min="1" placeholder="e.g. 90" required /></label>
+          <button type="submit">Save</button>
+          <button type="button" id="set-retention-cancel">Cancel</button>
+        </form>
+        <p id="set-retention-error" class="error hidden"></p>
+      </div>
+      <div id="add-domain-form" class="hidden">
+        <h2>Add domain</h2>
+        <form id="domain-form">
+          <label>Name <input type="text" name="name" placeholder="example.com" required /></label>
+          <button type="submit">Add</button>
+        </form>
+        <p id="domain-error" class="error hidden"></p>
+      </div>
+      <p><a href="#" id="logout-link">Log out</a></p>
+    </div>
+    <div id="dashboards-view" class="hidden">
+      <h1>Dashboards</h1>
+      <p><a href="#" id="link-domains">Domains</a> · <a href="#" id="link-ingest-jobs-from-dash">Ingest jobs</a></p>
+      <ul id="dashboards-list"></ul>
+      <div id="create-dashboard-form">
+        <h2>New dashboard</h2>
+        <form id="dashboard-form">
+          <label>Name <input type="text" name="name" placeholder="My Dashboard" required /></label>
+          <label>Description <input type="text" name="description" placeholder="Optional" /></label>
+          <fieldset id="dashboard-domains-fieldset"><legend>Domains</legend></fieldset>
+          <button type="submit">Create</button>
+        </form>
+        <p id="dashboard-form-error" class="error hidden"></p>
+      </div>
+      <div id="import-dashboard-form" class="hidden">
+        <h2>Import dashboard</h2>
+        <p><a href="#" id="import-dashboard-toggle-close">Hide</a></p>
+        <label>Paste YAML (name, description, domains):</label>
+        <textarea id="import-yaml-textarea" rows="6" placeholder="name: My Dashboard&#10;description: Optional&#10;domains:&#10;  - example.com&#10;  - other.com"></textarea>
+        <p id="import-yaml-parse-error" class="error hidden"></p>
+        <div id="import-domain-mapping-wrap"></div>
+        <button type="button" id="import-dashboard-submit">Import</button>
+        <p id="import-form-error" class="error hidden"></p>
+        <p id="import-form-success" class="hidden"></p>
+      </div>
+      <p><a href="#" id="link-import-dashboard">Import dashboard</a></p>
+      <p><a href="#" id="logout-link2">Log out</a></p>
+    </div>
+    <div id="dashboard-detail-view" class="hidden">
+      <h1 id="dashboard-detail-title"></h1>
+      <p><a href="#" id="link-dashboards-back">← Dashboards</a> · <a href="#" id="link-export-dashboard">Export YAML</a> <span id="dashboard-detail-actions"></span> <span id="dashboard-export-error" class="error hidden"></span></p>
+      <form id="dashboard-filter-form">
+        <div class="search-time-row">
+          <label>From <input type="date" name="from" id="dashboard-from" /></label>
+          <label>To <input type="date" name="to" id="dashboard-to" /></label>
+        </div>
+        <fieldset><legend>Include filters</legend>
+          <label>SPF result <select name="include_spf" id="dashboard-include-spf">
+            <option value="">Any</option>
+            <option value="pass">pass</option>
+            <option value="fail">fail</option>
+            <option value="softfail">softfail</option>
+            <option value="neutral">neutral</option>
+            <option value="none">none</option>
+          </select></label>
+          <label>DKIM result <select name="include_dkim" id="dashboard-include-dkim">
+            <option value="">Any</option>
+            <option value="pass">pass</option>
+            <option value="fail">fail</option>
+            <option value="none">none</option>
+          </select></label>
+          <label>Disposition <select name="include_disposition" id="dashboard-include-disposition">
+            <option value="">Any</option>
+            <option value="none">none</option>
+            <option value="quarantine">quarantine</option>
+            <option value="reject">reject</option>
+          </select></label>
+        </fieldset>
+        <fieldset><legend>Exclude filters</legend>
+          <label>SPF result <select name="exclude_spf" id="dashboard-exclude-spf">
+            <option value="">None</option>
+            <option value="pass">pass</option>
+            <option value="fail">fail</option>
+            <option value="softfail">softfail</option>
+            <option value="neutral">neutral</option>
+            <option value="none">none</option>
+          </select></label>
+          <label>DKIM result <select name="exclude_dkim" id="dashboard-exclude-dkim">
+            <option value="">None</option>
+            <option value="pass">pass</option>
+            <option value="fail">fail</option>
+            <option value="none">none</option>
+          </select></label>
+          <label>Disposition <select name="exclude_disposition" id="dashboard-exclude-disposition">
+            <option value="">None</option>
+            <option value="none">none</option>
+            <option value="quarantine">quarantine</option>
+            <option value="reject">reject</option>
+          </select></label>
+        </fieldset>
+        <button type="submit">Apply filters</button>
+      </form>
+      <div id="dashboard-widget"></div>
+      <div id="dashboard-pagination"></div>
+      <div id="dashboard-edit-form" class="hidden">
+        <h2>Edit dashboard</h2>
+        <form id="dashboard-edit-form-inner">
+          <input type="hidden" name="dashboard_id" />
+          <label>Name <input type="text" name="name" required /></label>
+          <label>Description <input type="text" name="description" /></label>
+          <fieldset id="dashboard-edit-domains-fieldset"><legend>Domains</legend></fieldset>
+          <button type="submit">Save</button>
+          <button type="button" id="dashboard-edit-cancel">Cancel</button>
+        </form>
+        <p id="dashboard-edit-error" class="error hidden"></p>
+      </div>
+      <div id="dashboard-sharing-section" class="hidden">
+        <h2>Sharing</h2>
+        <div id="dashboard-shares-list"></div>
+        <div id="dashboard-share-form" class="hidden">
+          <h3>Share with user</h3>
+          <form id="dashboard-share-form-inner">
+            <label>User <select name="user_id" id="share-user-select"><option value="">— select user —</option></select></label>
+            <label>Access <select name="access_level" id="share-access-select">
+              <option value="viewer">viewer</option>
+              <option value="manager">manager</option>
+            </select></label>
+            <button type="submit">Share</button>
+          </form>
+          <p id="dashboard-share-error" class="error hidden"></p>
+        </div>
+      </div>
+      <p><a href="#" id="logout-link3">Log out</a></p>
+    </div>
+    <div id="ingest-jobs-view" class="hidden">
+      <h1>Ingest jobs</h1>
+      <p><a href="#" id="link-domains-from-ingest">Domains</a> · <a href="#" id="link-dashboards-from-ingest">Dashboards</a></p>
+      <p>View job by ID: <input type="text" id="ingest-job-id-input" placeholder="job_xxx" /> <button type="button" id="ingest-job-view-btn">View</button></p>
+      <ul id="ingest-jobs-list"></ul>
+      <p><a href="#" id="logout-link-ingest">Log out</a></p>
+    </div>
+    <div id="ingest-job-detail-view" class="hidden">
+      <h1 id="ingest-job-detail-title">Job</h1>
+      <p><a href="#" id="link-ingest-jobs-back">← Ingest jobs</a></p>
+      <div id="ingest-job-detail-content"></div>
+      <p><a href="#" id="logout-link-ingest-detail">Log out</a></p>
+    </div>
+    <div id="audit-view" class="hidden">
+      <h1>Audit log</h1>
+      <p><a href="#" id="link-audit-back">← Back</a></p>
+      <form id="audit-filter-form">
+        <label>Action type <select name="action_type" id="audit-action-type">
+          <option value="">All</option>
+          <option value="login_success">login_success</option>
+          <option value="login_failure">login_failure</option>
+        </select></label>
+        <label>From <input type="date" name="from" id="audit-from" /></label>
+        <label>To <input type="date" name="to" id="audit-to" /></label>
+        <label>Actor ID <input type="text" name="actor" id="audit-actor" placeholder="usr_xxx" /></label>
+        <button type="submit">Filter</button>
+      </form>
+      <div id="audit-events-wrap"></div>
+      <div id="audit-pagination"></div>
+      <p><a href="#" id="logout-link-audit">Log out</a></p>
+    </div>
+    <div id="apikeys-view" class="hidden">
+      <h1>API keys</h1>
+      <p><a href="#" id="link-apikeys-back">← Back</a></p>
+      <div id="apikeys-list-wrap"></div>
+      <div id="apikeys-create-form">
+        <h2>Create API key</h2>
+        <form id="apikey-form">
+          <label>Nickname <input type="text" name="nickname" placeholder="e.g. mx-gateway" required /></label>
+          <label>Description <input type="text" name="description" placeholder="Optional" /></label>
+          <fieldset id="apikey-domains-fieldset"><legend>Domains</legend></fieldset>
+          <fieldset id="apikey-scopes-fieldset"><legend>Scopes</legend><label><input type="checkbox" name="scope" value="reports:ingest" /> reports:ingest</label></fieldset>
+          <button type="submit">Create</button>
+        </form>
+        <p id="apikey-form-error" class="error hidden"></p>
+        <p id="apikey-created-msg" class="hidden"></p>
+      </div>
+      <p><a href="#" id="logout-link-apikeys">Log out</a></p>
+    </div>
+    <div id="search-view" class="hidden">
+      <h1>Search</h1>
+      <p><a href="#" id="link-search-back">← Back</a></p>
+      <form id="search-form">
+        <label>Report type <select name="report_type" id="search-report-type">
+          <option value="aggregate">Aggregate records</option>
+          <option value="forensic">Forensic reports</option>
+        </select></label>
+        <fieldset id="search-domains-fieldset"><legend>Domains</legend></fieldset>
+        <div id="search-query-row">
+          <label>Free-text query <input type="text" name="query" id="search-query" placeholder="e.g. google fail" /></label>
+        </div>
+        <div class="search-time-row">
+          <label>From <input type="date" name="from" id="search-from" /></label>
+          <label>To <input type="date" name="to" id="search-to" /></label>
+        </div>
+        <div id="search-aggregate-filters">
+        <fieldset><legend>Include filters</legend>
+          <label>SPF result <select name="include_spf" id="search-include-spf">
+            <option value="">Any</option>
+            <option value="pass">pass</option>
+            <option value="fail">fail</option>
+            <option value="softfail">softfail</option>
+            <option value="neutral">neutral</option>
+            <option value="none">none</option>
+          </select></label>
+          <label>DKIM result <select name="include_dkim" id="search-include-dkim">
+            <option value="">Any</option>
+            <option value="pass">pass</option>
+            <option value="fail">fail</option>
+            <option value="none">none</option>
+          </select></label>
+          <label>Disposition <select name="include_disposition" id="search-include-disposition">
+            <option value="">Any</option>
+            <option value="none">none</option>
+            <option value="quarantine">quarantine</option>
+            <option value="reject">reject</option>
+          </select></label>
+        </fieldset>
+        <fieldset><legend>Exclude filters</legend>
+          <label>SPF result <select name="exclude_spf" id="search-exclude-spf">
+            <option value="">None</option>
+            <option value="pass">pass</option>
+            <option value="fail">fail</option>
+            <option value="softfail">softfail</option>
+            <option value="neutral">neutral</option>
+            <option value="none">none</option>
+          </select></label>
+          <label>DKIM result <select name="exclude_dkim" id="search-exclude-dkim">
+            <option value="">None</option>
+            <option value="pass">pass</option>
+            <option value="fail">fail</option>
+            <option value="none">none</option>
+          </select></label>
+          <label>Disposition <select name="exclude_disposition" id="search-exclude-disposition">
+            <option value="">None</option>
+            <option value="none">none</option>
+            <option value="quarantine">quarantine</option>
+            <option value="reject">reject</option>
+          </select></label>
+        </fieldset>
+        </div>
+        <button type="submit">Search</button>
+      </form>
+      <p id="search-form-error" class="error hidden"></p>
+      <div id="search-results-wrap"></div>
+      <div id="search-pagination"></div>
+      <p><a href="#" id="logout-link-search">Log out</a></p>
+    </div>
+    <div id="report-detail-modal" class="hidden modal-overlay">
+      <div class="modal-content">
+        <h2 id="report-detail-title">Report detail</h2>
+        <p><a href="#" id="report-detail-close">Close</a></p>
+        <div id="report-detail-summary"></div>
+        <h3>Records</h3>
+        <div id="report-detail-records"></div>
+      </div>
+    </div>
+    <div id="users-view" class="hidden">
+      <h1>Users</h1>
+      <p><a href="#" id="link-users-back">← Back</a></p>
+      <div id="users-list-wrap"></div>
+      <div id="users-create-form">
+        <h2>Create user</h2>
+        <form id="user-form">
+          <label>Username <input type="text" name="username" placeholder="e.g. alice" required /></label>
+          <label>Role <select name="role" required>
+            <option value="viewer">viewer</option>
+            <option value="manager">manager</option>
+            <option value="admin">admin</option>
+            <option value="super-admin">super-admin</option>
+          </select></label>
+          <button type="submit">Create</button>
+        </form>
+        <p id="user-form-error" class="error hidden"></p>
+        <p id="user-created-msg" class="hidden"></p>
+      </div>
+      <div id="user-edit-form" class="hidden">
+        <h2>Edit user</h2>
+        <form id="user-edit-form-inner">
+          <input type="hidden" name="user_id" />
+          <label>Username <input type="text" name="username" required /></label>
+          <label>Role <select name="role" required>
+            <option value="viewer">viewer</option>
+            <option value="manager">manager</option>
+            <option value="admin">admin</option>
+            <option value="super-admin">super-admin</option>
+          </select></label>
+          <button type="submit">Save</button>
+          <button type="button" id="user-edit-cancel">Cancel</button>
+        </form>
+        <p id="user-edit-error" class="error hidden"></p>
+      </div>
+      <div id="user-domains-form" class="hidden">
+        <h2 id="user-domains-title">Manage domains</h2>
+        <form id="user-domains-form-inner">
+          <input type="hidden" name="user_id" />
+          <fieldset id="user-domains-fieldset"><legend>Assigned domains</legend></fieldset>
+          <button type="submit">Save</button>
+          <button type="button" id="user-domains-cancel">Cancel</button>
+        </form>
+        <p id="user-domains-error" class="error hidden"></p>
+      </div>
+      <p><a href="#" id="logout-link-users">Log out</a></p>
+    </div>
+    <div id="upload-view" class="hidden">
+      <h1>Upload report</h1>
+      <p><a href="#" id="link-upload-back">← Back</a></p>
+      <p>Submit a DMARC aggregate or forensic report (XML or gzip-compressed XML).</p>
+      <form id="upload-form">
+        <label>Paste XML content:</label>
+        <textarea id="upload-textarea" rows="8" placeholder="<?xml version=&quot;1.0&quot;?>&#10;<feedback>...</feedback>"></textarea>
+        <p>— or —</p>
+        <label>Select file: <input type="file" id="upload-file" accept=".xml,.gz" /></label>
+        <p><button type="submit">Upload</button></p>
+      </form>
+      <p id="upload-form-error" class="error hidden"></p>
+      <p id="upload-form-success" class="hidden"></p>
+      <p><a href="#" id="logout-link-upload">Log out</a></p>
+    </div>
+  </div>
+  <script src="/js/app.js"></script>
+</body>
+</html>

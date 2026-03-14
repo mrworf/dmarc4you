@@ -1,0 +1,14 @@
+---
+description: Core project workflow and invariants for all work in this repository
+alwaysApply: true
+---
+# Core repo rules
+
+- Read `AGENTS.md` plus the smallest relevant file under `docs/` before making non-trivial changes.
+- For large or ambiguous work, plan first; keep a durable plan under `.cursor/plans/` if the work matters beyond one chat.
+- Prefer thin vertical slices over broad cross-repo rewrites.
+- Keep business rules out of HTTP handlers, CLI entrypoints, and background-runner glue.
+- Preserve the project's explicit abstractions: storage, archive storage, auth, jobs, and policies.
+- Do not silently change RBAC, domain scoping, archive-state handling, dashboard ownership, or API key semantics.
+- If behavior changes, update the relevant `docs/*.md` file in the same change.
+- Add or update focused tests for new behavior.

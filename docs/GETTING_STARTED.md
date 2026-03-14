@@ -1,0 +1,188 @@
+# Getting Started
+
+This guide covers installation, configuration, first login, and understanding user roles.
+
+## Prerequisites
+
+- Python 3.12 or later
+- pip (Python package manager)
+
+## Installation
+
+1. Clone the repository:
+
+   ```bash
+   git clone <repository-url>
+   cd dmarc4you
+   ```
+
+2. Create a virtual environment:
+
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Linux/macOS
+   # or: .venv\Scripts\activate  # Windows
+   ```
+
+3. Install dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Create a configuration file:
+
+   ```bash
+   cp config.example.yaml config.yaml
+   ```
+
+5. Edit `config.yaml` (see [Configuration](#configuration) below).
+
+6. Start the server:
+
+   ```bash
+   python -m backend.main
+   ```
+
+   The server runs on `http://localhost:8000` by default.
+
+## Configuration
+
+Configuration is loaded from `config.yaml` (or the path in `DMARC_CONFIG` env var). All options can be overridden with environment variables.
+
+| Option | Env Variable | Default | Description |
+|--------|--------------|---------|-------------|
+| `database.path` | `DMARC_DATABASE_PATH` | `data/dmarc.db` | SQLite database file path |
+| `log.level` | `DMARC_LOG_LEVEL` | `INFO` | Log level: `VERBOSE`, `INFO`, `WARN`, `ERROR` |
+| `auth.session_secret` | `DMARC_SESSION_SECRET` | `change-me-in-production` | Secret for signing session cookies |
+| `auth.session_cookie_name` | `DMARC_SESSION_COOKIE` | `dmarc_session` | Session cookie name |
+| `auth.session_max_age_days` | `DMARC_SESSION_MAX_AGE_DAYS` | `7` | Session lifetime in days |
+| `archive.storage_path` | `DMARC_ARCHIVE_STORAGE_PATH` | `null` | Path for raw artifact archival (optional) |
+
+### Production Configuration
+
+For production deployments:
+
+1. **Change `session_secret`** to a secure random value:
+
+   ```bash
+   python -c "import secrets; print(secrets.token_hex(32))"
+   ```
+
+2. **Set up the database path** to a persistent location with proper backups.
+
+3. **Enable artifact archival** by setting `archive.storage_path` if you want to retain raw report files.
+
+## First Login
+
+On first startup, the application creates a bootstrap admin account:
+
+- **Username:** `admin`
+- **Password:** Printed to stderr (console) on first boot only
+
+Example startup output:
+
+```
+Bootstrap admin password (save it; shown once): Kj8mNp2xQr4vL6wY
+INFO:     Started server process
+INFO:     Uvicorn running on http://0.0.0.0:8000
+```
+
+**Save this password immediately.** It is not stored and cannot be retrieved.
+
+### Logging In
+
+1. Open `http://localhost:8000` in your browser.
+2. Enter username `admin` and the bootstrap password.
+3. You are now logged in as a super-admin.
+
+### Password Recovery
+
+If the admin password is lost, use the break-glass CLI command (requires local access to config and database):
+
+```bash
+python -m cli reset-admin-password
+# or with explicit config path:
+python -m cli reset-admin-password /path/to/config.yaml
+```
+
+This resets the `admin` user's password and prints the new password to stdout.
+
+## User Roles
+
+The application has four roles with hierarchical permissions:
+
+| Role | Description |
+|------|-------------|
+| **super-admin** | Full system access. Can manage all domains, users, and settings. |
+| **admin** | Domain-scoped administrator. Can manage users and dashboards within assigned domains. |
+| **manager** | Can create and share dashboards. Cannot perform admin tasks. |
+| **viewer** | Read-only access to assigned dashboards. |
+
+### Role Permissions
+
+| Capability | super-admin | admin | manager | viewer |
+|------------|:-----------:|:-----:|:-------:|:------:|
+| View all domains (including archived) | Y | | | |
+| Add/archive/restore/delete domains | Y | | | |
+| Configure domain retention | Y | | | |
+| Create users (any role) | Y | | | |
+| Create users (up to admin) | Y | Y | | |
+| Manage user domain assignments | Y | own domains | | |
+| Reset user passwords | Y | subordinates | | |
+| Delete users | Y | subordinates | | |
+| Create API keys | Y | Y | | |
+| View audit log | Y | | | |
+| Create dashboards | Y | Y | Y | |
+| Edit/delete own dashboards | Y | Y | Y | |
+| Share dashboards | Y | Y | Y | |
+| Transfer dashboard ownership | Y | Y | | |
+| View assigned dashboards | Y | Y | Y | Y |
+| Use search and filters | Y | Y | Y | Y |
+| Submit reports (UI) | Y | Y | Y | |
+
+### Domain Visibility
+
+- **super-admin** sees all domains, including archived ones.
+- **Other roles** see only domains explicitly assigned to them, and only if active (not archived).
+- Dashboard access requires access to **all** domains in the dashboard's scope.
+
+## Initial Setup Checklist
+
+After first login as the bootstrap admin:
+
+1. **Add domains** — Navigate to Domains and add your monitored domains (e.g., `example.com`).
+
+2. **Create API keys** — Navigate to API Keys and create a key for report ingestion:
+   - Assign the key to one or more domains
+   - Grant the `reports:ingest` scope
+   - Save the key secret (shown once)
+
+3. **Create users** — Navigate to Users to create accounts for your team:
+   - Choose appropriate roles
+   - Assign domains as needed
+   - Share the generated password with each user
+
+4. **Configure report submission** — Set up your mail servers or scripts to send DMARC reports. See [Submitting Reports](SUBMITTING_REPORTS.md).
+
+5. **Create dashboards** — Navigate to Dashboards to create views for monitoring your DMARC data.
+
+## Application URLs
+
+| Path | Description |
+|------|-------------|
+| `/` | Login page (redirects to app if authenticated) |
+| `/app/domains` | Domain management |
+| `/app/dashboards` | Dashboard list |
+| `/app/search` | Search aggregate/forensic reports |
+| `/app/upload` | Upload reports via browser |
+| `/app/ingest-jobs` | View ingest job history |
+| `/app/users` | User management (admin+) |
+| `/app/apikeys` | API key management (admin+) |
+| `/app/audit` | Audit log (super-admin only) |
+
+## Next Steps
+
+- [Submitting Reports](SUBMITTING_REPORTS.md) — Learn how to send DMARC reports via API, CLI, or UI
+- [API v1 Specification](API_V1.md) — Full API reference
+- [Security and Audit](SECURITY_AND_AUDIT.md) — Security model and audit requirements

@@ -1,0 +1,16 @@
+---
+description: Frontend SPA rules for the plain HTML/CSS/JavaScript client
+globs:
+  - frontend/**/*.html
+  - frontend/**/*.js
+  - frontend/**/*.css
+alwaysApply: false
+---
+# Frontend SPA rules
+
+- The frontend is a plain HTML/CSS/JavaScript SPA with client-side routing; do not introduce a framework unless the repo docs are updated and the choice is approved.
+- Keep URLs bookmarkable and use them for dashboard/search view state.
+- Treat backend authorization as the source of truth; the UI must not assume access from local state alone.
+- Viewers may use temporary filters and bookmarked URLs, but cannot save dashboard changes.
+- Keep UI modules separated into routes/views, reusable components, and API/state helpers.
+- Prefer accessible form controls, clear error states, and obvious domain-context labeling in dashboards and admin screens.

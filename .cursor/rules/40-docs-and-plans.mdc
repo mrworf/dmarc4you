@@ -1,0 +1,17 @@
+---
+description: Documentation and plan maintenance rules
+globs:
+  - AGENTS.md
+  - README.md
+  - docs/**/*.md
+  - .cursor/plans/**/*.md
+  - .cursor/commands/**/*.md
+alwaysApply: false
+---
+# Docs and plan rules
+
+- Keep docs concise, structured, and decision-oriented.
+- Prefer one focused document per topic rather than repeating the same rule across many files.
+- When implementation changes product behavior, update the authoritative doc instead of adding a conflicting note elsewhere.
+- Plans should describe the next executable slice, its files, risks, and validation steps.
+- Commands should be reusable workflow prompts, not one-off notes.
