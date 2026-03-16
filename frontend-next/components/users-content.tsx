@@ -280,8 +280,6 @@ export function UsersContent() {
         </article>
       </section>
 
-      {resetError ? <p className="error-text">{resetError}</p> : null}
-
       <section className="surface-card stack">
         <div className="section-heading">
           <div className="stack" style={{ gap: 8 }}>
@@ -471,6 +469,7 @@ export function UsersContent() {
 
       <SlideOverPanel
         description={`Choose the active domains ${domainUserQuery.data?.user.username ?? "this user"} should be able to access.`}
+        error={domainError ? <p className="error-text">{domainError}</p> : null}
         onClose={() => setDomainUserId(null)}
         open={Boolean(domainUserId)}
         title="Manage domains"
@@ -498,20 +497,22 @@ export function UsersContent() {
         ) : (
           <p className="status-text">No visible active domains are available for assignment.</p>
         )}
-        {domainError ? <p className="error-text">{domainError}</p> : null}
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button
-            className="button-primary"
-            disabled={assignDomainsMutation.isPending || domainUserQuery.isLoading}
-            onClick={handleSaveDomains}
-            type="button"
-          >
-            {assignDomainsMutation.isPending ? "Saving..." : "Save domains"}
-          </button>
-          <button className="button-secondary" onClick={() => setDomainUserId(null)} type="button">
-            Close
-          </button>
-        </div>
+        <form
+          className="stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSaveDomains();
+          }}
+        >
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <button className="button-primary" disabled={assignDomainsMutation.isPending || domainUserQuery.isLoading} type="submit">
+              {assignDomainsMutation.isPending ? "Saving..." : "Save domains"}
+            </button>
+            <button className="button-secondary" onClick={() => setDomainUserId(null)} type="button">
+              Close
+            </button>
+          </div>
+        </form>
       </SlideOverPanel>
 
       <CredentialDialog
@@ -535,6 +536,7 @@ export function UsersContent() {
       <ConfirmDialog
         confirmLabel="Reset password"
         description={resetTarget ? `Reset the password for ${resetTarget.username}?` : ""}
+        error={resetError ? <p className="error-text">{resetError}</p> : null}
         isPending={resetPasswordMutation.isPending}
         onCancel={() => setResetTarget(null)}
         onConfirm={() => {

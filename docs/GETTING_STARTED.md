@@ -188,3 +188,66 @@ After first login as the bootstrap admin:
 - [Submitting Reports](SUBMITTING_REPORTS.md) — Learn how to send DMARC reports via API, CLI, or UI
 - [API v1 Specification](API_V1.md) — Full API reference
 - [Security and Audit](SECURITY_AND_AUDIT.md) — Security model and audit requirements
+
+## Seeded E2E Browser Environment
+
+Use this path when you want to run the `frontend-next` Playwright suite against a real seeded FastAPI backend instead of manually preparing data.
+
+Required tools:
+
+- Python 3.12+
+- Node.js 22+
+- project dependencies installed from `requirements.txt`
+- frontend dependencies installed in `frontend-next`
+- Playwright Chromium installed with `cd frontend-next && npx playwright install chromium`
+
+Seed/reset commands:
+
+```bash
+# create or reseed the deterministic browser-test environment
+python -m cli seed-e2e config.e2e.yaml
+
+# remove the seeded database, archive data, and env summary files
+python -m cli seed-e2e config.e2e.yaml --cleanup
+```
+
+The seed command writes:
+
+- `.tmp/e2e/e2e.env` with the browser-harness environment variables
+- `.tmp/e2e/seed-summary.json` with IDs, URLs, credentials, and API key details for debugging
+
+Seeded credentials:
+
+| Role | Username | Password |
+|------|----------|----------|
+| super-admin | `admin` | `seed-super-admin-pass` |
+| admin | `e2e-admin` | `seed-admin-pass` |
+| manager | `e2e-manager` | `seed-manager-pass` |
+| viewer | `e2e-viewer` | `seed-viewer-pass` |
+
+Seeded environment URLs:
+
+- Frontend: `http://127.0.0.1:3000`
+- API: `http://127.0.0.1:8000`
+
+One-command local browser run:
+
+```bash
+cd frontend-next
+npm run test:e2e:seeded
+```
+
+That command:
+
+1. reseeds the SQLite database and archive storage using `config.e2e.yaml`
+2. starts FastAPI and Next.js locally
+3. runs the full Playwright suite against the live services
+4. cleans up the seeded environment afterward
+
+If the run fails, inspect:
+
+- `.tmp/e2e/backend.log`
+- `.tmp/e2e/frontend.log`
+- `.tmp/e2e/seed-summary.json`
+- `frontend-next/playwright-report/`
+- `frontend-next/test-results/`

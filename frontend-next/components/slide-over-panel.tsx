@@ -6,12 +6,13 @@ type SlideOverPanelProps = {
   open: boolean;
   title: string;
   description?: string;
+  error?: React.ReactNode;
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
 };
 
-export function SlideOverPanel({ open, title, description, onClose, children, footer }: SlideOverPanelProps) {
+export function SlideOverPanel({ open, title, description, error, onClose, children, footer }: SlideOverPanelProps) {
   useEffect(() => {
     if (!open) {
       return;
@@ -54,6 +55,7 @@ export function SlideOverPanel({ open, title, description, onClose, children, fo
             ×
           </button>
         </header>
+        {error ? <div className="slideover-error">{error}</div> : null}
         <div className="slideover-body">{children}</div>
         {footer ? <footer className="slideover-footer">{footer}</footer> : null}
       </aside>

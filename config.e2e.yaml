@@ -1,0 +1,28 @@
+# Deterministic local/CI configuration for the seeded frontend browser harness.
+
+database:
+  path: .tmp/e2e/dmarc-e2e.db
+
+log:
+  level: INFO
+
+auth:
+  session_secret: seeded-e2e-not-for-production
+  session_cookie_name: dmarc_session
+  session_max_age_days: 7
+  session_cookie_secure: false
+  session_cookie_same_site: lax
+  csrf_cookie_same_site: strict
+
+frontend:
+  public_origin: http://127.0.0.1:3000
+
+api:
+  public_url: http://127.0.0.1:8000
+
+cors:
+  allowed_origins:
+    - http://127.0.0.1:3000
+
+archive:
+  storage_path: .tmp/e2e/archive

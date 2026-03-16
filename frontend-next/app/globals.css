@@ -314,10 +314,120 @@ button {
   letter-spacing: 0.04em;
 }
 
+.cell-value-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.cell-action-menu {
+  position: relative;
+}
+
+.cell-action-trigger {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(16, 35, 61, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--accent-strong);
+  font-weight: 700;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.cell-action-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.data-table td:hover .cell-action-trigger,
+.cell-action-menu[open] .cell-action-trigger,
+.cell-action-trigger:focus-visible {
+  opacity: 1;
+}
+
+.cell-action-list {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 2;
+  min-width: 160px;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.cell-action-item {
+  justify-self: start;
+}
+
 .search-state-grid {
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.search-toolbar {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+}
+
+.search-toolbar-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.search-toolbar-meta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filter-chip-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(16, 35, 61, 0.08);
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.filter-chip-exclude {
+  background: rgba(166, 27, 27, 0.1);
+  color: var(--danger);
+}
+
+.filter-chip-remove {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
 }
 
 .pagination-row {
@@ -426,6 +536,11 @@ button {
 
 .slideover-header {
   border-bottom: 1px solid var(--line);
+}
+
+.slideover-error,
+.dialog-error {
+  padding: 16px 24px 0;
 }
 
 .slideover-footer {

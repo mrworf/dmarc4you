@@ -13,7 +13,7 @@ test.describe("frontend-next smoke", () => {
   test("login renders the migrated domains page", async ({ page }) => {
     await loginAsSuperAdmin(page);
 
-    await expect(page.getByRole("heading", { name: "Domains" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Domains", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Domain inventory" })).toBeVisible();
   });
 
@@ -21,7 +21,7 @@ test.describe("frontend-next smoke", () => {
     await loginAsSuperAdmin(page);
     await page.goto("/dashboards");
 
-    await expect(page.getByRole("heading", { name: "Dashboards" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Dashboards", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Your dashboards" })).toBeVisible();
   });
 
@@ -46,8 +46,8 @@ test.describe("frontend-next smoke", () => {
     await loginAsSuperAdmin(page);
     await page.goto("/audit?action_type=login_success&page=1");
 
-    await expect(page.getByRole("heading", { name: "Audit" })).toBeVisible();
-    await expect(page.getByDisplayValue("login_success")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Audit", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Action type")).toHaveValue("login_success");
     await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();
   });
 });

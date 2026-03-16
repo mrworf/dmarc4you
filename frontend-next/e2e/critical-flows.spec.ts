@@ -53,7 +53,7 @@ test.describe("frontend-next critical happy paths", () => {
     await loginAsSuperAdmin(page);
     await page.goto("/dashboards");
 
-    await expect(page.getByRole("heading", { name: "Dashboards" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Dashboards", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Create dashboard" }).first().click();
     await page.getByLabel("Name").fill(dashboardName);
     await page.getByLabel("Description").fill("Created by Playwright critical-flow coverage.");
@@ -88,7 +88,7 @@ test.describe("frontend-next critical happy paths", () => {
     await loginAsSuperAdmin(page);
     await page.goto("/upload");
 
-    await expect(page.getByRole("heading", { name: "Upload" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Upload", exact: true })).toBeVisible();
     await page.getByLabel("Paste XML").fill(MINIMAL_AGGREGATE_XML);
     await page.getByRole("button", { name: "Submit upload" }).click();
 
@@ -97,7 +97,7 @@ test.describe("frontend-next critical happy paths", () => {
     await jobLink.click();
 
     await page.waitForURL(/\/ingest-jobs\/[^/?#]+/);
-    await expect(page.getByRole("heading", { name: "Ingest job detail" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Job detail" })).toBeVisible();
   });
 
   test("users route creates a local account and shows the one-time password", async ({ page }) => {
@@ -113,7 +113,7 @@ test.describe("frontend-next critical happy paths", () => {
     await page.getByLabel("Role").selectOption("viewer");
     await page.getByLabel("Full name").fill(`Playwright Viewer ${suffix}`);
     await page.getByLabel("Email").fill(`playwright-${suffix}@example.com`);
-    await page.getByRole("button", { name: "Create user" }).last().click();
+    await page.getByLabel("Email").press("Enter");
 
     await expect(page.getByText("User created")).toBeVisible();
     await expect(page.getByText("Temporary password")).toBeVisible();
@@ -130,7 +130,7 @@ test.describe("frontend-next critical happy paths", () => {
     await page.getByLabel("Nickname").fill(nickname);
     await page.getByLabel("Description").fill("Created by Playwright critical-flow coverage.");
     await selectFirstDomainOption(page);
-    await page.getByRole("button", { name: "Create API key" }).last().click();
+    await page.getByLabel("Description").press("Enter");
 
     await expect(page.getByText("API key created")).toBeVisible();
     await expect(page.getByText("Raw secret")).toBeVisible();

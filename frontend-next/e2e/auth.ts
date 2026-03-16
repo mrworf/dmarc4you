@@ -2,22 +2,33 @@ import { expect, type Page } from "@playwright/test";
 
 type SeededRole = "super-admin" | "admin" | "manager" | "viewer";
 
-const roleCredentialEnv: Record<SeededRole, { username: string; password: string }> = {
+const roleCredentialEnv: Record<
+  SeededRole,
+  { username: string; password: string; defaultUsername: string; defaultPassword: string }
+> = {
   "super-admin": {
     username: "DMARC_E2E_SUPERADMIN_USERNAME",
     password: "DMARC_E2E_SUPERADMIN_PASSWORD",
+    defaultUsername: "admin",
+    defaultPassword: "seed-super-admin-pass",
   },
   admin: {
     username: "DMARC_E2E_ADMIN_USERNAME",
     password: "DMARC_E2E_ADMIN_PASSWORD",
+    defaultUsername: "e2e-admin",
+    defaultPassword: "seed-admin-pass",
   },
   manager: {
     username: "DMARC_E2E_MANAGER_USERNAME",
     password: "DMARC_E2E_MANAGER_PASSWORD",
+    defaultUsername: "e2e-manager",
+    defaultPassword: "seed-manager-pass",
   },
   viewer: {
     username: "DMARC_E2E_VIEWER_USERNAME",
     password: "DMARC_E2E_VIEWER_PASSWORD",
+    defaultUsername: "e2e-viewer",
+    defaultPassword: "seed-viewer-pass",
   },
 };
 
@@ -26,24 +37,19 @@ function getEnv(name: string): string | undefined {
   return value && value.length > 0 ? value : undefined;
 }
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required E2E env var: ${name}`);
-  }
-  return value;
-}
-
 export function hasSeededCredentials(role: SeededRole): boolean {
-  const env = roleCredentialEnv[role];
-  return Boolean(getEnv(env.username) && getEnv(env.password));
+  const credentials = roleCredentialEnv[role];
+  return Boolean(
+    (getEnv(credentials.username) ?? credentials.defaultUsername) &&
+      (getEnv(credentials.password) ?? credentials.defaultPassword),
+  );
 }
 
 export function getSeededCredentials(role: SeededRole) {
   const env = roleCredentialEnv[role];
   return {
-    username: requireEnv(env.username),
-    password: requireEnv(env.password),
+    username: getEnv(env.username) ?? env.defaultUsername,
+    password: getEnv(env.password) ?? env.defaultPassword,
   };
 }
 

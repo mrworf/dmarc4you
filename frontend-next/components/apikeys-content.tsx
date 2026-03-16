@@ -203,8 +203,6 @@ export function ApiKeysContent() {
         </article>
       </section>
 
-      {deleteError ? <p className="error-text">{deleteError}</p> : null}
-
       <section className="surface-card stack">
         <div className="section-heading">
           <div className="stack" style={{ gap: 8 }}>
@@ -409,6 +407,7 @@ export function ApiKeysContent() {
             ? `Revoke this API key now? Any clients using it will stop working immediately.`
             : ""
         }
+        error={deleteError ? <p className="error-text">{deleteError}</p> : null}
         isPending={deleteApiKeyMutation.isPending}
         onCancel={() => setDeleteKeyId(null)}
         onConfirm={() => {

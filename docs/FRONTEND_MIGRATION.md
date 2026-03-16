@@ -248,42 +248,52 @@ Key frontend patterns now in use:
 
 The refresh keeps FastAPI as the authority for auth, RBAC, domain lifecycle, retention, and all mutation behavior. The frontend changes are intentionally presentation- and workflow-oriented only.
 
-## Test Harness Foundation
+## UX Polish
 
-The migration workspace now includes a minimal Playwright harness in `frontend-next/e2e/` for narrow browser-level smoke coverage of already-migrated routes.
+The follow-up polish pass tightens a few cross-route interaction rules so overlays and search behave more like operator tools than scaffolding:
 
-Local prerequisites:
+- slideover panels and confirm dialogs now surface mutation errors inside the active overlay instead of only on the parent page
+- non-destructive overlay forms submit with Enter, while destructive confirm dialogs still require an explicit click
+- dashboard scope-change preflight now uses the shared confirm dialog instead of a browser-native confirm prompt
+- search now prioritizes results with a compact top bar, an advanced-filters slideover, removable applied-filter chips, and inline quick-filter actions from result cells where the existing backend contract supports them
 
-- FastAPI running and reachable by the Next.js app
-- a seeded super-admin account for smoke login
-- at least one accessible dashboard if you want dashboard-detail smoke coverage without supplying a dashboard ID explicitly
+## Seeded Browser Harness
 
-Recommended local env values:
+The migration workspace now uses a deterministic seeded FastAPI environment as the primary browser-regression path for `frontend-next/e2e/`.
 
-```bash
-export NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
-export DMARC_E2E_SUPERADMIN_USERNAME=admin
-export DMARC_E2E_SUPERADMIN_PASSWORD=changeme
-# optional if your seed data has a known dashboard id
-export DMARC_E2E_DASHBOARD_ID=dash_xxx
-```
-
-Recommended commands:
+Core commands:
 
 ```bash
+# reseed the dedicated SQLite/archive environment
+python -m cli seed-e2e config.e2e.yaml
+
+# inspect the discovered browser matrix quickly
 cd frontend-next
-npm install
-npx playwright install chromium
 npm run test:e2e:list
-npm run test:e2e
+
+# run the full seeded browser suite locally
+npm run test:e2e:seeded
 ```
 
-By default the Playwright config starts the Next.js dev server on `http://127.0.0.1:3000`. If you already have the frontend running elsewhere, set:
+Seeded defaults:
 
-```bash
-export DMARC_E2E_BASE_URL=http://127.0.0.1:3000
-export DMARC_E2E_USE_EXISTING_FRONTEND=1
-```
+- FastAPI config: `config.e2e.yaml`
+- frontend URL: `http://127.0.0.1:3000`
+- backend URL: `http://127.0.0.1:8000`
+- seeded users: `admin`, `e2e-admin`, `e2e-manager`, `e2e-viewer`
+- deterministic credentials and route IDs exported to `.tmp/e2e/e2e.env`
+- debugging summary written to `.tmp/e2e/seed-summary.json`
+
+The seeded wrapper script:
+
+- reseeds the DB and archive storage
+- starts FastAPI from the real backend entrypoint
+- starts the real Next.js dev server
+- waits for both services to become ready
+- runs the full Playwright suite
+- captures logs under `.tmp/e2e/`
+
+This is intentionally the same path CI uses, so local failures and CI failures speak the same language.
 
 ## Search Route Coverage
 
@@ -293,16 +303,13 @@ The browser harness now also covers the migrated `/search` route for:
 - aggregate/forensic mode switching
 - pagination state persisting in the query string
 
-Optional local env values for more deterministic search coverage:
+The seeded environment now includes deterministic aggregate and forensic data for:
 
-```bash
-export DMARC_E2E_SEARCH_DOMAIN=example.com
-export DMARC_E2E_SEARCH_QUERY=google
-export DMARC_E2E_SEARCH_FROM=2025-01-01
-export DMARC_E2E_SEARCH_TO=2025-12-31
-```
-
-The pagination test skips automatically when the selected local data set only produces one page of search results.
+- search filters and chip restoration
+- pagination coverage
+- quick-filter actions from result cells
+- dashboard detail drill-down filters
+- upload and ingest-job linking
 
 ## Legacy SPA Cutover
 
@@ -315,34 +322,23 @@ Route coverage:
 
 Role-matrix browser coverage:
 
-- `frontend-next/e2e/role-matrix.spec.ts` extends the Playwright harness with role-aware route checks
-- super-admin coverage is required
-- admin, manager, and viewer coverage are enabled when seeded credentials are provided
-
-Optional seeded credential env values:
-
-```bash
-export DMARC_E2E_ADMIN_USERNAME=admin2
-export DMARC_E2E_ADMIN_PASSWORD=changeme
-export DMARC_E2E_MANAGER_USERNAME=manager1
-export DMARC_E2E_MANAGER_PASSWORD=changeme
-export DMARC_E2E_VIEWER_USERNAME=viewer1
-export DMARC_E2E_VIEWER_PASSWORD=changeme
-```
+- `frontend-next/e2e/role-matrix.spec.ts` is now part of the seeded default suite
+- super-admin, admin, manager, and viewer credentials are created automatically by `python -m cli seed-e2e config.e2e.yaml`
 
 Recommended cutover sequence:
 
 1. run `npm run cutover:routes`
 2. run `npm run test:e2e:list` to confirm the full harness matrix is discovered
-3. run `npm run test:e2e` against a seeded environment with at least the super-admin account, and preferably the admin/manager/viewer accounts too
-4. switch the reverse proxy so `/` and other user-facing routes point to `frontend-next`
-5. keep the backend-served legacy SPA available only as a rollback path until the seeded role matrix passes in the deployment environment
+3. run `npm run test:e2e:seeded` locally against the deterministic seed environment
+4. require the seeded-browser CI workflow to pass on the same route matrix and critical flows
+5. rerun the seeded suite in the deployment environment after the reverse-proxy switch points `/` and user-facing routes to `frontend-next`
+6. keep the backend-served legacy SPA available only as a rollback path until the seeded suite passes in deployment
 
 Recommended rollback boundary:
 
 - the reverse proxy switch is the cutover point
 - FastAPI remains the source of truth for auth, RBAC, CSRF, and business APIs
-- retire the legacy SPA mount only after the Next.js cutover has been stable and the critical role matrix has been re-run in the target environment
+- retire the legacy SPA mount only after the Next.js cutover has been stable and the seeded full browser suite has been re-run in the target environment
 
 ## Contract Verification
 
@@ -375,4 +371,16 @@ The Playwright harness now also covers a narrow set of critical happy paths acro
 - user creation with one-time password notice
 - API key creation with copy-once secret notice
 
-These flows still assume a dedicated E2E environment with a seeded super-admin session and at least one visible active domain.
+These flows now run as part of the standard seeded-browser environment instead of relying on manual local seed setup.
+
+## Migration Closeout Checklist
+
+Use this checklist to treat the frontend migration as operationally complete rather than merely code-complete.
+
+1. run `python -m cli seed-e2e config.e2e.yaml` and confirm `.tmp/e2e/seed-summary.json` is produced
+2. run `cd frontend-next && npm run test:e2e:list` and confirm the full suite is discovered
+3. run `cd frontend-next && npm run test:e2e:seeded` locally
+4. confirm the `frontend-seeded-e2e` CI workflow passes on the same branch
+5. rerun the seeded suite in the deployment environment after the reverse proxy points to `frontend-next`
+6. keep the legacy SPA as a rollback path until the deployment-environment seeded run passes
+7. retire the legacy SPA mount only after the seeded suite is green in CI and in deployment

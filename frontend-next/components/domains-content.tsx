@@ -99,16 +99,14 @@ export function DomainsContent() {
   const canManageDomains = user?.role === "super-admin";
   const activeCount = domains.filter((domain) => domain.status === "active").length;
   const archivedCount = domains.filter((domain) => domain.status === "archived").length;
-  const mutationError = [
-    createDomain.error,
-    archiveDomain.error,
-    restoreDomain.error,
-    setDomainRetention.error,
-    pauseRetention.error,
-    unpauseRetention.error,
-    deleteDomainMutation.error,
-  ].find(Boolean);
-  const errorMessage = mutationError instanceof ApiError ? mutationError.message : null;
+  const createError = createDomain.error instanceof ApiError ? createDomain.error.message : null;
+  const archiveError = archiveDomain.error instanceof ApiError ? archiveDomain.error.message : null;
+  const retentionError = setDomainRetention.error instanceof ApiError ? setDomainRetention.error.message : null;
+  const restoreError = restoreDomain.error instanceof ApiError ? restoreDomain.error.message : null;
+  const pauseError = pauseRetention.error instanceof ApiError ? pauseRetention.error.message : null;
+  const unpauseError = unpauseRetention.error instanceof ApiError ? unpauseRetention.error.message : null;
+  const deleteError = deleteDomainMutation.error instanceof ApiError ? deleteDomainMutation.error.message : null;
+  const listMutationError = restoreError ?? pauseError ?? unpauseError;
 
   async function handleCreateDomain() {
     if (!createName.trim()) {
@@ -185,7 +183,7 @@ export function DomainsContent() {
             </p>
           </div>
         </div>
-        {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
+        {listMutationError ? <p className="error-text">{listMutationError}</p> : null}
         {domainsQuery.isLoading ? <p className="status-text">Loading domains...</p> : null}
         {domainsQuery.error ? (
           <p className="error-text">{domainsQuery.error instanceof Error ? domainsQuery.error.message : "Failed to load domains"}</p>
@@ -271,29 +269,36 @@ export function DomainsContent() {
 
       <SlideOverPanel
         description="Add a domain to begin collecting and managing reports for it."
+        error={createError ? <p className="error-text">{createError}</p> : null}
         onClose={() => setIsCreateOpen(false)}
         open={isCreateOpen}
         title="Create domain"
-        footer={
-          <div className="dialog-actions" style={{ width: "100%" }}>
+      >
+        <form
+          className="stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleCreateDomain();
+          }}
+        >
+          <label className="field-label">
+            Domain name
+            <input
+              className="field-input"
+              onChange={(event) => setCreateName(event.target.value)}
+              placeholder="example.com"
+              value={createName}
+            />
+          </label>
+          <div className="dialog-actions">
             <button className="button-secondary" onClick={() => setIsCreateOpen(false)} type="button">
               Cancel
             </button>
-            <button className="button-primary" disabled={createDomain.isPending || !createName.trim()} onClick={handleCreateDomain} type="button">
+            <button className="button-primary" disabled={createDomain.isPending || !createName.trim()} type="submit">
               {createDomain.isPending ? "Creating..." : "Create domain"}
             </button>
           </div>
-        }
-      >
-        <label className="field-label">
-          Domain name
-          <input
-            className="field-input"
-            onChange={(event) => setCreateName(event.target.value)}
-            placeholder="example.com"
-            value={createName}
-          />
-        </label>
+        </form>
       </SlideOverPanel>
 
       <SlideOverPanel
@@ -304,20 +309,61 @@ export function DomainsContent() {
               ? `Adjust the retention period for ${activeAction.domain.name}.`
               : ""
         }
+        error={
+          activeAction?.kind === "archive"
+            ? archiveError
+              ? <p className="error-text">{archiveError}</p>
+              : null
+            : retentionError
+              ? <p className="error-text">{retentionError}</p>
+              : null
+        }
         onClose={() => setActiveAction(null)}
         open={Boolean(activeAction)}
         title={activeAction?.kind === "archive" ? "Archive domain" : "Retention settings"}
-        footer={
-          <div className="dialog-actions" style={{ width: "100%" }}>
+      >
+        <form
+          className="stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (activeAction?.kind === "archive") {
+              void handleArchiveDomain();
+              return;
+            }
+            void handleSetRetention();
+          }}
+        >
+          {activeAction?.kind === "archive" ? (
+            <label className="field-label">
+              Retention days
+              <input
+                className="field-input"
+                min="1"
+                onChange={(event) => setArchiveRetentionDays(event.target.value)}
+                placeholder="Optional"
+                type="number"
+                value={archiveRetentionDays}
+              />
+            </label>
+          ) : null}
+          {activeAction?.kind === "retention" ? (
+            <label className="field-label">
+              Retention days
+              <input
+                className="field-input"
+                min="1"
+                onChange={(event) => setRetentionDays(event.target.value)}
+                placeholder="30"
+                type="number"
+                value={retentionDays}
+              />
+            </label>
+          ) : null}
+          <div className="dialog-actions">
             <button className="button-secondary" onClick={() => setActiveAction(null)} type="button">
               Cancel
             </button>
-            <button
-              className="button-primary"
-              disabled={archiveDomain.isPending || setDomainRetention.isPending}
-              onClick={activeAction?.kind === "archive" ? handleArchiveDomain : handleSetRetention}
-              type="button"
-            >
+            <button className="button-primary" disabled={archiveDomain.isPending || setDomainRetention.isPending} type="submit">
               {activeAction?.kind === "archive"
                 ? archiveDomain.isPending
                   ? "Archiving..."
@@ -327,34 +373,7 @@ export function DomainsContent() {
                   : "Save retention"}
             </button>
           </div>
-        }
-      >
-        {activeAction?.kind === "archive" ? (
-          <label className="field-label">
-            Retention days
-            <input
-              className="field-input"
-              min="1"
-              onChange={(event) => setArchiveRetentionDays(event.target.value)}
-              placeholder="Optional"
-              type="number"
-              value={archiveRetentionDays}
-            />
-          </label>
-        ) : null}
-        {activeAction?.kind === "retention" ? (
-          <label className="field-label">
-            Retention days
-            <input
-              className="field-input"
-              min="1"
-              onChange={(event) => setRetentionDays(event.target.value)}
-              placeholder="30"
-              type="number"
-              value={retentionDays}
-            />
-          </label>
-        ) : null}
+        </form>
       </SlideOverPanel>
 
       <ConfirmDialog
@@ -365,6 +384,7 @@ export function DomainsContent() {
             ? `Delete ${deleteDomain.name} permanently? This removes the archived domain and its related data.`
             : ""
         }
+        error={deleteError ? <p className="error-text">{deleteError}</p> : null}
         isPending={deleteDomainMutation.isPending}
         onCancel={() => setDeleteDomain(null)}
         onConfirm={() => {

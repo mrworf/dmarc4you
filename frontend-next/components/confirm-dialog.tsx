@@ -9,6 +9,7 @@ type ConfirmDialogProps = {
   confirmLabel: string;
   confirmTone?: "default" | "danger";
   isPending?: boolean;
+  error?: React.ReactNode;
   onCancel: () => void;
   onConfirm: () => void;
 };
@@ -20,6 +21,7 @@ export function ConfirmDialog({
   confirmLabel,
   confirmTone = "default",
   isPending = false,
+  error,
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
@@ -56,6 +58,7 @@ export function ConfirmDialog({
             <h2 style={{ margin: 0 }}>{title}</h2>
             <p className="status-text" style={{ margin: 0 }}>{description}</p>
           </div>
+          {error ? <div className="dialog-error">{error}</div> : null}
           <div className="dialog-actions">
             <button className="button-secondary" onClick={onCancel} type="button">
               Cancel

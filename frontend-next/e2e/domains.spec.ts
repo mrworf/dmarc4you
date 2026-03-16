@@ -15,7 +15,7 @@ test.describe("frontend-next domain management", () => {
 
     await page.getByRole("button", { name: "Create domain" }).click();
     await page.getByLabel("Domain name").fill(domainName);
-    await page.getByRole("button", { name: "Create domain" }).last().click();
+    await page.getByLabel("Domain name").press("Enter");
 
     const activeRow = page.locator(".domain-row", { hasText: domainName });
     await expect(activeRow).toBeVisible();
@@ -42,8 +42,31 @@ test.describe("frontend-next domain management", () => {
     await page.getByRole("button", { name: "Archive domain" }).click();
 
     await archivedRow.getByRole("button", { name: "Delete" }).click();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { name: "Delete archived domain" })).toBeVisible();
+    await expect(page.locator(".domain-row", { hasText: domainName })).toHaveCount(1);
     await page.getByRole("button", { name: "Delete domain" }).click();
 
     await expect(page.locator(".domain-row", { hasText: domainName })).toHaveCount(0);
+  });
+
+  test("duplicate domain errors stay inside the create panel", async ({ page }) => {
+    const domainName = uniqueDomain();
+
+    await loginAsSuperAdmin(page);
+    await page.goto("/domains");
+
+    await page.getByRole("button", { name: "Create domain" }).click();
+    await page.getByLabel("Domain name").fill(domainName);
+    await page.getByLabel("Domain name").press("Enter");
+    await expect(page.locator(".domain-row", { hasText: domainName })).toBeVisible();
+
+    await page.getByRole("button", { name: "Create domain" }).click();
+    await page.getByLabel("Domain name").fill(domainName);
+    await page.getByLabel("Domain name").press("Enter");
+
+    const createPanel = page.locator(".slideover-panel", { hasText: "Create domain" });
+    await expect(createPanel).toBeVisible();
+    await expect(createPanel.locator(".error-text")).toBeVisible();
   });
 });

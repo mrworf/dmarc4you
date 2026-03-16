@@ -11,7 +11,7 @@ test.describe("frontend-next cutover role matrix", () => {
     await expect(page.getByRole("link", { name: "Audit" })).toBeVisible();
 
     await page.goto("/audit");
-    await expect(page.getByRole("heading", { name: "Audit" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Audit", exact: true })).toBeVisible();
   });
 
   test("admin sees admin routes but is redirected away from super-admin audit", async ({ page }) => {

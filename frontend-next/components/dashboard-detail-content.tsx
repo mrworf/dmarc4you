@@ -137,7 +137,9 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
   const [isSharingOpen, setIsSharingOpen] = useState(false);
   const [isOwnershipOpen, setIsOwnershipOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isScopeConfirmOpen, setIsScopeConfirmOpen] = useState(false);
   const [validateMessage, setValidateMessage] = useState<DashboardValidateUpdateResponse | null>(null);
+  const [pendingUpdateValues, setPendingUpdateValues] = useState<UpdateDashboardBody | null>(null);
 
   useEffect(() => {
     setDraftState(currentState);
@@ -233,6 +235,7 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
 
   async function handleUpdateDashboard(values: EditDashboardValues) {
     setValidateMessage(null);
+    setPendingUpdateValues(null);
     if (dashboard && !sameDomainScope(values.domain_ids, dashboard.domain_ids)) {
       const validation = await apiClient.post<DashboardValidateUpdateResponse>(
         `/api/v1/dashboards/${dashboardId}/validate-update`,
@@ -240,15 +243,21 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
       );
       setValidateMessage(validation);
       if (!validation.valid) {
-        const confirmed = window.confirm(
-          `This scope change impacts ${validation.impacted_users.length} shared user(s). Continue with the update?`,
-        );
-        if (!confirmed) {
-          return;
-        }
+        setPendingUpdateValues(values);
+        setIsScopeConfirmOpen(true);
+        return;
       }
     }
     await updateDashboard.mutateAsync(values);
+  }
+
+  async function confirmScopeUpdate() {
+    if (!pendingUpdateValues) {
+      return;
+    }
+    setIsScopeConfirmOpen(false);
+    await updateDashboard.mutateAsync(pendingUpdateValues);
+    setPendingUpdateValues(null);
   }
 
   async function handleDeleteDashboard() {
@@ -372,6 +381,7 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
       {dashboard && isEditing ? (
         <SlideOverPanel
           description="Update the dashboard name, description, and domain scope."
+          error={mutationError ? <p className="error-text">{mutationError}</p> : null}
           onClose={() => setIsEditing(false)}
           open={isEditing}
           title="Edit dashboard"
@@ -382,7 +392,6 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
               {domainsQuery.error instanceof Error ? domainsQuery.error.message : "Failed to load domains"}
             </p>
           ) : null}
-          {mutationError ? <p className="error-text">{mutationError}</p> : null}
           {validateMessage && !validateMessage.valid ? (
             <div className="warning-panel">
               <p className="stat-label">Scope preflight warning</p>
@@ -623,14 +632,32 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
         confirmLabel="Delete dashboard"
         confirmTone="danger"
         description="Delete this dashboard permanently? This cannot be undone."
+        error={deleteError ? <p className="error-text">{deleteError}</p> : null}
         isPending={deleteDashboard.isPending}
         onCancel={() => setIsDeleteOpen(false)}
         onConfirm={() => {
-          setIsDeleteOpen(false);
-          handleDeleteDashboard();
+          void handleDeleteDashboard();
         }}
         open={isDeleteOpen}
         title="Delete dashboard"
+      />
+      <ConfirmDialog
+        confirmLabel="Continue update"
+        description={
+          validateMessage && !validateMessage.valid
+            ? `This dashboard change would affect ${validateMessage.impacted_users.length} shared user(s). Continue anyway?`
+            : ""
+        }
+        isPending={updateDashboard.isPending}
+        onCancel={() => {
+          setIsScopeConfirmOpen(false);
+          setPendingUpdateValues(null);
+        }}
+        onConfirm={() => {
+          void confirmScopeUpdate();
+        }}
+        open={isScopeConfirmOpen}
+        title="Confirm scope change"
       />
     </AppShell>
   );

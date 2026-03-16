@@ -4,6 +4,9 @@ debug.log
 data/
 frontend-next/node_modules/
 frontend-next/.next/
+frontend-next/test-results/
+frontend-next/playwright-report/
 plans.txt
 pw.txt
 data/dmarc.db
+.tmp/

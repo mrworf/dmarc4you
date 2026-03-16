@@ -39,7 +39,7 @@ For the split-origin Next.js migration workspace, see [Frontend Migration](docs/
 | [Data Model](docs/DATA_MODEL.md) | Database schema and relationships |
 | [Domain Lifecycle](docs/DOMAIN_LIFECYCLE.md) | Archive, restore, retention, and purge |
 | [Frontend and Dashboards](docs/FRONTEND_AND_DASHBOARDS.md) | SPA and dashboard specifications |
-| [Frontend Migration](docs/FRONTEND_MIGRATION.md) | Next.js frontend foundation, deployment, and rollout notes |
+| [Frontend Migration](docs/FRONTEND_MIGRATION.md) | Next.js frontend foundation, deployment, rollout notes, and seeded browser verification |
 | [Frontend Migration Slices](docs/FRONTEND_MIGRATION_SLICES.md) | Slice-by-slice plan for the Next.js migration and related scaling work |
 
 ## Features
@@ -71,9 +71,18 @@ python -m cli ingest --api-key KEY report.xml [report2.xml.gz ...]
 
 # Reset admin password (break-glass recovery)
 python -m cli reset-admin-password [config.yaml]
+
+# Seed the deterministic frontend E2E environment
+python -m cli seed-e2e [config.e2e.yaml]
+
+# Full seeded frontend browser regression run
+cd frontend-next
+npm run test:e2e:seeded
 ```
 
 See [Submitting Reports](docs/SUBMITTING_REPORTS.md) for CLI details.
+
+For the Next.js migration wrap-up, the primary regression path is now the seeded browser harness. See [Frontend Migration](docs/FRONTEND_MIGRATION.md) and [Getting Started](docs/GETTING_STARTED.md#seeded-e2e-browser-environment) for the seeded credentials, reset command, logs, and CI expectations.
 
 ## Configuration
 
