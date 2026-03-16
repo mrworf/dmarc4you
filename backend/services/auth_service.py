@@ -73,7 +73,13 @@ def login(
         user_agent=user_agent,
         summary="login",
     )
-    return {"id": user["id"], "username": user["username"], "role": user["role"]}, session_id
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "role": user["role"],
+        "full_name": user.get("full_name"),
+        "email": user.get("email"),
+    }, session_id
 
 
 def logout(config: Config, session_id: str | None) -> None:

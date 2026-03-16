@@ -1,4 +1,4 @@
-"""API key endpoints: GET list, POST create (returns key once), DELETE revoke."""
+"""API key endpoints: GET list, POST create, PUT update, DELETE revoke."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -14,6 +14,12 @@ class CreateApiKeyBody(BaseModel):
     nickname: str = ""
     description: str = ""
     domain_ids: list[str] = []
+    scopes: list[str] = []
+
+
+class UpdateApiKeyBody(BaseModel):
+    nickname: str = ""
+    description: str = ""
     scopes: list[str] = []
 
 
@@ -67,3 +73,31 @@ def delete_apikey(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     if result == "forbidden":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+
+@router.put("/{key_id}")
+def update_apikey(
+    key_id: str,
+    body: UpdateApiKeyBody,
+    current_user: dict = Depends(get_current_user),
+    config: Config = Depends(get_config),
+) -> dict:
+    """PUT /api/v1/apikeys/{id}: update nickname, description, and scopes."""
+    key, err = api_key_service.update_api_key(
+        config,
+        key_id,
+        body.nickname,
+        body.description or "",
+        body.scopes or [],
+        current_user,
+    )
+    if err == "not_found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    if err == "forbidden":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    if err == "invalid" or not key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="nickname and at least one scope required",
+        )
+    return {"key": key}

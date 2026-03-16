@@ -169,15 +169,10 @@
     return match ? match[1] : '';
   }
 
-  function doUpload(content, contentEncoding) {
+  function doUpload(reports) {
     var body = {
       source: 'web',
-      reports: [{
-        content_type: 'application/xml',
-        content_encoding: contentEncoding,
-        content_transfer_encoding: 'base64',
-        content: content
-      }]
+      reports: reports
     };
     fetch('/api/v1/reports/ingest', {
       method: 'POST',
@@ -193,7 +188,7 @@
       })
       .then(function (data) {
         var jobId = data.job_id || 'unknown';
-        setUploadSuccess('Report submitted. Job ID: <a href="#" class="upload-job-link" data-job-id="' + escapeHtml(jobId) + '">' + escapeHtml(jobId) + '</a>');
+        setUploadSuccess('Upload submitted as one ingest job. Job ID: <a href="#" class="upload-job-link" data-job-id="' + escapeHtml(jobId) + '">' + escapeHtml(jobId) + '</a>');
         if (uploadTextarea) uploadTextarea.value = '';
         if (uploadFileInput) uploadFileInput.value = '';
         var link = document.querySelector('.upload-job-link');
@@ -212,26 +207,49 @@
   function submitUpload() {
     setUploadError('');
     setUploadSuccess('');
-    var file = uploadFileInput && uploadFileInput.files && uploadFileInput.files[0];
+    var files = uploadFileInput && uploadFileInput.files ? Array.from(uploadFileInput.files) : [];
     var text = uploadTextarea ? uploadTextarea.value.trim() : '';
 
-    if (file) {
-      var reader = new FileReader();
-      reader.onload = function () {
-        var bytes = new Uint8Array(reader.result);
-        var isGzip = isGzipFile(file.name, bytes);
-        var b64 = arrayBufferToBase64(reader.result);
-        doUpload(b64, isGzip ? 'gzip' : 'none');
-      };
-      reader.onerror = function () {
-        setUploadError('Failed to read file');
-      };
-      reader.readAsArrayBuffer(file);
+    if (text && files.length) {
+      setUploadError('Use either pasted XML or file uploads, not both');
+      return;
+    }
+
+    if (files.length) {
+      Promise.all(files.map(function (file) {
+        return new Promise(function (resolve, reject) {
+          var reader = new FileReader();
+          reader.onload = function () {
+            var bytes = new Uint8Array(reader.result);
+            resolve({
+              content_type: file.name && file.name.endsWith('.eml') ? 'message/rfc822' : 'application/xml',
+              content_encoding: isGzipFile(file.name, bytes) ? 'gzip' : 'none',
+              content_transfer_encoding: 'base64',
+              content: arrayBufferToBase64(reader.result)
+            });
+          };
+          reader.onerror = function () {
+            reject(new Error('Failed to read ' + file.name));
+          };
+          reader.readAsArrayBuffer(file);
+        });
+      }))
+        .then(function (reports) {
+          doUpload(reports);
+        })
+        .catch(function (err) {
+          setUploadError(err.message || 'Failed to read file');
+        });
     } else if (text) {
       var b64 = btoa(unescape(encodeURIComponent(text)));
-      doUpload(b64, 'none');
+      doUpload([{
+        content_type: 'application/xml',
+        content_encoding: 'none',
+        content_transfer_encoding: 'base64',
+        content: b64
+      }]);
     } else {
-      setUploadError('Paste XML or select a file');
+      setUploadError('Paste XML or select one or more files');
     }
   }
 
@@ -472,11 +490,30 @@
       return;
     }
 
+    if (data.group_by) {
+      searchResultsWrap.innerHTML = '<p>' + total + ' group' + (total === 1 ? '' : 's') + ' found.</p>' +
+        '<table><thead><tr><th>Group</th><th>Total count</th><th>Rows</th><th>Reports</th><th>First record date</th></tr></thead><tbody>' +
+        items.map(function (item) {
+          return '<tr>' +
+            '<td>' + escapeHtml(item.group_label || '') + '</td>' +
+            '<td>' + (item.count || 0) + '</td>' +
+            '<td>' + (item.row_count || 0) + '</td>' +
+            '<td>' + (item.report_count || 0) + '</td>' +
+            '<td>' + escapeHtml(item.record_date || '') + '</td>' +
+          '</tr>';
+        }).join('') + '</tbody></table>';
+      renderSearchPagination(page, totalPages);
+      return;
+    }
+
     searchResultsWrap.innerHTML = '<p>' + total + ' result' + (total === 1 ? '' : 's') + ' found.</p>' +
-      '<table><thead><tr><th>Source IP</th><th>Count</th><th>Disposition</th><th>DKIM</th><th>SPF</th><th>Domain</th><th>Org</th><th></th></tr></thead><tbody>' +
+      '<table><thead><tr><th>Record date</th><th>Source IP</th><th>Resolved name</th><th>Resolved domain</th><th>Count</th><th>Disposition</th><th>DKIM</th><th>SPF</th><th>Domain</th><th>Org</th><th></th></tr></thead><tbody>' +
       items.map(function (r) {
         return '<tr>' +
+          '<td>' + escapeHtml(r.record_date || '') + '</td>' +
           '<td>' + escapeHtml(r.source_ip || '') + '</td>' +
+          '<td>' + escapeHtml(r.resolved_name || '') + '</td>' +
+          '<td>' + escapeHtml(r.resolved_name_domain || '') + '</td>' +
           '<td>' + (r.count || 0) + '</td>' +
           '<td>' + escapeHtml(r.disposition || '') + '</td>' +
           '<td>' + escapeHtml(r.dkim_result || '') + '</td>' +
@@ -511,11 +548,13 @@
     }
 
     searchResultsWrap.innerHTML = '<p>' + total + ' forensic report' + (total === 1 ? '' : 's') + ' found.</p>' +
-      '<table><thead><tr><th>Domain</th><th>Source IP</th><th>Header From</th><th>SPF</th><th>DKIM</th><th>DMARC</th><th>Failure</th><th>Arrival</th><th></th></tr></thead><tbody>' +
+      '<table><thead><tr><th>Domain</th><th>Source IP</th><th>Resolved name</th><th>Resolved domain</th><th>Header From</th><th>SPF</th><th>DKIM</th><th>DMARC</th><th>Failure</th><th>Arrival</th><th></th></tr></thead><tbody>' +
       items.map(function (r) {
         return '<tr>' +
           '<td>' + escapeHtml(r.domain || '') + '</td>' +
           '<td>' + escapeHtml(r.source_ip || '') + '</td>' +
+          '<td>' + escapeHtml(r.resolved_name || '') + '</td>' +
+          '<td>' + escapeHtml(r.resolved_name_domain || '') + '</td>' +
           '<td>' + escapeHtml(r.header_from || '') + '</td>' +
           '<td>' + escapeHtml(r.spf_result || '') + '</td>' +
           '<td>' + escapeHtml(r.dkim_result || '') + '</td>' +
@@ -843,6 +882,49 @@
     return div.innerHTML;
   }
 
+  function formatDateFromEpoch(seconds) {
+    if (!seconds && seconds !== 0) return '';
+    var date = new Date(seconds * 1000);
+    if (isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+  }
+
+  function setDateRangeInputs(fromId, toId, preset) {
+    var fromInput = document.getElementById(fromId);
+    var toInput = document.getElementById(toId);
+    if (!fromInput || !toInput) return;
+    var today = new Date();
+    var end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    var start = new Date(end);
+    if (preset === 'last_24_hours') {
+      start = new Date(today.getTime() - (24 * 60 * 60 * 1000));
+      fromInput.value = start.toISOString().split('T')[0];
+      toInput.value = today.toISOString().split('T')[0];
+      return;
+    }
+    if (preset === 'last_7_days') start.setDate(end.getDate() - 6);
+    if (preset === 'last_30_days') start.setDate(end.getDate() - 29);
+    if (preset === 'last_month') {
+      start = new Date(end.getFullYear(), end.getMonth() - 1, 1);
+      end = new Date(end.getFullYear(), end.getMonth(), 0);
+    }
+    if (preset === 'last_3_months') start = new Date(end.getFullYear(), end.getMonth() - 3, end.getDate() + 1);
+    if (preset === 'last_6_months') start = new Date(end.getFullYear(), end.getMonth() - 6, end.getDate() + 1);
+    if (preset === 'last_year') start = new Date(end.getFullYear() - 1, end.getMonth(), end.getDate() + 1);
+    fromInput.value = start.toISOString().split('T')[0];
+    toInput.value = end.toISOString().split('T')[0];
+  }
+
+  function bindDatePresetButtons(containerId, fromId, toId) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    container.querySelectorAll('button[data-range-preset]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        setDateRangeInputs(fromId, toId, btn.getAttribute('data-range-preset'));
+      });
+    });
+  }
+
   function showReportDetailModal(reportId) {
     if (!reportDetailModal) return;
     reportDetailTitle.textContent = 'Loading...';
@@ -862,8 +944,8 @@
       .then(function (data) {
         if (!data) return;
         reportDetailTitle.textContent = 'Report: ' + escapeHtml(data.report_id || data.id);
-        var beginDate = data.date_begin ? new Date(data.date_begin * 1000).toISOString().split('T')[0] : '';
-        var endDate = data.date_end ? new Date(data.date_end * 1000).toISOString().split('T')[0] : '';
+        var beginDate = formatDateFromEpoch(data.date_begin);
+        var endDate = formatDateFromEpoch(data.date_end);
         reportDetailSummary.innerHTML =
           '<p><strong>Organization:</strong> ' + escapeHtml(data.org_name || '') + '</p>' +
           '<p><strong>Domain:</strong> ' + escapeHtml(data.domain || '') + '</p>' +
@@ -874,10 +956,12 @@
           return;
         }
         reportDetailRecords.innerHTML =
-          '<table><thead><tr><th>Source IP</th><th>Count</th><th>Disposition</th><th>DKIM</th><th>SPF</th><th>Header From</th><th>Envelope From</th><th>Envelope To</th></tr></thead><tbody>' +
+          '<table><thead><tr><th>Source IP</th><th>Resolved name</th><th>Resolved domain</th><th>Count</th><th>Disposition</th><th>DKIM</th><th>SPF</th><th>Header From</th><th>Envelope From</th><th>Envelope To</th></tr></thead><tbody>' +
           records.map(function (r) {
             return '<tr>' +
               '<td>' + escapeHtml(r.source_ip || '') + '</td>' +
+              '<td>' + escapeHtml(r.resolved_name || '') + '</td>' +
+              '<td>' + escapeHtml(r.resolved_name_domain || '') + '</td>' +
               '<td>' + (r.count || 0) + '</td>' +
               '<td>' + escapeHtml(r.disposition || '') + '</td>' +
               '<td>' + escapeHtml(r.dkim_result || '') + '</td>' +
@@ -917,6 +1001,8 @@
           '<p><strong>Organization:</strong> ' + escapeHtml(data.org_name || '') + '</p>' +
           '<p><strong>Domain:</strong> ' + escapeHtml(data.domain || '') + '</p>' +
           '<p><strong>Source IP:</strong> ' + escapeHtml(data.source_ip || '') + '</p>' +
+          '<p><strong>Resolved name:</strong> ' + escapeHtml(data.resolved_name || '') + '</p>' +
+          '<p><strong>Resolved domain:</strong> ' + escapeHtml(data.resolved_name_domain || '') + '</p>' +
           '<p><strong>Arrival time:</strong> ' + escapeHtml(data.arrival_time || '') + '</p>' +
           '<p><strong>Header from:</strong> ' + escapeHtml(data.header_from || '') + '</p>' +
           '<p><strong>Envelope from:</strong> ' + escapeHtml(data.envelope_from || '') + '</p>' +
@@ -1007,6 +1093,7 @@
       dashboard_id: dashId,
       from: params.get('from') || '',
       to: params.get('to') || '',
+      group_by: params.get('group_by') || '',
       include_spf: params.get('include_spf') || '',
       include_dkim: params.get('include_dkim') || '',
       include_disposition: params.get('include_disposition') || '',
@@ -1021,6 +1108,7 @@
     var params = new URLSearchParams();
     if (state.from) params.set('from', state.from);
     if (state.to) params.set('to', state.to);
+    if (state.group_by) params.set('group_by', state.group_by);
     if (state.include_spf) params.set('include_spf', state.include_spf);
     if (state.include_dkim) params.set('include_dkim', state.include_dkim);
     if (state.include_disposition) params.set('include_disposition', state.include_disposition);
@@ -1035,6 +1123,7 @@
   function buildDashboardFilterBody(domainNames) {
     var fromVal = document.getElementById('dashboard-from').value || '';
     var toVal = document.getElementById('dashboard-to').value || '';
+    var groupBy = document.getElementById('dashboard-group-by').value || '';
     var includeSpf = document.getElementById('dashboard-include-spf').value;
     var includeDkim = document.getElementById('dashboard-include-dkim').value;
     var includeDisposition = document.getElementById('dashboard-include-disposition').value;
@@ -1045,6 +1134,7 @@
     var body = { domains: domainNames, page: currentDashboardPage, page_size: currentDashboardPageSize };
     if (fromVal) body.from = fromVal;
     if (toVal) body.to = toVal;
+    if (groupBy) body.group_by = groupBy;
 
     var include = {};
     if (includeSpf) include.spf_result = [includeSpf];
@@ -1073,6 +1163,7 @@
     var hashState = {
       from: body.from || '',
       to: body.to || '',
+      group_by: body.group_by || '',
       include_spf: body.include && body.include.spf_result ? body.include.spf_result[0] : '',
       include_dkim: body.include && body.include.dkim_result ? body.include.dkim_result[0] : '',
       include_disposition: body.include && body.include.disposition ? body.include.disposition[0] : '',
@@ -1110,6 +1201,10 @@
   }
 
   function renderDashboardResults(data) {
+    if (data.group_by) {
+      renderGroupedDashboardResults(data);
+      return;
+    }
     var items = data.items || [];
     var total = data.total || 0;
     var page = data.page || 1;
@@ -1124,10 +1219,13 @@
     }
 
     dashboardWidget.innerHTML = '<p>' + total + ' result' + (total === 1 ? '' : 's') + ' found.</p>' +
-      '<table><thead><tr><th>Source IP</th><th>Count</th><th>Disposition</th><th>DKIM</th><th>SPF</th><th>Domain</th><th>Org</th><th></th></tr></thead><tbody>' +
+      '<table><thead><tr><th>Record date</th><th>Source IP</th><th>Resolved name</th><th>Resolved domain</th><th>Count</th><th>Disposition</th><th>DKIM</th><th>SPF</th><th>Domain</th><th>Org</th><th></th></tr></thead><tbody>' +
       items.map(function (r) {
         return '<tr>' +
+          '<td>' + escapeHtml(r.record_date || '') + '</td>' +
           '<td>' + escapeHtml(r.source_ip || '') + '</td>' +
+          '<td>' + escapeHtml(r.resolved_name || '') + '</td>' +
+          '<td>' + escapeHtml(r.resolved_name_domain || '') + '</td>' +
           '<td>' + (r.count || 0) + '</td>' +
           '<td>' + escapeHtml(r.disposition || '') + '</td>' +
           '<td>' + escapeHtml(r.dkim_result || '') + '</td>' +
@@ -1145,6 +1243,31 @@
       });
     });
 
+    renderDashboardPagination(page, totalPages);
+  }
+
+  function renderGroupedDashboardResults(data) {
+    var items = data.items || [];
+    var total = data.total || 0;
+    var page = data.page || 1;
+    var pageSize = data.page_size || currentDashboardPageSize;
+    var totalPages = Math.ceil(total / pageSize) || 1;
+    if (!items.length) {
+      dashboardWidget.innerHTML = '<p><em>No grouped results found.</em></p>';
+      renderDashboardPagination(page, totalPages);
+      return;
+    }
+    dashboardWidget.innerHTML = '<p>' + total + ' group' + (total === 1 ? '' : 's') + ' found.</p>' +
+      '<table><thead><tr><th>Group</th><th>Total count</th><th>Rows</th><th>Reports</th><th>First record date</th></tr></thead><tbody>' +
+      items.map(function (item) {
+        return '<tr>' +
+          '<td>' + escapeHtml(item.group_label || '') + '</td>' +
+          '<td>' + (item.count || 0) + '</td>' +
+          '<td>' + (item.row_count || 0) + '</td>' +
+          '<td>' + (item.report_count || 0) + '</td>' +
+          '<td>' + escapeHtml(item.record_date || '') + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table>';
     renderDashboardPagination(page, totalPages);
   }
 
@@ -1182,6 +1305,7 @@
   function populateDashboardFiltersFromState(state) {
     if (state.from) document.getElementById('dashboard-from').value = state.from;
     if (state.to) document.getElementById('dashboard-to').value = state.to;
+    document.getElementById('dashboard-group-by').value = state.group_by || '';
     document.getElementById('dashboard-include-spf').value = state.include_spf || '';
     document.getElementById('dashboard-include-dkim').value = state.include_dkim || '';
     document.getElementById('dashboard-include-disposition').value = state.include_disposition || '';
@@ -1194,6 +1318,7 @@
   function resetDashboardFilters() {
     document.getElementById('dashboard-from').value = '';
     document.getElementById('dashboard-to').value = '';
+    document.getElementById('dashboard-group-by').value = '';
     document.getElementById('dashboard-include-spf').value = '';
     document.getElementById('dashboard-include-dkim').value = '';
     document.getElementById('dashboard-include-disposition').value = '';
@@ -1597,10 +1722,33 @@
     return fetch('/api/v1/apikeys', { credentials: 'same-origin' });
   }
 
+  function hideApikeyEditForm() {
+    var form = document.getElementById('apikey-edit-form');
+    var errEl = document.getElementById('apikey-edit-error');
+    if (form) form.classList.add('hidden');
+    if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
+  }
+
+  function openApikeyEditForm(key) {
+    var formWrap = document.getElementById('apikey-edit-form');
+    var form = document.getElementById('apikey-edit-form-inner');
+    var errEl = document.getElementById('apikey-edit-error');
+    if (!formWrap || !form || !key) return;
+    form.key_id.value = key.id || '';
+    form.nickname.value = key.nickname || '';
+    form.description.value = key.description || '';
+    document.querySelectorAll('#apikey-edit-scopes-fieldset input[name=scope]').forEach(function (checkbox) {
+      checkbox.checked = (key.scopes || []).indexOf(checkbox.value) >= 0;
+    });
+    if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
+    formWrap.classList.remove('hidden');
+  }
+
   function loadApikeysPage(keepCreatedMsg) {
     if (!apikeysListWrap) return;
     apikeysListWrap.innerHTML = '<p>Loading…</p>';
     if (!keepCreatedMsg) clearApikeyCreatedMsg();
+    hideApikeyEditForm();
     fetchApikeys()
       .then(function (r) {
         if (r.status === 403) {
@@ -1623,8 +1771,15 @@
             keys.map(function (k) {
               const domains = (k.domain_names || []).join(', ') || (k.domain_ids || []).join(', ');
               const scopes = (k.scopes || []).join(', ');
-              return '<tr><td>' + escapeHtml(k.nickname || '') + '</td><td>' + escapeHtml(k.description || '') + '</td><td>' + escapeHtml(domains) + '</td><td>' + escapeHtml(scopes) + '</td><td>' + escapeHtml(k.created_at || '') + '</td><td><button type="button" class="apikey-delete-btn" data-key-id="' + escapeHtml(k.id) + '">Revoke</button></td></tr>';
+              return '<tr><td>' + escapeHtml(k.nickname || '') + '</td><td>' + escapeHtml(k.description || '') + '</td><td>' + escapeHtml(domains) + '</td><td>' + escapeHtml(scopes) + '</td><td>' + escapeHtml(k.created_at || '') + '</td><td><button type="button" class="apikey-edit-btn" data-key-id="' + escapeHtml(k.id) + '">Edit</button> <button type="button" class="apikey-delete-btn" data-key-id="' + escapeHtml(k.id) + '">Revoke</button></td></tr>';
             }).join('') + '</tbody></table>';
+          apikeysListWrap.querySelectorAll('.apikey-edit-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              var keyId = btn.getAttribute('data-key-id');
+              var match = keys.filter(function (key) { return key.id === keyId; })[0];
+              if (match) openApikeyEditForm(match);
+            });
+          });
           apikeysListWrap.querySelectorAll('.apikey-delete-btn').forEach(function (btn) {
             btn.addEventListener('click', function () {
               var id = btn.getAttribute('data-key-id');
@@ -1701,15 +1856,17 @@
           usersListWrap.innerHTML = '<p><em>No users.</em></p>';
           return;
         }
-        usersListWrap.innerHTML = '<table><thead><tr><th>Username</th><th>Role</th><th>Domains</th><th>Actions</th></tr></thead><tbody>' +
+        usersListWrap.innerHTML = '<table><thead><tr><th>Username</th><th>Full name</th><th>Email</th><th>Role</th><th>Domains</th><th>Actions</th></tr></thead><tbody>' +
           users.map(function (u) {
             var domainCount = (u.domain_ids || []).length;
             return '<tr>' +
               '<td>' + escapeHtml(u.username || '') + '</td>' +
+              '<td>' + escapeHtml(u.full_name || '') + '</td>' +
+              '<td>' + escapeHtml(u.email || '') + '</td>' +
               '<td>' + escapeHtml(u.role || '') + '</td>' +
               '<td>' + domainCount + ' domain' + (domainCount === 1 ? '' : 's') + '</td>' +
               '<td>' +
-                '<button type="button" class="user-edit-btn" data-user-id="' + escapeHtml(u.id) + '" data-username="' + escapeHtml(u.username) + '" data-role="' + escapeHtml(u.role) + '">Edit</button> ' +
+                '<button type="button" class="user-edit-btn" data-user-id="' + escapeHtml(u.id) + '" data-username="' + escapeHtml(u.username) + '" data-full-name="' + escapeHtml(u.full_name || '') + '" data-email="' + escapeHtml(u.email || '') + '" data-role="' + escapeHtml(u.role) + '">Edit</button> ' +
                 '<button type="button" class="user-reset-btn" data-user-id="' + escapeHtml(u.id) + '" data-username="' + escapeHtml(u.username) + '">Reset password</button> ' +
                 '<button type="button" class="user-domains-btn" data-user-id="' + escapeHtml(u.id) + '" data-username="' + escapeHtml(u.username) + '" data-domain-ids="' + escapeHtml((u.domain_ids || []).join(',')) + '">Domains</button> ' +
                 (u.id !== currentUserId ? '<button type="button" class="user-delete-btn" data-user-id="' + escapeHtml(u.id) + '" data-username="' + escapeHtml(u.username) + '">Delete</button>' : '') +
@@ -1718,7 +1875,13 @@
           }).join('') + '</tbody></table>';
         usersListWrap.querySelectorAll('.user-edit-btn').forEach(function (btn) {
           btn.addEventListener('click', function () {
-            openUserEditForm(btn.getAttribute('data-user-id'), btn.getAttribute('data-username'), btn.getAttribute('data-role'));
+            openUserEditForm(
+              btn.getAttribute('data-user-id'),
+              btn.getAttribute('data-username'),
+              btn.getAttribute('data-role'),
+              btn.getAttribute('data-full-name') || '',
+              btn.getAttribute('data-email') || ''
+            );
           });
         });
         usersListWrap.querySelectorAll('.user-reset-btn').forEach(function (btn) {
@@ -1740,7 +1903,7 @@
       .catch(function () { usersListWrap.innerHTML = '<p class="error">Error loading users.</p>'; });
   }
 
-  function openUserEditForm(userId, username, role) {
+  function openUserEditForm(userId, username, role, fullName, email) {
     hideUserForms();
     var form = document.getElementById('user-edit-form');
     var inner = document.getElementById('user-edit-form-inner');
@@ -1748,6 +1911,8 @@
     if (!form || !inner) return;
     inner.user_id.value = userId;
     inner.username.value = username;
+    inner.full_name.value = fullName || '';
+    inner.email.value = email || '';
     inner.role.value = role;
     if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
     form.classList.remove('hidden');
@@ -2378,6 +2543,44 @@
         .catch(function () { if (errEl) { errEl.textContent = 'Failed to create key'; errEl.classList.remove('hidden'); } });
     });
   }
+  if (document.getElementById('apikey-edit-form-inner')) {
+    document.getElementById('apikey-edit-form-inner').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var form = e.target;
+      var errEl = document.getElementById('apikey-edit-error');
+      if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
+      var keyId = form.key_id.value;
+      var nickname = (form.nickname && form.nickname.value) ? form.nickname.value.trim() : '';
+      var description = (form.description && form.description.value) ? form.description.value : '';
+      var scopes = Array.from(document.querySelectorAll('#apikey-edit-scopes-fieldset input[name=scope]:checked')).map(function (c) { return c.value; });
+      if (!nickname) { if (errEl) { errEl.textContent = 'Nickname required'; errEl.classList.remove('hidden'); } return; }
+      if (!scopes.length) { if (errEl) { errEl.textContent = 'Select at least one scope'; errEl.classList.remove('hidden'); } return; }
+      fetch('/api/v1/apikeys/' + encodeURIComponent(keyId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+        body: JSON.stringify({ nickname: nickname, description: description, scopes: scopes }),
+        credentials: 'same-origin'
+      })
+        .then(function (r) {
+          if (r.ok) {
+            hideApikeyEditForm();
+            loadApikeysPage(true);
+            return;
+          }
+          return r.json().catch(function () { return {}; }).then(function (d) {
+            if (errEl) { errEl.textContent = d.detail || 'Failed to update key'; errEl.classList.remove('hidden'); }
+          });
+        })
+        .catch(function () {
+          if (errEl) { errEl.textContent = 'Failed to update key'; errEl.classList.remove('hidden'); }
+        });
+    });
+  }
+  if (document.getElementById('apikey-edit-cancel')) {
+    document.getElementById('apikey-edit-cancel').addEventListener('click', function () {
+      hideApikeyEditForm();
+    });
+  }
 
   if (usersLinkWrap) {
     usersLinkWrap.addEventListener('click', function (e) {
@@ -2410,19 +2613,23 @@
       if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
       if (msgEl) msgEl.classList.add('hidden');
       var username = (form.username && form.username.value) ? form.username.value.trim() : '';
+      var fullName = (form.full_name && form.full_name.value) ? form.full_name.value.trim() : '';
+      var email = (form.email && form.email.value) ? form.email.value.trim() : '';
       var role = (form.role && form.role.value) ? form.role.value : '';
       if (!username) { if (errEl) { errEl.textContent = 'Username required'; errEl.classList.remove('hidden'); } return; }
       if (!role) { if (errEl) { errEl.textContent = 'Role required'; errEl.classList.remove('hidden'); } return; }
       fetch('/api/v1/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-        body: JSON.stringify({ username: username, role: role }),
+        body: JSON.stringify({ username: username, full_name: fullName, email: email, role: role }),
         credentials: 'same-origin'
       })
         .then(function (r) {
           if (r.status === 201) {
             return r.json().then(function (data) {
               form.username.value = '';
+              if (form.full_name) form.full_name.value = '';
+              if (form.email) form.email.value = '';
               form.role.value = 'viewer';
               loadUsersPage(true);
               if (msgEl) {
@@ -2446,12 +2653,14 @@
       if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
       var userId = form.user_id.value;
       var username = (form.username && form.username.value) ? form.username.value.trim() : '';
+      var fullName = form.full_name ? form.full_name.value : '';
+      var email = form.email ? form.email.value : '';
       var role = (form.role && form.role.value) ? form.role.value : '';
       if (!username) { if (errEl) { errEl.textContent = 'Username required'; errEl.classList.remove('hidden'); } return; }
       fetch('/api/v1/users/' + encodeURIComponent(userId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-        body: JSON.stringify({ username: username, role: role }),
+        body: JSON.stringify({ username: username, full_name: fullName, email: email, role: role }),
         credentials: 'same-origin'
       })
         .then(function (r) {
@@ -2646,6 +2855,9 @@
       submitUpload();
     });
   }
+
+  bindDatePresetButtons('search-date-presets', 'search-from', 'search-to');
+  bindDatePresetButtons('dashboard-date-presets', 'dashboard-from', 'dashboard-to');
 
   window.addEventListener('hashchange', function () {
     var hash = window.location.hash;

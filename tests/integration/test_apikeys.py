@@ -176,3 +176,60 @@ def test_delete_apikey_404(apikeys_app_client) -> None:
     client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
     r = client.delete("/api/v1/apikeys/key_nonexistent999")
     assert r.status_code == 404
+
+
+def test_update_apikey_updates_metadata_and_scopes(apikeys_app_client) -> None:
+    client, password, config = apikeys_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    conn = get_connection(config.database_path)
+    cur = conn.execute("SELECT id FROM domains LIMIT 1")
+    domain_id = cur.fetchone()[0]
+    conn.close()
+    created = client.post(
+        "/api/v1/apikeys",
+        json={"nickname": "before", "description": "old", "domain_ids": [domain_id], "scopes": ["reports:ingest"]},
+    )
+    key_id = created.json()["id"]
+    updated = client.put(
+        f"/api/v1/apikeys/{key_id}",
+        json={"nickname": "after", "description": "new", "scopes": ["reports:ingest"]},
+    )
+    assert updated.status_code == 200
+    data = updated.json()["key"]
+    assert data["nickname"] == "after"
+    assert data["description"] == "new"
+    assert data["domain_ids"] == [domain_id]
+    assert data["scopes"] == ["reports:ingest"]
+
+
+def test_update_apikey_non_creator_admin_forbidden(apikeys_app_client, temp_db_path: str) -> None:
+    client, password, config = apikeys_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    conn = get_connection(temp_db_path)
+    cur = conn.execute("SELECT id FROM users WHERE username = 'admin' LIMIT 1")
+    admin_id = cur.fetchone()[0]
+    cur = conn.execute("SELECT id FROM domains WHERE name = 'example.com' LIMIT 1")
+    domain_id = cur.fetchone()[0]
+    conn.execute(
+        """INSERT INTO users (id, username, password_hash, role, created_at, created_by_user_id, last_login_at, disabled_at)
+           VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)""",
+        ("usr_admin2", "admin2", hash_password("pass"), "admin", "2026-01-01T00:00:00Z", admin_id),
+    )
+    conn.execute(
+        "INSERT INTO user_domain_assignments (user_id, domain_id, assigned_by_user_id, assigned_at) VALUES (?, ?, ?, ?)",
+        ("usr_admin2", domain_id, admin_id, "2026-01-01T00:00:00Z"),
+    )
+    conn.commit()
+    conn.close()
+    created = client.post(
+        "/api/v1/apikeys",
+        json={"nickname": "before", "description": "", "domain_ids": [domain_id], "scopes": ["reports:ingest"]},
+    )
+    key_id = created.json()["id"]
+    client.post("/api/v1/auth/logout")
+    client.post("/api/v1/auth/login", json={"username": "admin2", "password": "pass"})
+    updated = client.put(
+        f"/api/v1/apikeys/{key_id}",
+        json={"nickname": "after", "description": "new", "scopes": ["reports:ingest"]},
+    )
+    assert updated.status_code == 403

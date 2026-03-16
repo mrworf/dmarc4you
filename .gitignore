@@ -1,3 +1,6 @@
 __pycache__
 venv
-
+debug.log
+data/
+frontend-next/node_modules/
+frontend-next/.next/

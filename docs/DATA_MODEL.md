@@ -10,6 +10,8 @@ Fields:
 
 - `id`
 - `username`
+- `full_name` (optional)
+- `email` (optional)
 - `password_hash`
 - `role`
 - `created_at`
@@ -154,6 +156,8 @@ Suggested normalized fields:
 - policy domain
 - adkim / aspf / p / sp / pct
 - source IP
+- resolved hostname (optional)
+- resolved hostname domain/grouping key (optional)
 - message count
 - disposition
 - DKIM result
@@ -166,6 +170,8 @@ Store normalized and searchable fields only:
 
 - reported domain
 - source IP
+- resolved hostname (optional)
+- resolved hostname domain/grouping key (optional)
 - arrival time
 - reporting organization
 - envelope/header identifiers

@@ -1,4 +1,4 @@
-"""API key service: create_api_key, list_api_keys, delete_api_key."""
+"""API key service: create_api_key, list_api_keys, update_api_key, delete_api_key."""
 
 import secrets
 import uuid
@@ -11,6 +11,7 @@ from backend.services.domain_service import list_domains
 from backend.policies.api_key_policy import (
     can_create_api_key,
     can_list_api_keys,
+    can_update_api_key,
     can_delete_api_key,
     ROLE_SUPER_ADMIN,
 )
@@ -19,6 +20,11 @@ from backend.auth.password import hash_password, verify_password
 API_KEY_ID_PREFIX = "key_"
 SCOPE_REPORTS_INGEST = "reports:ingest"
 API_KEY_SECRET_PREFIX = "dmarc_"
+
+
+def _normalize_scopes(scopes: list[str]) -> list[str]:
+    normalized = sorted({(scope or "").strip() for scope in (scopes or []) if (scope or "").strip()})
+    return normalized
 
 
 def create_api_key(
@@ -36,6 +42,7 @@ def create_api_key(
     nickname = (nickname or "").strip()
     if not nickname:
         return None, None, "invalid"
+    scopes = _normalize_scopes(scopes)
     if not domain_ids or not scopes:
         return None, None, "invalid"
     allowed_domains = list_domains(config, current_user)
@@ -59,13 +66,64 @@ def create_api_key(
                 (key_id, domain_id),
             )
         for scope in scopes:
-            if scope:
-                conn.execute(
-                    "INSERT INTO api_key_scopes (api_key_id, scope) VALUES (?, ?)",
-                    (key_id, scope),
-                )
+            conn.execute(
+                "INSERT INTO api_key_scopes (api_key_id, scope) VALUES (?, ?)",
+                (key_id, scope),
+            )
         conn.commit()
         return key_id, raw_secret, None
+    finally:
+        conn.close()
+
+
+def update_api_key(
+    config: Config,
+    key_id: str,
+    nickname: str,
+    description: str,
+    scopes: list[str],
+    current_user: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Update API key metadata and scopes; domain bindings remain unchanged."""
+    nickname = (nickname or "").strip()
+    scopes = _normalize_scopes(scopes)
+    if not nickname or not scopes:
+        return None, "invalid"
+
+    conn = get_connection(config.database_path)
+    try:
+        cur = conn.execute(
+            "SELECT created_by_user_id FROM api_keys WHERE id = ?",
+            (key_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None, "not_found"
+        created_by_user_id = row[0]
+        if not can_update_api_key(
+            current_user.get("role") or "",
+            created_by_user_id,
+            current_user.get("id") or "",
+        ):
+            return None, "forbidden"
+
+        conn.execute(
+            "UPDATE api_keys SET nickname = ?, description = ? WHERE id = ?",
+            (nickname, description or "", key_id),
+        )
+        conn.execute("DELETE FROM api_key_scopes WHERE api_key_id = ?", (key_id,))
+        for scope in scopes:
+            conn.execute(
+                "INSERT INTO api_key_scopes (api_key_id, scope) VALUES (?, ?)",
+                (key_id, scope),
+            )
+        conn.commit()
+
+        keys, _err = list_api_keys(config, {"id": current_user.get("id"), "role": ROLE_SUPER_ADMIN})
+        for key in keys:
+            if key["id"] == key_id:
+                return key, None
+        return None, "not_found"
     finally:
         conn.close()
 

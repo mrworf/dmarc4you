@@ -11,6 +11,23 @@ DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 500
 
 ALLOWED_FILTER_FIELDS = frozenset(["spf_result", "dkim_result", "disposition", "source_ip"])
+ALLOWED_GROUP_FIELDS = {
+    "record_date": "date(ar.date_begin, 'unixepoch')",
+    "source_ip": "COALESCE(rec.source_ip, '')",
+    "resolved_name": "COALESCE(rec.resolved_name, '')",
+    "resolved_name_domain": "COALESCE(rec.resolved_name_domain, '')",
+}
+
+
+def _record_date_from_ts(timestamp: int | None) -> str | None:
+    if timestamp is None:
+        return None
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).date().isoformat()
+
+
+def _normalize_group_by(group_by: str | None) -> str | None:
+    value = (group_by or "").strip()
+    return value if value in ALLOWED_GROUP_FIELDS else None
 
 
 def _parse_ts(value: str | int | None) -> int | None:
@@ -100,6 +117,7 @@ def list_aggregate_reports(
                 "domain": r[3],
                 "date_begin": r[4],
                 "date_end": r[5],
+                "record_date": _record_date_from_ts(r[4]),
                 "created_at": r[6],
             }
             for r in rows
@@ -151,7 +169,7 @@ def get_aggregate_report_detail(
             return ("forbidden", None)
 
         cur = conn.execute(
-            """SELECT id, source_ip, count, disposition, dkim_result, spf_result,
+            """SELECT id, source_ip, resolved_name, resolved_name_domain, count, disposition, dkim_result, spf_result,
                       header_from, envelope_from, envelope_to
                FROM aggregate_report_records WHERE aggregate_report_id = ?
                ORDER BY count DESC""",
@@ -161,13 +179,15 @@ def get_aggregate_report_detail(
             {
                 "id": r[0],
                 "source_ip": r[1],
-                "count": r[2],
-                "disposition": r[3],
-                "dkim_result": r[4],
-                "spf_result": r[5],
-                "header_from": r[6],
-                "envelope_from": r[7],
-                "envelope_to": r[8],
+                "resolved_name": r[2],
+                "resolved_name_domain": r[3],
+                "count": r[4],
+                "disposition": r[5],
+                "dkim_result": r[6],
+                "spf_result": r[7],
+                "header_from": r[8],
+                "envelope_from": r[9],
+                "envelope_to": r[10],
             }
             for r in cur.fetchall()
         ]
@@ -191,7 +211,7 @@ def get_forensic_report_detail(
     conn = get_connection(config.database_path)
     try:
         cur = conn.execute(
-            """SELECT id, report_id, domain, source_ip, arrival_time, org_name,
+            """SELECT id, report_id, domain, source_ip, resolved_name, resolved_name_domain, arrival_time, org_name,
                       header_from, envelope_from, envelope_to,
                       spf_result, dkim_result, dmarc_result, failure_type, created_at
                FROM forensic_reports WHERE id = ?""",
@@ -206,16 +226,18 @@ def get_forensic_report_detail(
             "report_id": row[1],
             "domain": row[2],
             "source_ip": row[3],
-            "arrival_time": row[4],
-            "org_name": row[5],
-            "header_from": row[6],
-            "envelope_from": row[7],
-            "envelope_to": row[8],
-            "spf_result": row[9],
-            "dkim_result": row[10],
-            "dmarc_result": row[11],
-            "failure_type": row[12],
-            "created_at": row[13],
+            "resolved_name": row[4],
+            "resolved_name_domain": row[5],
+            "arrival_time": row[6],
+            "org_name": row[7],
+            "header_from": row[8],
+            "envelope_from": row[9],
+            "envelope_to": row[10],
+            "spf_result": row[11],
+            "dkim_result": row[12],
+            "dmarc_result": row[13],
+            "failure_type": row[14],
+            "created_at": row[15],
         }
 
         if report["domain"] not in allowed_domains:
@@ -278,7 +300,7 @@ def list_forensic_reports(
         total = cur.fetchone()[0]
 
         cur = conn.execute(
-            f"""SELECT id, report_id, domain, source_ip, arrival_time, org_name,
+            f"""SELECT id, report_id, domain, source_ip, resolved_name, resolved_name_domain, arrival_time, org_name,
                        header_from, envelope_from, envelope_to,
                        spf_result, dkim_result, dmarc_result, failure_type, created_at
                 FROM forensic_reports WHERE {where_sql}
@@ -293,16 +315,18 @@ def list_forensic_reports(
                 "report_id": r[1],
                 "domain": r[2],
                 "source_ip": r[3],
-                "arrival_time": r[4],
-                "org_name": r[5],
-                "header_from": r[6],
-                "envelope_from": r[7],
-                "envelope_to": r[8],
-                "spf_result": r[9],
-                "dkim_result": r[10],
-                "dmarc_result": r[11],
-                "failure_type": r[12],
-                "created_at": r[13],
+                "resolved_name": r[4],
+                "resolved_name_domain": r[5],
+                "arrival_time": r[6],
+                "org_name": r[7],
+                "header_from": r[8],
+                "envelope_from": r[9],
+                "envelope_to": r[10],
+                "spf_result": r[11],
+                "dkim_result": r[12],
+                "dmarc_result": r[13],
+                "failure_type": r[14],
+                "created_at": r[15],
             }
             for r in rows
         ]
@@ -330,6 +354,7 @@ def search_records(
     include: dict[str, list[str]] | None = None,
     exclude: dict[str, list[str]] | None = None,
     query: str | None = None,
+    group_by: str | None = None,
     page: int = 1,
     page_size: int = 50,
 ) -> dict[str, Any]:
@@ -352,6 +377,7 @@ def search_records(
     page = max(1, page)
     page_size = _cap_page_size(page_size)
     offset = (page - 1) * page_size
+    normalized_group_by = _normalize_group_by(group_by)
 
     fts_query = _escape_fts_query(query or "")
 
@@ -401,11 +427,63 @@ def search_records(
                 {fts_join}
                 WHERE {where_sql}""",
             params,
-        )
-        total = cur.fetchone()[0]
+        ) if not normalized_group_by else None
 
+        if normalized_group_by:
+            group_expr = ALLOWED_GROUP_FIELDS[normalized_group_by]
+            cur = conn.execute(
+                f"""SELECT COUNT(*) FROM (
+                        SELECT 1
+                        FROM aggregate_report_records rec
+                        JOIN aggregate_reports ar ON rec.aggregate_report_id = ar.id
+                        {fts_join}
+                        WHERE {where_sql}
+                        GROUP BY {group_expr}
+                    ) grouped""",
+                params,
+            )
+            total = cur.fetchone()[0]
+            cur = conn.execute(
+                f"""SELECT {group_expr} AS group_value,
+                           COUNT(*) AS row_count,
+                           COUNT(DISTINCT ar.id) AS report_count,
+                           SUM(rec.count) AS total_count,
+                           MIN(ar.date_begin) AS min_date_begin,
+                           MAX(ar.date_end) AS max_date_end
+                    FROM aggregate_report_records rec
+                    JOIN aggregate_reports ar ON rec.aggregate_report_id = ar.id
+                    {fts_join}
+                    WHERE {where_sql}
+                    GROUP BY {group_expr}
+                    ORDER BY min_date_begin DESC, group_value ASC
+                    LIMIT ? OFFSET ?""",
+                params + [page_size, offset],
+            )
+            items = []
+            for row in cur.fetchall():
+                group_value = row[0] or ""
+                items.append({
+                    "group_by": normalized_group_by,
+                    "group_value": group_value,
+                    "group_label": group_value or "(empty)",
+                    "row_count": row[1],
+                    "report_count": row[2],
+                    "count": row[3] or 0,
+                    "date_begin": row[4],
+                    "date_end": row[5],
+                    "record_date": group_value if normalized_group_by == "record_date" else _record_date_from_ts(row[4]),
+                })
+            return {
+                "items": items,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "group_by": normalized_group_by,
+            }
+
+        total = cur.fetchone()[0]
         cur = conn.execute(
-            f"""SELECT rec.id, rec.aggregate_report_id, rec.source_ip, rec.count,
+            f"""SELECT rec.id, rec.aggregate_report_id, rec.source_ip, rec.resolved_name, rec.resolved_name_domain, rec.count,
                        rec.disposition, rec.dkim_result, rec.spf_result,
                        rec.header_from, rec.envelope_from, rec.envelope_to,
                        ar.domain, ar.report_id, ar.org_name, ar.date_begin, ar.date_end
@@ -413,30 +491,32 @@ def search_records(
                 JOIN aggregate_reports ar ON rec.aggregate_report_id = ar.id
                 {fts_join}
                 WHERE {where_sql}
-                ORDER BY ar.date_begin DESC
+                ORDER BY ar.date_begin DESC, rec.count DESC
                 LIMIT ? OFFSET ?""",
             params + [page_size, offset],
         )
-        items = [
-            {
-                "id": r[0],
-                "aggregate_report_id": r[1],
-                "source_ip": r[2],
-                "count": r[3],
-                "disposition": r[4],
-                "dkim_result": r[5],
-                "spf_result": r[6],
-                "header_from": r[7],
-                "envelope_from": r[8],
-                "envelope_to": r[9],
-                "domain": r[10],
-                "report_id": r[11],
-                "org_name": r[12],
-                "date_begin": r[13],
-                "date_end": r[14],
-            }
-            for r in cur.fetchall()
-        ]
-        return {"items": items, "total": total, "page": page, "page_size": page_size}
+        items = []
+        for row in cur.fetchall():
+            items.append({
+                "id": row[0],
+                "aggregate_report_id": row[1],
+                "source_ip": row[2],
+                "resolved_name": row[3],
+                "resolved_name_domain": row[4],
+                "count": row[5],
+                "disposition": row[6],
+                "dkim_result": row[7],
+                "spf_result": row[8],
+                "header_from": row[9],
+                "envelope_from": row[10],
+                "envelope_to": row[11],
+                "domain": row[12],
+                "report_id": row[13],
+                "org_name": row[14],
+                "date_begin": row[15],
+                "date_end": row[16],
+                "record_date": _record_date_from_ts(row[15]),
+            })
+        return {"items": items, "total": total, "page": page, "page_size": page_size, "group_by": None}
     finally:
         conn.close()

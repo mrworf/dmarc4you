@@ -24,6 +24,8 @@ On first startup, the bootstrap admin password is printed to stderr — **save i
 
 Open `http://localhost:8000` and log in with username `admin`.
 
+For the split-origin Next.js migration workspace, see [Frontend Migration](docs/FRONTEND_MIGRATION.md) for `.env.local`, CORS, cookie, CSRF, reverse-proxy guidance, and the final legacy-SPA cutover checklist.
+
 ## Documentation
 
 | Guide | Description |
@@ -37,6 +39,8 @@ Open `http://localhost:8000` and log in with username `admin`.
 | [Data Model](docs/DATA_MODEL.md) | Database schema and relationships |
 | [Domain Lifecycle](docs/DOMAIN_LIFECYCLE.md) | Archive, restore, retention, and purge |
 | [Frontend and Dashboards](docs/FRONTEND_AND_DASHBOARDS.md) | SPA and dashboard specifications |
+| [Frontend Migration](docs/FRONTEND_MIGRATION.md) | Next.js frontend foundation, deployment, and rollout notes |
+| [Frontend Migration Slices](docs/FRONTEND_MIGRATION_SLICES.md) | Slice-by-slice plan for the Next.js migration and related scaling work |
 
 ## Features
 
@@ -88,6 +92,15 @@ auth:
 
 archive:
   storage_path: null  # Optional: path for raw artifact storage
+
+frontend:
+  public_origin: null  # Optional: http://localhost:3000 for split-origin dev
+
+api:
+  public_url: null  # Optional: backend public URL for separate frontend deployments
+
+cors:
+  allowed_origins: []  # Optional: browser origins allowed to call the API
 ```
 
 All options can be overridden with `DMARC_*` environment variables.

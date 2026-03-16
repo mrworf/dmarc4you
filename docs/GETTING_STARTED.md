@@ -156,10 +156,12 @@ After first login as the bootstrap admin:
 2. **Create API keys** — Navigate to API Keys and create a key for report ingestion:
    - Assign the key to one or more domains
    - Grant the `reports:ingest` scope
+   - Use Edit later if you need to change nickname, description, or scopes
    - Save the key secret (shown once)
 
 3. **Create users** — Navigate to Users to create accounts for your team:
    - Choose appropriate roles
+   - Optionally fill in full name and email
    - Assign domains as needed
    - Share the generated password with each user
 

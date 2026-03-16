@@ -13,11 +13,15 @@ router = APIRouter(prefix="/users", tags=["users"])
 class CreateUserBody(BaseModel):
     username: str
     role: str
+    full_name: str | None = None
+    email: str | None = None
 
 
 class UpdateUserBody(BaseModel):
     username: str | None = None
     role: str | None = None
+    full_name: str | None = None
+    email: str | None = None
 
 
 class AssignDomainsBody(BaseModel):
@@ -48,6 +52,8 @@ def create_user(
         current_user,
         body.username,
         body.role,
+        body.full_name,
+        body.email,
     )
     if result_status == "forbidden":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
@@ -92,6 +98,8 @@ def update_user(
         user_id,
         new_username=body.username,
         new_role=body.role,
+        **({"new_full_name": body.full_name} if "full_name" in body.model_fields_set else {}),
+        **({"new_email": body.email} if "email" in body.model_fields_set else {}),
     )
     if result_status == "forbidden":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")

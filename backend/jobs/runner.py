@@ -14,6 +14,7 @@ from backend.ingest.aggregate_parser import parse_aggregate
 from backend.ingest.forensic_parser import parse_forensic
 from backend.ingest.domain_check import can_ingest_for_domain
 from backend.ingest.dedupe import is_duplicate, is_forensic_duplicate
+from backend.ingest.dns_resolver import resolve_ip
 from backend.ingest.mime_parser import is_mime_message, extract_attachments
 from backend.archive.filesystem import FilesystemArchiveStorage
 
@@ -250,14 +251,17 @@ def _process_aggregate(
         )
         for rec in parsed.get("records") or []:
             rec_id = f"rec_{uuid.uuid4().hex[:12]}"
+            resolved_name, resolved_name_domain = resolve_ip(rec.get("source_ip"))
             conn.execute(
                 """INSERT INTO aggregate_report_records
-                   (id, aggregate_report_id, source_ip, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     rec_id,
                     agg_id,
                     rec.get("source_ip"),
+                    resolved_name,
+                    resolved_name_domain,
                     rec.get("count") or 0,
                     rec.get("disposition"),
                     rec.get("dkim_result"),
@@ -307,15 +311,18 @@ def _process_forensic(
     try:
         for_id = f"{FORENSIC_ID_PREFIX}{uuid.uuid4().hex[:12]}"
         created_at = datetime.now(timezone.utc).isoformat()
+        resolved_name, resolved_name_domain = resolve_ip(parsed.get("source_ip"))
         conn.execute(
             """INSERT INTO forensic_reports
-               (id, report_id, domain, source_ip, arrival_time, org_name, header_from, envelope_from, envelope_to, spf_result, dkim_result, dmarc_result, failure_type, job_item_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, report_id, domain, source_ip, resolved_name, resolved_name_domain, arrival_time, org_name, header_from, envelope_from, envelope_to, spf_result, dkim_result, dmarc_result, failure_type, job_item_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 for_id,
                 parsed["report_id"],
                 domain,
                 parsed.get("source_ip"),
+                resolved_name,
+                resolved_name_domain,
                 parsed.get("arrival_time"),
                 parsed.get("org_name") or "",
                 parsed.get("header_from"),

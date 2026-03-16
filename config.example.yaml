@@ -27,6 +27,33 @@ auth:
   # Env: DMARC_SESSION_MAX_AGE_DAYS
   session_max_age_days: 7
 
+  # Mark session and CSRF cookies Secure when running behind HTTPS.
+  # Env: DMARC_SESSION_COOKIE_SECURE
+  session_cookie_secure: false
+
+  # Session cookie SameSite policy.
+  # Env: DMARC_SESSION_COOKIE_SAME_SITE
+  session_cookie_same_site: lax
+
+  # CSRF cookie SameSite policy.
+  # Env: DMARC_CSRF_COOKIE_SAME_SITE
+  csrf_cookie_same_site: strict
+
+frontend:
+  # Optional browser origin for the separate Next.js frontend.
+  # Env: DMARC_FRONTEND_PUBLIC_ORIGIN
+  public_origin: null
+
+api:
+  # Optional public URL for the FastAPI backend when the frontend is deployed separately.
+  # Env: DMARC_API_PUBLIC_URL
+  public_url: null
+
+cors:
+  # Optional allowlist for split-origin browser access.
+  # Env: DMARC_CORS_ALLOWED_ORIGINS
+  allowed_origins: []
+
 archive:
   # Optional path to store raw report artifacts.
   # When set, ingested reports are archived to this directory.

@@ -328,6 +328,18 @@ class TestCreateUser:
         response = client.post("/api/v1/users", json={"username": "test", "role": "invalid"})
         assert response.status_code == 400
 
+    def test_create_user_with_optional_profile_fields(self, user_app_client):
+        client, password = user_app_client
+        client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+        response = client.post(
+            "/api/v1/users",
+            json={"username": "profiled", "role": "viewer", "full_name": "Profile User", "email": "profile@example.com"},
+        )
+        assert response.status_code == 201
+        data = response.json()["user"]
+        assert data["full_name"] == "Profile User"
+        assert data["email"] == "profile@example.com"
+
 
 class TestUpdateUser:
     def test_super_admin_updates_username(self, user_app_client, temp_db_path: str):
@@ -383,6 +395,36 @@ class TestUpdateUser:
         client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
         response = client.put("/api/v1/users/usr_a", json={"username": "user_b"})
         assert response.status_code == 409
+
+    def test_super_admin_updates_optional_profile_fields(self, user_app_client, temp_db_path: str):
+        client, password = user_app_client
+        _create_test_user(temp_db_path, "usr_target", "target_user", "viewer")
+        client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+        response = client.put(
+            "/api/v1/users/usr_target",
+            json={"full_name": "Target User", "email": "target@example.com"},
+        )
+        assert response.status_code == 200
+        data = response.json()["user"]
+        assert data["full_name"] == "Target User"
+        assert data["email"] == "target@example.com"
+
+    def test_super_admin_can_clear_optional_profile_fields(self, user_app_client, temp_db_path: str):
+        client, password = user_app_client
+        conn = get_connection(temp_db_path)
+        conn.execute(
+            """INSERT INTO users (id, username, password_hash, role, full_name, email, created_at, created_by_user_id, last_login_at, disabled_at)
+               VALUES (?, ?, ?, ?, ?, ?, '2026-01-01T00:00:00Z', 'usr_bootstrap', NULL, NULL)""",
+            ("usr_profiled", "profiled", hash_password("pass"), "viewer", "Profiled User", "profiled@example.com"),
+        )
+        conn.commit()
+        conn.close()
+        client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+        response = client.put("/api/v1/users/usr_profiled", json={"full_name": "", "email": ""})
+        assert response.status_code == 200
+        data = response.json()["user"]
+        assert data["full_name"] is None
+        assert data["email"] is None
 
 
 class TestResetPassword:

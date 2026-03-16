@@ -88,6 +88,23 @@ def test_me_without_session_returns_401(auth_app_client) -> None:
     assert response.status_code == 401
 
 
+def test_me_returns_optional_profile_fields(auth_app_client, temp_db_path: str) -> None:
+    client, password = auth_app_client
+    conn = get_connection(temp_db_path)
+    conn.execute(
+        "UPDATE users SET full_name = ?, email = ? WHERE username = 'admin'",
+        ("Bootstrap Admin", "admin@example.com"),
+    )
+    conn.commit()
+    conn.close()
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["user"]["full_name"] == "Bootstrap Admin"
+    assert data["user"]["email"] == "admin@example.com"
+
+
 def test_audit_has_login_event(auth_app_client, temp_db_path: str) -> None:
     client, password = auth_app_client
     client.post("/api/v1/auth/login", json={"username": "admin", "password": password})

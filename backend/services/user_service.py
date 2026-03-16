@@ -21,6 +21,7 @@ from backend.policies.user_policy import (
 )
 
 USER_ID_PREFIX = "usr_"
+_UNSET = object()
 
 
 def _write_audit_event(
@@ -73,7 +74,7 @@ def list_users(config: Config, actor: dict) -> tuple[str, list[dict[str, Any]]]:
     try:
         if actor.get("role") == ROLE_SUPER_ADMIN:
             cur = conn.execute(
-                """SELECT id, username, role, created_at, created_by_user_id
+                """SELECT id, username, role, full_name, email, created_at, created_by_user_id
                    FROM users WHERE disabled_at IS NULL ORDER BY username"""
             )
             rows = cur.fetchall()
@@ -83,7 +84,7 @@ def list_users(config: Config, actor: dict) -> tuple[str, list[dict[str, Any]]]:
                 return "ok", []
             placeholders = ",".join("?" for _ in actor_domains)
             cur = conn.execute(
-                f"""SELECT DISTINCT u.id, u.username, u.role, u.created_at, u.created_by_user_id
+                f"""SELECT DISTINCT u.id, u.username, u.role, u.full_name, u.email, u.created_at, u.created_by_user_id
                     FROM users u
                     INNER JOIN user_domain_assignments uda ON uda.user_id = u.id
                     WHERE u.disabled_at IS NULL AND uda.domain_id IN ({placeholders})
@@ -104,8 +105,10 @@ def list_users(config: Config, actor: dict) -> tuple[str, list[dict[str, Any]]]:
                 "id": user_id,
                 "username": r[1],
                 "role": r[2],
-                "created_at": r[3],
-                "created_by_user_id": r[4],
+                "full_name": r[3],
+                "email": r[4],
+                "created_at": r[5],
+                "created_by_user_id": r[6],
                 "domain_ids": domain_ids,
             })
         return "ok", users
@@ -118,7 +121,7 @@ def get_user_by_id(config: Config, user_id: str) -> dict[str, Any] | None:
     conn = get_connection(config.database_path)
     try:
         cur = conn.execute(
-            "SELECT id, username, role, created_at, created_by_user_id FROM users WHERE id = ? AND disabled_at IS NULL",
+            "SELECT id, username, role, full_name, email, created_at, created_by_user_id FROM users WHERE id = ? AND disabled_at IS NULL",
             (user_id,),
         )
         row = cur.fetchone()
@@ -128,8 +131,10 @@ def get_user_by_id(config: Config, user_id: str) -> dict[str, Any] | None:
             "id": row[0],
             "username": row[1],
             "role": row[2],
-            "created_at": row[3],
-            "created_by_user_id": row[4],
+            "full_name": row[3],
+            "email": row[4],
+            "created_at": row[5],
+            "created_by_user_id": row[6],
         }
     finally:
         conn.close()
@@ -140,6 +145,8 @@ def create_user(
     actor: dict,
     username: str,
     role: str,
+    full_name: str | None = None,
+    email: str | None = None,
 ) -> tuple[str, dict[str, Any] | None]:
     """
     Create a new user with random password.
@@ -149,6 +156,8 @@ def create_user(
         return "forbidden", None
 
     username = (username or "").strip()
+    full_name = (full_name or "").strip() or None
+    email = (email or "").strip() or None
     if not username:
         return "invalid", None
 
@@ -170,9 +179,9 @@ def create_user(
         created_at = datetime.now(timezone.utc).isoformat()
 
         conn.execute(
-            """INSERT INTO users (id, username, password_hash, role, created_at, created_by_user_id, last_login_at, disabled_at)
-               VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)""",
-            (user_id, username, password_hash_val, role, created_at, actor["id"]),
+            """INSERT INTO users (id, username, password_hash, role, full_name, email, created_at, created_by_user_id, last_login_at, disabled_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)""",
+            (user_id, username, password_hash_val, role, full_name, email, created_at, actor["id"]),
         )
         conn.commit()
 
@@ -189,6 +198,8 @@ def create_user(
                 "id": user_id,
                 "username": username,
                 "role": role,
+                "full_name": full_name,
+                "email": email,
                 "created_at": created_at,
                 "created_by_user_id": actor["id"],
                 "domain_ids": [],
@@ -205,6 +216,8 @@ def update_user(
     target_user_id: str,
     new_username: str | None = None,
     new_role: str | None = None,
+    new_full_name: str | object = _UNSET,
+    new_email: str | object = _UNSET,
 ) -> tuple[str, dict[str, Any] | None]:
     """
     Update user username and/or role.
@@ -224,6 +237,10 @@ def update_user(
     new_username = (new_username or "").strip() if new_username is not None else None
     if new_username is not None and not new_username:
         return "invalid", None
+    if new_full_name is not _UNSET:
+        new_full_name = (new_full_name or "").strip() or None
+    if new_email is not _UNSET:
+        new_email = (new_email or "").strip() or None
 
     if new_role is not None and new_role not in ROLE_HIERARCHY:
         return "invalid", None
@@ -247,6 +264,14 @@ def update_user(
             updates.append("role = ?")
             params.append(new_role)
             summary_parts.append(f"role {target['role']} -> {new_role}")
+        if new_full_name is not _UNSET and new_full_name != target["full_name"]:
+            updates.append("full_name = ?")
+            params.append(new_full_name)
+            summary_parts.append("full_name updated")
+        if new_email is not _UNSET and new_email != target["email"]:
+            updates.append("email = ?")
+            params.append(new_email)
+            summary_parts.append("email updated")
 
         if not updates:
             return "ok", target

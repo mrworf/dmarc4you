@@ -32,6 +32,7 @@ class SearchRequest(BaseModel):
     include: dict[str, list[str]] | None = None
     exclude: dict[str, list[str]] | None = None
     query: str = ""
+    group_by: str | None = None
     page: int = 1
     page_size: int = 50
 
@@ -183,6 +184,7 @@ def post_search(
         include=body.include,
         exclude=body.exclude,
         query=body.query or None,
+        group_by=body.group_by,
         page=body.page,
         page_size=body.page_size,
     )

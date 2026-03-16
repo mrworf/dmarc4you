@@ -84,9 +84,28 @@
       <h1 id="dashboard-detail-title"></h1>
       <p><a href="#" id="link-dashboards-back">← Dashboards</a> · <a href="#" id="link-export-dashboard">Export YAML</a> <span id="dashboard-detail-actions"></span> <span id="dashboard-export-error" class="error hidden"></span></p>
       <form id="dashboard-filter-form">
+        <fieldset>
+          <legend>Date presets</legend>
+          <div id="dashboard-date-presets">
+            <button type="button" data-range-preset="last_24_hours">Last 24hrs</button>
+            <button type="button" data-range-preset="last_7_days">Last 7 days</button>
+            <button type="button" data-range-preset="last_30_days">Last 30 days</button>
+            <button type="button" data-range-preset="last_month">Last month</button>
+            <button type="button" data-range-preset="last_3_months">3 months</button>
+            <button type="button" data-range-preset="last_6_months">6 months</button>
+            <button type="button" data-range-preset="last_year">Year</button>
+          </div>
+        </fieldset>
         <div class="search-time-row">
           <label>From <input type="date" name="from" id="dashboard-from" /></label>
           <label>To <input type="date" name="to" id="dashboard-to" /></label>
+          <label>Group by <select name="group_by" id="dashboard-group-by">
+            <option value="">No grouping</option>
+            <option value="record_date">Record date</option>
+            <option value="source_ip">Source IP</option>
+            <option value="resolved_name">Resolved name</option>
+            <option value="resolved_name_domain">Resolved name domain</option>
+          </select></label>
         </div>
         <fieldset><legend>Include filters</legend>
           <label>SPF result <select name="include_spf" id="dashboard-include-spf">
@@ -213,6 +232,18 @@
         <p id="apikey-form-error" class="error hidden"></p>
         <p id="apikey-created-msg" class="hidden"></p>
       </div>
+      <div id="apikey-edit-form" class="hidden">
+        <h2>Edit API key</h2>
+        <form id="apikey-edit-form-inner">
+          <input type="hidden" name="key_id" />
+          <label>Nickname <input type="text" name="nickname" required /></label>
+          <label>Description <input type="text" name="description" placeholder="Optional" /></label>
+          <fieldset id="apikey-edit-scopes-fieldset"><legend>Scopes</legend><label><input type="checkbox" name="scope" value="reports:ingest" /> reports:ingest</label></fieldset>
+          <button type="submit">Save</button>
+          <button type="button" id="apikey-edit-cancel">Cancel</button>
+        </form>
+        <p id="apikey-edit-error" class="error hidden"></p>
+      </div>
       <p><a href="#" id="logout-link-apikeys">Log out</a></p>
     </div>
     <div id="search-view" class="hidden">
@@ -227,6 +258,18 @@
         <div id="search-query-row">
           <label>Free-text query <input type="text" name="query" id="search-query" placeholder="e.g. google fail" /></label>
         </div>
+        <fieldset>
+          <legend>Date presets</legend>
+          <div id="search-date-presets">
+            <button type="button" data-range-preset="last_24_hours">Last 24hrs</button>
+            <button type="button" data-range-preset="last_7_days">Last 7 days</button>
+            <button type="button" data-range-preset="last_30_days">Last 30 days</button>
+            <button type="button" data-range-preset="last_month">Last month</button>
+            <button type="button" data-range-preset="last_3_months">3 months</button>
+            <button type="button" data-range-preset="last_6_months">6 months</button>
+            <button type="button" data-range-preset="last_year">Year</button>
+          </div>
+        </fieldset>
         <div class="search-time-row">
           <label>From <input type="date" name="from" id="search-from" /></label>
           <label>To <input type="date" name="to" id="search-to" /></label>
@@ -301,6 +344,8 @@
         <h2>Create user</h2>
         <form id="user-form">
           <label>Username <input type="text" name="username" placeholder="e.g. alice" required /></label>
+          <label>Full name <input type="text" name="full_name" placeholder="Optional" /></label>
+          <label>Email <input type="email" name="email" placeholder="Optional" /></label>
           <label>Role <select name="role" required>
             <option value="viewer">viewer</option>
             <option value="manager">manager</option>
@@ -317,6 +362,8 @@
         <form id="user-edit-form-inner">
           <input type="hidden" name="user_id" />
           <label>Username <input type="text" name="username" required /></label>
+          <label>Full name <input type="text" name="full_name" placeholder="Optional" /></label>
+          <label>Email <input type="email" name="email" placeholder="Optional" /></label>
           <label>Role <select name="role" required>
             <option value="viewer">viewer</option>
             <option value="manager">manager</option>
@@ -348,7 +395,7 @@
         <label>Paste XML content:</label>
         <textarea id="upload-textarea" rows="8" placeholder="<?xml version=&quot;1.0&quot;?>&#10;<feedback>...</feedback>"></textarea>
         <p>— or —</p>
-        <label>Select file: <input type="file" id="upload-file" accept=".xml,.gz" /></label>
+        <label>Select file(s): <input type="file" id="upload-file" accept=".xml,.gz,.eml,.mime" multiple /></label>
         <p><button type="submit">Upload</button></p>
       </form>
       <p id="upload-form-error" class="error hidden"></p>

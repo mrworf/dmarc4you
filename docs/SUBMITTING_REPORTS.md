@@ -192,7 +192,7 @@ Upload reports directly through the web interface.
 2. Navigate to **Upload** (`/app/upload`)
 3. Either:
    - **Paste** XML content into the text area, or
-   - **Select a file** using the file picker (`.xml`, `.xml.gz`, `.eml`)
+   - **Select one or more files** using the file picker (`.xml`, `.xml.gz`, `.eml`)
 4. Click **Submit**
 5. On success, a link to the ingest job appears
 
@@ -205,7 +205,8 @@ Upload reports directly through the web interface.
 ### Limitations
 
 - Browser session authentication only (no API key)
-- Single file per submission
+- One or more files per submission
+- Pasted XML and file uploads are mutually exclusive in a single submit action
 - File size limited by browser/server configuration
 
 ## Checking Job Results

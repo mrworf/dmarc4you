@@ -236,6 +236,7 @@ def test_post_search_returns_records(search_records_client) -> None:
     assert "total" in data
     assert data["total"] == 2
     assert len(data["items"]) == 2
+    assert data["items"][0]["record_date"] == "2025-01-01"
 
 
 def test_post_search_include_spf_fail(search_records_client) -> None:
@@ -255,6 +256,45 @@ def test_post_search_exclude_disposition_none(search_records_client) -> None:
     data = r.json()
     assert data["total"] == 1
     assert data["items"][0]["disposition"] == "reject"
+
+
+def test_post_search_returns_resolved_name_fields(search_records_client, temp_db_path: str) -> None:
+    client, _ = search_records_client
+    conn = get_connection(temp_db_path)
+    conn.execute(
+        """UPDATE aggregate_report_records
+           SET resolved_name = ?, resolved_name_domain = ?
+           WHERE source_ip = ?""",
+        ("mail.example.net", "example.net", "192.0.2.1"),
+    )
+    conn.commit()
+    conn.close()
+    r = client.post("/api/v1/search", json={})
+    assert r.status_code == 200
+    item = [row for row in r.json()["items"] if row["source_ip"] == "192.0.2.1"][0]
+    assert item["resolved_name"] == "mail.example.net"
+    assert item["resolved_name_domain"] == "example.net"
+
+
+def test_post_search_groups_by_source_ip(search_records_client) -> None:
+    client, _ = search_records_client
+    r = client.post("/api/v1/search", json={"group_by": "source_ip"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["group_by"] == "source_ip"
+    assert data["total"] == 2
+    values = {item["group_value"] for item in data["items"]}
+    assert values == {"192.0.2.1", "198.51.100.5"}
+
+
+def test_post_search_groups_by_record_date(search_records_client) -> None:
+    client, _ = search_records_client
+    r = client.post("/api/v1/search", json={"group_by": "record_date"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["group_by"] == "record_date"
+    assert data["total"] == 1
+    assert data["items"][0]["group_value"] == "2025-01-01"
 
 
 def test_post_search_domain_scoping(search_records_client, temp_db_path: str) -> None:
@@ -419,10 +459,34 @@ def test_get_forensic_detail_returns_report(forensic_client, temp_db_path: str) 
     assert data["report_id"] == "ruf-example-20260301"
     assert data["org_name"] == "Forensic Org"
     assert data["source_ip"] == "192.0.2.99"
+    assert "resolved_name" in data
+    assert "resolved_name_domain" in data
     assert data["spf_result"] == "fail"
     assert data["dkim_result"] == "fail"
     assert data["dmarc_result"] == "fail"
     assert data["failure_type"] == "spf"
+
+
+def test_forensic_list_and_detail_return_resolved_name_fields(forensic_client, temp_db_path: str) -> None:
+    client, _ = forensic_client
+    conn = get_connection(temp_db_path)
+    conn.execute(
+        "UPDATE forensic_reports SET resolved_name = ?, resolved_name_domain = ?",
+        ("mail.example.net", "example.net"),
+    )
+    conn.commit()
+    cur = conn.execute("SELECT id FROM forensic_reports LIMIT 1")
+    report_id = cur.fetchone()[0]
+    conn.close()
+    list_resp = client.get("/api/v1/reports/forensic")
+    assert list_resp.status_code == 200
+    assert list_resp.json()["items"][0]["resolved_name"] == "mail.example.net"
+    assert list_resp.json()["items"][0]["resolved_name_domain"] == "example.net"
+    detail_resp = client.get(f"/api/v1/reports/forensic/{report_id}")
+    assert detail_resp.status_code == 200
+    detail = detail_resp.json()
+    assert detail["resolved_name"] == "mail.example.net"
+    assert detail["resolved_name_domain"] == "example.net"
     assert data["header_from"] == "bad@example.com"
 
 

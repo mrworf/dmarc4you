@@ -34,7 +34,9 @@ Response:
   "user": {
     "id": "usr_123",
     "username": "admin",
-    "role": "super-admin"
+    "role": "super-admin",
+    "full_name": null,
+    "email": null
   }
 }
 ```
@@ -175,11 +177,14 @@ Request example:
     "disposition": ["none"]
   },
   "query": "google dkim fail",
+  "group_by": "source_ip",
   "page": 1,
   "page_size": 50,
   "sort": [{"field": "date", "direction": "desc"}]
 }
 ```
+
+`group_by` is optional and supported for aggregate search on `record_date`, `source_ip`, `resolved_name`, and `resolved_name_domain`.
 
 ### `GET /api/v1/reports/aggregate`
 
@@ -197,7 +202,7 @@ Response:
 ```json
 {
   "items": [
-    { "id": "agg_xxx", "report_id": "...", "org_name": "...", "domain": "example.com", "date_begin": 1735689600, "date_end": 1735776000, "created_at": "..." }
+    { "id": "agg_xxx", "report_id": "...", "org_name": "...", "domain": "example.com", "date_begin": 1735689600, "date_end": 1735776000, "record_date": "2025-01-01", "created_at": "..." }
   ],
   "total": 1,
   "page": 1,
@@ -224,6 +229,8 @@ Response (200):
     {
       "id": "rec_xxx",
       "source_ip": "192.0.2.1",
+      "resolved_name": "mail.example.net",
+      "resolved_name_domain": "example.net",
       "count": 10,
       "disposition": "none",
       "dkim_result": "pass",
@@ -259,6 +266,8 @@ Response:
       "report_id": "...",
       "domain": "example.com",
       "source_ip": "192.0.2.1",
+      "resolved_name": "mail.example.net",
+      "resolved_name_domain": "example.net",
       "arrival_time": "2026-03-01T12:00:00Z",
       "org_name": "...",
       "header_from": "...",
@@ -536,6 +545,8 @@ Response:
     {
       "id": "usr_xxx",
       "username": "example_user",
+      "full_name": "Example User",
+      "email": "user@example.com",
       "role": "viewer",
       "created_at": "2026-01-01T00:00:00Z",
       "created_by_user_id": "usr_yyy",
@@ -557,6 +568,8 @@ Request:
 ```json
 {
   "username": "new_user",
+  "full_name": "New User",
+  "email": "new.user@example.com",
   "role": "viewer"
 }
 ```
@@ -568,6 +581,8 @@ Response (201):
   "user": {
     "id": "usr_xxx",
     "username": "new_user",
+    "full_name": "New User",
+    "email": "new.user@example.com",
     "role": "viewer",
     "created_at": "2026-01-01T00:00:00Z",
     "created_by_user_id": "usr_yyy",
@@ -599,6 +614,8 @@ Request:
 ```json
 {
   "username": "new_username",
+  "full_name": "Updated User",
+  "email": "updated.user@example.com",
   "role": "manager"
 }
 ```
@@ -670,7 +687,7 @@ Response: `{ "user": { ... } }` with updated `domain_ids`. 403 if not allowed; 4
 
 ## API key endpoints
 
-**Admin and super-admin only** for create/list/delete. Session required; 401 if not authenticated; 403 for other roles.
+**Admin and super-admin only** for create/list/update/delete. Session required; 401 if not authenticated; 403 for other roles.
 
 ### `GET /api/v1/apikeys`
 
@@ -679,6 +696,10 @@ List API keys (no raw secret). Super-admin sees all keys; admin sees only keys t
 ### `POST /api/v1/apikeys`
 
 Create an API key. Request body: `{ "nickname": "...", "description": "...?", "domain_ids": ["dom_xxx", ...], "scopes": ["reports:ingest", ...] }`. `domain_ids` must be a subset of the caller's allowed domains. Response (201): `{ "id", "nickname", "key": "<raw_secret>" }`. The raw `key` is returned only in this response; store it securely. 400 if nickname empty or no domain_ids or no scopes; 403 if role not allowed or domain_ids not allowed.
+
+### `PUT /api/v1/apikeys/{key_id}`
+
+Update an API key's `nickname`, `description`, and `scopes`. Domain bindings remain immutable after creation. Creator or super-admin only. Response: `{ "key": { "id", "nickname", "description", "domain_ids", "domain_names", "scopes", "created_at" } }`. 400 if nickname empty or no scopes; 403 if not allowed; 404 if key not found.
 
 ### `DELETE /api/v1/apikeys/{key_id}`
 

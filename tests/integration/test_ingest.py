@@ -116,6 +116,59 @@ def test_runner_accepts_valid_aggregate_and_persists(ingest_app_client) -> None:
         conn.close()
 
 
+def test_runner_stores_reverse_dns_for_aggregate_records(ingest_app_client, monkeypatch) -> None:
+    client, password, config = ingest_app_client
+    aggregate_with_record = MINIMAL_AGGREGATE_XML.replace(
+        "</feedback>",
+        """
+  <record>
+    <row>
+      <source_ip>192.0.2.1</source_ip>
+      <count>5</count>
+      <policy_evaluated>
+        <disposition>none</disposition>
+        <dkim>pass</dkim>
+        <spf>pass</spf>
+      </policy_evaluated>
+    </row>
+    <identifiers><header_from>example.com</header_from></identifiers>
+  </record>
+</feedback>""",
+    )
+    monkeypatch.setattr("backend.jobs.runner.resolve_ip", lambda ip: ("mail.example.net", "example.net"))
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    client.post(
+        "/api/v1/reports/ingest",
+        json={"source": "test", "reports": [{"content_type": "application/xml", "content": aggregate_with_record}]},
+    )
+    run_one_job(config)
+    conn = get_connection(config.database_path)
+    try:
+        cur = conn.execute("SELECT source_ip, resolved_name, resolved_name_domain FROM aggregate_report_records")
+        row = cur.fetchone()
+        assert row == ("192.0.2.1", "mail.example.net", "example.net")
+    finally:
+        conn.close()
+
+
+def test_runner_keeps_ingest_when_reverse_dns_fails(ingest_app_client, monkeypatch) -> None:
+    client, password, config = ingest_app_client
+    monkeypatch.setattr("backend.jobs.runner.resolve_ip", lambda ip: (None, None))
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    client.post(
+        "/api/v1/reports/ingest",
+        json={"source": "test", "reports": [{"content_type": "application/xml", "content": MINIMAL_FORENSIC_XML}]},
+    )
+    run_one_job(config)
+    conn = get_connection(config.database_path)
+    try:
+        cur = conn.execute("SELECT source_ip, resolved_name, resolved_name_domain FROM forensic_reports")
+        row = cur.fetchone()
+        assert row == ("192.0.2.99", None, None)
+    finally:
+        conn.close()
+
+
 def test_duplicate_report_id_domain_yields_duplicate(ingest_app_client) -> None:
     client, password, config = ingest_app_client
     client.post("/api/v1/auth/login", json={"username": "admin", "password": password})

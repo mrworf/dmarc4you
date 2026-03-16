@@ -31,6 +31,8 @@ Dashboard and search URLs should be bookmarkable and may include:
 - dashboard id
 - selected domains
 - from/to timespan
+- date preset-derived from/to values
+- aggregate grouping mode for dashboard detail views
 - widget focus or drill-down state
 - include/exclude filters
 - sort order and pagination when useful
@@ -64,8 +66,20 @@ If the owner would become invalid, the UI must require ownership resolution befo
 ## Viewer behavior
 
 - may interact with filters temporarily
+- may switch temporary aggregate grouping on dashboard detail pages
 - may use bookmarks
 - may not save dashboard settings or personal derived views
+
+## Aggregate dashboard filtering
+
+Dashboard detail pages support temporary aggregate grouping by:
+
+- record date
+- source IP
+- resolved hostname
+- resolved hostname domain
+
+Grouping is URL-state only in v1 and is not saved with the dashboard definition.
 
 ## Manager behavior
 

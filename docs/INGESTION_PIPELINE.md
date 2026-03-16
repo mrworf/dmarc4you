@@ -49,10 +49,11 @@ For each job item:
 9. verify domain is configured and not archived
 10. verify actor/API key is authorized for that domain
 11. dedupe
-12. archive raw artifact if enabled
-13. persist normalized data
-14. persist per-item outcome
-15. write audit/log events as needed
+12. perform best-effort reverse DNS enrichment for source IPs
+13. archive raw artifact if enabled
+14. persist normalized data
+15. persist per-item outcome
+16. write audit/log events as needed
 
 ## Per-report outcome rules
 
@@ -71,6 +72,12 @@ Common reasons:
 - malformed payload
 - unsupported encoding
 - duplicate report
+
+## Reverse DNS enrichment
+
+- Ingest attempts reverse DNS resolution for aggregate and forensic source IPs
+- Lookup failure or timeout never rejects the report
+- Normalized rows keep the original IP and store nullable `resolved_name` / `resolved_name_domain`
 
 ## Partial acceptance
 
