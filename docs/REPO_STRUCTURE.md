@@ -36,6 +36,10 @@
 │   │   ├── widgets/
 │   │   └── components/
 │   └── assets/
+├── frontend-next/
+│   ├── app/
+│   ├── components/
+│   └── lib/
 ├── cli/
 │   ├── dmarc_submit.py
 │   └── dmarc_admin.py
@@ -79,6 +83,10 @@ Interfaces and SQLite implementation. No business rules here.
 
 ### `frontend/`
 Plain JS SPA code. Keep route-level views separate from reusable widgets/components.
+
+### `frontend-next/`
+Next.js migration workspace. Keep API access, auth bootstrap, route guards, and URL-state helpers centralized so feature slices can move over incrementally.
+Browser smoke coverage for migrated routes lives under `frontend-next/e2e/`.
 
 ### `cli/`
 - `dmarc_submit.py`: API-key-authenticated report submission

@@ -6,7 +6,32 @@ import os
 from backend.config.schema import Config, LogLevel
 
 _LOG_LEVELS: set[str] = {"VERBOSE", "INFO", "WARN", "ERROR"}
+_SAME_SITE_POLICIES: set[str] = {"lax", "strict", "none"}
 _DEFAULT_DB = "data/dmarc.db"
+
+
+def _parse_bool(value: object, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _parse_origins(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        parts = [part.strip() for part in value.split(",")]
+        return tuple(part for part in parts if part)
+    if isinstance(value, (list, tuple)):
+        return tuple(str(part).strip() for part in value if str(part).strip())
+    return ()
 
 
 def _resolve_config_path(config_path: str | Path | None) -> Path | None:
@@ -38,6 +63,38 @@ def load_config(config_path: str | Path | None = None) -> Config:
     session_secret = auth.get("session_secret") or os.environ.get("DMARC_SESSION_SECRET") or "change-me-in-production"
     session_cookie_name = auth.get("session_cookie_name") or os.environ.get("DMARC_SESSION_COOKIE") or "dmarc_session"
     session_max_age_days = int(auth.get("session_max_age_days") or os.environ.get("DMARC_SESSION_MAX_AGE_DAYS") or 7)
+    session_cookie_secure = _parse_bool(
+        auth.get("session_cookie_secure") or os.environ.get("DMARC_SESSION_COOKIE_SECURE"),
+        False,
+    )
+    session_cookie_same_site = str(
+        auth.get("session_cookie_same_site") or os.environ.get("DMARC_SESSION_COOKIE_SAME_SITE") or "lax"
+    ).lower()
+    csrf_cookie_same_site = str(
+        auth.get("csrf_cookie_same_site") or os.environ.get("DMARC_CSRF_COOKIE_SAME_SITE") or "strict"
+    ).lower()
+    if session_cookie_same_site not in _SAME_SITE_POLICIES:
+        raise ValueError(
+            f"Invalid session_cookie_same_site: {session_cookie_same_site}. "
+            f"Must be one of {sorted(_SAME_SITE_POLICIES)}"
+        )
+    if csrf_cookie_same_site not in _SAME_SITE_POLICIES:
+        raise ValueError(
+            f"Invalid csrf_cookie_same_site: {csrf_cookie_same_site}. "
+            f"Must be one of {sorted(_SAME_SITE_POLICIES)}"
+        )
+
+    frontend_public_origin = (
+        data.get("frontend", {}).get("public_origin")
+        or os.environ.get("DMARC_FRONTEND_PUBLIC_ORIGIN")
+        or None
+    )
+    api_public_url = data.get("api", {}).get("public_url") or os.environ.get("DMARC_API_PUBLIC_URL") or None
+    cors_allowed_origins = _parse_origins(
+        data.get("cors", {}).get("allowed_origins") or os.environ.get("DMARC_CORS_ALLOWED_ORIGINS")
+    )
+    if frontend_public_origin and frontend_public_origin not in cors_allowed_origins:
+        cors_allowed_origins = cors_allowed_origins + (frontend_public_origin,)
 
     archive_storage_path = data.get("archive", {}).get("storage_path") or os.environ.get("DMARC_ARCHIVE_STORAGE_PATH") or None
 
@@ -47,5 +104,11 @@ def load_config(config_path: str | Path | None = None) -> Config:
         session_secret=str(session_secret),
         session_cookie_name=str(session_cookie_name),
         session_max_age_days=session_max_age_days,
+        session_cookie_secure=session_cookie_secure,
+        session_cookie_same_site=session_cookie_same_site,  # type: ignore[arg-type]
+        csrf_cookie_same_site=csrf_cookie_same_site,  # type: ignore[arg-type]
+        frontend_public_origin=str(frontend_public_origin) if frontend_public_origin else None,
+        api_public_url=str(api_public_url) if api_public_url else None,
+        cors_allowed_origins=cors_allowed_origins,
         archive_storage_path=archive_storage_path,
     )

@@ -4,3 +4,6 @@ debug.log
 data/
 frontend-next/node_modules/
 frontend-next/.next/
+plans.txt
+pw.txt
+data/dmarc.db

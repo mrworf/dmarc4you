@@ -4,18 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from backend.api.errors import api_http_exception
 from backend.config.schema import Config
 from backend.api.v1.deps import get_config, get_current_user
+from backend.api.v1.schemas.common import ErrorResponse
+from backend.api.v1.schemas.dashboards import (
+    CreateDashboardBody,
+    DashboardSummary,
+    DashboardsListResponse,
+)
 from backend.services import dashboard_service
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
-
-
-class CreateDashboardBody(BaseModel):
-    name: str = ""
-    description: str = ""
-    domain_ids: list[str] = []
-
 
 class UpdateDashboardBody(BaseModel):
     name: str | None = None
@@ -41,7 +41,16 @@ class ValidateUpdateBody(BaseModel):
     domain_ids: list[str] = []
 
 
-@router.post("", status_code=201)
+ERROR_RESPONSES = {
+    400: {"model": ErrorResponse},
+    401: {"model": ErrorResponse},
+    403: {"model": ErrorResponse},
+    404: {"model": ErrorResponse},
+    422: {"model": ErrorResponse},
+}
+
+
+@router.post("", status_code=201, response_model=DashboardSummary, responses=ERROR_RESPONSES)
 def post_dashboard(
     body: CreateDashboardBody,
     current_user: dict = Depends(get_current_user),
@@ -57,15 +66,19 @@ def post_dashboard(
         current_user,
     )
     if status_code == "forbidden":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        raise api_http_exception(status.HTTP_403_FORBIDDEN, "forbidden", "Forbidden")
     if status_code == "invalid":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="name required and at least one domain")
+        raise api_http_exception(
+            status.HTTP_400_BAD_REQUEST,
+            "invalid_dashboard",
+            "name required and at least one domain",
+        )
     if not dashboard:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid")
+        raise api_http_exception(status.HTTP_400_BAD_REQUEST, "invalid_dashboard", "Invalid")
     return dashboard
 
 
-@router.get("")
+@router.get("", response_model=DashboardsListResponse, responses=ERROR_RESPONSES)
 def list_dashboards(
     current_user: dict = Depends(get_current_user),
     config: Config = Depends(get_config),

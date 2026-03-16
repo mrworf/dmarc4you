@@ -68,6 +68,8 @@ def test_get_dashboards_list_only_owned(dashboard_app_client) -> None:
     r = client.get("/api/v1/dashboards")
     assert r.status_code == 200
     assert len(r.json()["dashboards"]) >= 1
+    first = r.json()["dashboards"][0]
+    assert set(first.keys()) >= {"id", "name", "description", "owner_user_id", "created_at", "updated_at", "domain_ids"}
 
 
 def test_get_dashboard_by_id_200_with_domain_ids(dashboard_app_client) -> None:
@@ -83,6 +85,17 @@ def test_get_dashboard_by_id_200_with_domain_ids(dashboard_app_client) -> None:
     assert r.status_code == 200
     assert r.json()["domain_ids"] == [domain_id]
     assert r.json()["domain_names"] == ["example.com"]
+
+
+def test_dashboards_openapi_contract_includes_list_and_create_models() -> None:
+    schema = app.openapi()
+    schemas = schema["components"]["schemas"]
+    assert "DashboardSummary" in schemas
+    assert "DashboardsListResponse" in schemas
+    list_get = schema["paths"]["/api/v1/dashboards"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    create_post = schema["paths"]["/api/v1/dashboards"]["post"]["responses"]["201"]["content"]["application/json"]["schema"]
+    assert list_get["$ref"] == "#/components/schemas/DashboardsListResponse"
+    assert create_post["$ref"] == "#/components/schemas/DashboardSummary"
 
 
 def test_get_dashboard_403_when_user_lacks_domain_access(dashboard_app_client, temp_db_path: str) -> None:

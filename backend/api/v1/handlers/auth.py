@@ -1,8 +1,10 @@
 """Auth endpoints: POST login, POST logout, GET me."""
 
 from fastapi import APIRouter, Depends, Request, Response, HTTPException, status
-from pydantic import BaseModel
 
+from backend.api.errors import api_http_exception
+from backend.api.v1.schemas.auth import AuthLoginResponse, AuthMeResponse, LoginBody
+from backend.api.v1.schemas.common import EmptyResponse, ErrorResponse
 from backend.config.schema import Config
 from backend.api.v1.deps import get_config, get_current_user
 from backend.services.auth_service import login, logout, me_response_user
@@ -11,12 +13,14 @@ from backend.auth.csrf import generate_csrf_token
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-class LoginBody(BaseModel):
-    username: str = ""
-    password: str = ""
+ERROR_RESPONSES = {
+    401: {"model": ErrorResponse},
+    403: {"model": ErrorResponse},
+    422: {"model": ErrorResponse},
+}
 
 
-@router.post("/login")
+@router.post("/login", response_model=AuthLoginResponse, responses=ERROR_RESPONSES)
 def auth_login(
     request: Request,
     response: Response,
@@ -37,8 +41,8 @@ def auth_login(
         max_age=config.session_max_age_days * 24 * 3600,
         path="/",
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=config.session_cookie_same_site,
+        secure=config.session_cookie_secure,
     )
     response.set_cookie(
         key=config.csrf_cookie_name,
@@ -46,13 +50,13 @@ def auth_login(
         max_age=config.session_max_age_days * 24 * 3600,
         path="/",
         httponly=False,
-        samesite="strict",
-        secure=False,
+        samesite=config.csrf_cookie_same_site,
+        secure=config.session_cookie_secure,
     )
     return {"user": user}
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=EmptyResponse, responses=ERROR_RESPONSES)
 def auth_logout(
     request: Request,
     response: Response,
@@ -66,7 +70,7 @@ def auth_logout(
     return {}
 
 
-@router.get("/me")
+@router.get("/me", response_model=AuthMeResponse, responses=ERROR_RESPONSES)
 def auth_me(
     request: Request,
     response: Response,
@@ -82,11 +86,11 @@ def auth_me(
             max_age=config.session_max_age_days * 24 * 3600,
             path="/",
             httponly=False,
-            samesite="strict",
-            secure=False,
+            samesite=config.csrf_cookie_same_site,
+            secure=config.session_cookie_secure,
         )
     return me_response_user(config, current_user)
 
 
 def _unauthorized() -> HTTPException:
-    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    return api_http_exception(status.HTTP_401_UNAUTHORIZED, "invalid_credentials", "Invalid credentials")
