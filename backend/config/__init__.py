@@ -3,10 +3,11 @@
 from pathlib import Path
 import os
 
-from backend.config.schema import Config, LogLevel
+from backend.config.schema import Config, GeoIpProvider, LogLevel
 
 _LOG_LEVELS: set[str] = {"VERBOSE", "INFO", "WARN", "ERROR"}
 _SAME_SITE_POLICIES: set[str] = {"lax", "strict", "none"}
+_GEOIP_PROVIDERS: set[str] = {"none", "dbip-lite-country", "maxmind-geolite2-country"}
 _DEFAULT_DB = "data/dmarc.db"
 
 
@@ -32,6 +33,15 @@ def _parse_origins(value: object) -> tuple[str, ...]:
     if isinstance(value, (list, tuple)):
         return tuple(str(part).strip() for part in value if str(part).strip())
     return ()
+
+
+def _parse_float(value: object, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _resolve_config_path(config_path: str | Path | None) -> Path | None:
@@ -97,6 +107,28 @@ def load_config(config_path: str | Path | None = None) -> Config:
         cors_allowed_origins = cors_allowed_origins + (frontend_public_origin,)
 
     archive_storage_path = data.get("archive", {}).get("storage_path") or os.environ.get("DMARC_ARCHIVE_STORAGE_PATH") or None
+    dns_nameservers = _parse_origins(
+        data.get("dns", {}).get("nameservers") or os.environ.get("DMARC_DNS_NAMESERVERS")
+    )
+    dns_timeout_seconds = _parse_float(
+        data.get("dns", {}).get("timeout_seconds") or os.environ.get("DMARC_DNS_TIMEOUT_SECONDS"),
+        1.0,
+    )
+    geoip_provider_raw = (
+        data.get("geoip", {}).get("provider")
+        or os.environ.get("DMARC_GEOIP_PROVIDER")
+        or "none"
+    )
+    geoip_provider = str(geoip_provider_raw).strip().lower()
+    if geoip_provider not in _GEOIP_PROVIDERS:
+        raise ValueError(
+            f"Invalid geoip.provider: {geoip_provider_raw}. Must be one of {sorted(_GEOIP_PROVIDERS)}"
+        )
+    geoip_database_path = (
+        data.get("geoip", {}).get("database_path")
+        or os.environ.get("DMARC_GEOIP_DATABASE_PATH")
+        or None
+    )
 
     return Config(
         database_path=str(database_path),
@@ -111,4 +143,8 @@ def load_config(config_path: str | Path | None = None) -> Config:
         api_public_url=str(api_public_url) if api_public_url else None,
         cors_allowed_origins=cors_allowed_origins,
         archive_storage_path=archive_storage_path,
+        dns_nameservers=dns_nameservers,
+        dns_timeout_seconds=dns_timeout_seconds,
+        geoip_provider=geoip_provider,  # type: ignore[arg-type]
+        geoip_database_path=str(geoip_database_path) if geoip_database_path else None,
     )

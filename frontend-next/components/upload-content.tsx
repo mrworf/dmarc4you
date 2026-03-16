@@ -39,9 +39,10 @@ export function UploadContent() {
       reports = await Promise.all(
         files.map(async (file) => {
           const bytes = new Uint8Array(await file.arrayBuffer());
+          const metadata = detectFileMetadata(file.name, bytes);
           return {
-            content_type: file.name.endsWith(".eml") ? "message/rfc822" : "application/xml",
-            content_encoding: isGzipFile(file.name, bytes) ? "gzip" : "none",
+            content_type: metadata.contentType,
+            content_encoding: metadata.contentEncoding ?? "none",
             content_transfer_encoding: "base64",
             content: arrayBufferToBase64(bytes),
           };
@@ -90,7 +91,7 @@ export function UploadContent() {
         <div>
           <h2 style={{ margin: "0 0 8px" }}>Paste XML or upload report files</h2>
           <p className="status-text">
-            Use either pasted XML or one or more files. Compressed files and `.eml` attachments are supported.
+            Use either pasted XML or one or more files. XML, gzip, ZIP, and `.eml` uploads are supported.
           </p>
         </div>
 
@@ -165,9 +166,22 @@ function utf8ToBase64(text: string): string {
   return arrayBufferToBase64(new TextEncoder().encode(text));
 }
 
-function isGzipFile(filename: string, bytes: Uint8Array): boolean {
-  if (filename.endsWith(".gz") || filename.endsWith(".gzip")) {
-    return true;
+function detectFileMetadata(
+  filename: string,
+  bytes: Uint8Array,
+): { contentType: string; contentEncoding: string | null } {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".eml")) {
+    return { contentType: "message/rfc822", contentEncoding: null };
   }
-  return bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+  if (lower.endsWith(".gz") || lower.endsWith(".gzip") || (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b)) {
+    return { contentType: "application/gzip", contentEncoding: "gzip" };
+  }
+  if (
+    lower.endsWith(".zip") ||
+    (bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04)
+  ) {
+    return { contentType: "application/zip", contentEncoding: "zip" };
+  }
+  return { contentType: "application/xml", contentEncoding: null };
 }

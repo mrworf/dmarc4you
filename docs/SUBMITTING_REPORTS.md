@@ -20,6 +20,7 @@ The ingest pipeline accepts:
 
 - **XML** — Plain DMARC aggregate or forensic XML
 - **Gzip-compressed XML** — `.xml.gz` files
+- **ZIP archives** — `.zip` files containing one or more supported report payloads
 - **MIME/RFC822 email** — Emails with report attachments (as sent by reporting domains)
 - **Multiple attachments** — MIME messages with several report files
 
@@ -72,8 +73,8 @@ Content-Type: application/json
 |-------|----------|-------------|
 | `source` | No | Identifier for the submission source (for logging) |
 | `reports` | Yes | Array of report objects |
-| `reports[].content_type` | Yes | MIME type: `application/xml`, `application/gzip`, `message/rfc822` |
-| `reports[].content_encoding` | No | Compression: `gzip` or empty |
+| `reports[].content_type` | Yes | MIME type: `application/xml`, `application/gzip`, `application/zip`, `message/rfc822` |
+| `reports[].content_encoding` | No | Compression: `gzip`, `zip`, or empty |
 | `reports[].content_transfer_encoding` | Yes | Transfer encoding: `base64` |
 | `reports[].content` | Yes | Base64-encoded report content |
 | `reports[].metadata` | No | Optional metadata object |
@@ -161,12 +162,12 @@ python -m cli ingest [--api-key KEY] [--url URL] FILE [FILE ...]
 python -m cli ingest --api-key YOUR_KEY report.xml
 
 # Multiple files
-python -m cli ingest --api-key YOUR_KEY *.xml.gz
+python -m cli ingest --api-key YOUR_KEY *.xml.gz *.zip
 
 # Using environment variables
 export DMARC4YOU_API_KEY="your-key"
 export DMARC4YOU_URL="https://dmarc.example.com"
-python -m cli ingest report1.xml report2.xml.gz
+python -m cli ingest report1.xml report2.xml.gz report3.zip
 
 # MIME email file
 python -m cli ingest --api-key YOUR_KEY dmarc-report.eml
@@ -192,7 +193,7 @@ Upload reports directly through the web interface.
 2. Navigate to **Upload** (`/app/upload`)
 3. Either:
    - **Paste** XML content into the text area, or
-   - **Select one or more files** using the file picker (`.xml`, `.xml.gz`, `.eml`)
+   - **Select one or more files** using the file picker (`.xml`, `.xml.gz`, `.zip`, `.eml`)
 4. Click **Submit**
 5. On success, a link to the ingest job appears
 
@@ -200,6 +201,7 @@ Upload reports directly through the web interface.
 
 - `.xml` — Plain XML
 - `.gz` — Gzip-compressed (detected by extension or magic bytes)
+- `.zip` — ZIP archive containing supported report files
 - `.eml` — MIME email with attachments
 
 ### Limitations

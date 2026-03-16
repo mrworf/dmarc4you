@@ -12,9 +12,7 @@ from backend.config import load_config
 from backend.storage.sqlite import run_migrations, get_connection
 from backend.auth.bootstrap import BOOTSTRAP_USERNAME
 from backend.auth.password import hash_password, generate_random_password
-
-
-GZIP_MAGIC = b"\x1f\x8b"
+from backend.ingest.compression import GZIP_MAGIC, ZIP_MAGIC
 
 
 def detect_content_type(path: Path, content: bytes) -> str:
@@ -22,6 +20,8 @@ def detect_content_type(path: Path, content: bytes) -> str:
     suffix = path.suffix.lower()
     if suffix == ".gz" or content[:2] == GZIP_MAGIC:
         return "application/gzip"
+    if suffix == ".zip" or content[:4] == ZIP_MAGIC:
+        return "application/zip"
     if suffix == ".xml":
         return "application/xml"
     text_start = content[:512].lstrip()
@@ -30,6 +30,16 @@ def detect_content_type(path: Path, content: bytes) -> str:
     if b"Content-Type:" in content[:1024] or b"MIME-Version:" in content[:1024]:
         return "message/rfc822"
     return "application/octet-stream"
+
+
+def detect_content_encoding(path: Path, content: bytes) -> str:
+    """Detect content encoding for API ingest payloads."""
+    suffix = path.suffix.lower()
+    if suffix == ".gz" or content[:2] == GZIP_MAGIC:
+        return "gzip"
+    if suffix == ".zip" or content[:4] == ZIP_MAGIC:
+        return "zip"
+    return ""
 
 
 def ingest_files(
@@ -62,6 +72,7 @@ def ingest_files(
             continue
 
         content_type = detect_content_type(path, content)
+        content_encoding = detect_content_encoding(path, content)
         encoded = base64.b64encode(content).decode("ascii")
 
         payload = {
@@ -69,7 +80,7 @@ def ingest_files(
             "reports": [
                 {
                     "content_type": content_type,
-                    "content_encoding": "",
+                    "content_encoding": content_encoding,
                     "content_transfer_encoding": "base64",
                     "content": encoded,
                 }

@@ -60,3 +60,22 @@ archive:
   # Leave unset or null to disable artifact archival.
   # Env: DMARC_ARCHIVE_STORAGE_PATH
   storage_path: null
+
+dns:
+  # Optional override for recursive resolvers used for reverse DNS PTR lookups.
+  # Leave empty to use the host default resolver configuration.
+  # Env: DMARC_DNS_NAMESERVERS
+  nameservers: []
+
+  # Best-effort PTR timeout in seconds.
+  # Env: DMARC_DNS_TIMEOUT_SECONDS
+  timeout_seconds: 1.0
+
+geoip:
+  # Offline GeoIP provider: none | dbip-lite-country | maxmind-geolite2-country
+  # Env: DMARC_GEOIP_PROVIDER
+  provider: none
+
+  # Local MMDB path for the configured provider.
+  # Env: DMARC_GEOIP_DATABASE_PATH
+  database_path: null

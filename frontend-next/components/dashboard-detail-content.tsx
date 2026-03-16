@@ -593,6 +593,7 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
             emptyMessage="No matching records yet for this dashboard scope."
             onViewReport={setSelectedAggregateReportId}
             result={result}
+            visibleColumns={dashboard?.visible_columns}
           />
         ) : null}
         {result ? (

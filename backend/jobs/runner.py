@@ -2,25 +2,29 @@
 
 import base64
 import gzip
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
 
-from backend.config.schema import Config
-from backend.services import domain_service
-from backend.storage.sqlite import get_connection
+from backend.archive.filesystem import FilesystemArchiveStorage
 from backend.auth.user_lookup import get_user_by_id
+from backend.config.schema import Config
 from backend.ingest.aggregate_parser import parse_aggregate
+from backend.ingest.compression import ZipExtractionError, extract_zip_members
 from backend.ingest.forensic_parser import parse_forensic
 from backend.ingest.domain_check import can_ingest_for_domain
 from backend.ingest.dedupe import is_duplicate, is_forensic_duplicate
 from backend.ingest.dns_resolver import resolve_ip
+from backend.ingest.geoip import build_geoip_provider
 from backend.ingest.mime_parser import is_mime_message, extract_attachments
-from backend.archive.filesystem import FilesystemArchiveStorage
+from backend.services import domain_service
+from backend.storage.sqlite import get_connection
 
 logger = logging.getLogger(__name__)
 
 MAX_DECOMPRESSED_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_ZIP_MEMBERS = 20
 AGGREGATE_ID_PREFIX = "agg_"
 FORENSIC_ID_PREFIX = "for_"
 
@@ -76,6 +80,7 @@ def run_one_job(config: Config) -> bool:
         conn.close()
 
     archive_storage = _get_archive_storage(config)
+    geoip_provider = build_geoip_provider(config)
     now_iso = datetime.now(timezone.utc).isoformat()
     has_failure = False
     for item_id, raw_content, transfer_enc, content_enc in items:
@@ -83,6 +88,7 @@ def run_one_job(config: Config) -> bool:
             config, job_id, item_id, raw_content or "", transfer_enc, content_enc,
             actor_user_id=actor_user_id, actor_role=actor_role, key_domain_ids=key_domain_ids,
             archive_storage=archive_storage,
+            geoip_provider=geoip_provider,
         )
         conn = get_connection(config.database_path)
         try:
@@ -120,6 +126,7 @@ def _process_one_item(
     actor_role: str | None = None,
     key_domain_ids: frozenset[str] | None = None,
     archive_storage: FilesystemArchiveStorage | None = None,
+    geoip_provider=None,
 ) -> tuple[str, str | None, str | None, str | None]:
     """Decode, decompress, parse, check domain, dedupe, persist, archive. Return (status, reason, domain_detected, report_type)."""
     try:
@@ -131,20 +138,18 @@ def _process_one_item(
             data = base64.b64decode(data, validate=True)
         except Exception:
             return "invalid", "base64", None, None
-    if content_enc and str(content_enc).lower() == "gzip":
-        try:
-            data = gzip.decompress(data)
-            if len(data) > MAX_DECOMPRESSED_BYTES:
-                return "invalid", "size", None, None
-        except Exception:
-            return "invalid", "decompress", None, None
-
-    if is_mime_message(data):
-        return _process_mime_message(
-            config, item_id, data, actor_user_id, actor_role, key_domain_ids, archive_storage
-        )
-
-    return _process_raw_report(config, item_id, data, actor_user_id, actor_role, key_domain_ids, archive_storage)
+    return _process_blob(
+        config,
+        item_id,
+        data,
+        _normalize_content_encoding(content_enc),
+        actor_user_id,
+        actor_role,
+        key_domain_ids,
+        archive_storage,
+        geoip_provider,
+        allow_zip=True,
+    )
 
 
 def _process_raw_report(
@@ -155,17 +160,100 @@ def _process_raw_report(
     actor_role: str | None,
     key_domain_ids: frozenset[str] | None,
     archive_storage: FilesystemArchiveStorage | None = None,
+    geoip_provider=None,
 ) -> tuple[str, str | None, str | None, str | None]:
     """Try to parse data as aggregate or forensic XML. Return (status, reason, domain, report_type)."""
     parsed_agg = parse_aggregate(data)
     if parsed_agg:
-        return _process_aggregate(config, item_id, parsed_agg, actor_user_id, actor_role, key_domain_ids, archive_storage, data)
+        return _process_aggregate(
+            config,
+            item_id,
+            parsed_agg,
+            actor_user_id,
+            actor_role,
+            key_domain_ids,
+            archive_storage,
+            data,
+            geoip_provider,
+        )
 
     parsed_for = parse_forensic(data)
     if parsed_for:
-        return _process_forensic(config, item_id, parsed_for, actor_user_id, actor_role, key_domain_ids, archive_storage, data)
+        return _process_forensic(
+            config,
+            item_id,
+            parsed_for,
+            actor_user_id,
+            actor_role,
+            key_domain_ids,
+            archive_storage,
+            data,
+            geoip_provider,
+        )
 
     return "invalid", "parse", None, None
+
+
+def _process_blob(
+    config: Config,
+    item_id: str,
+    data: bytes,
+    content_encoding: str | None,
+    actor_user_id: str | None,
+    actor_role: str | None,
+    key_domain_ids: frozenset[str] | None,
+    archive_storage: FilesystemArchiveStorage | None = None,
+    geoip_provider=None,
+    *,
+    allow_zip: bool,
+) -> tuple[str, str | None, str | None, str | None]:
+    normalized_encoding = _normalize_content_encoding(content_encoding)
+    if normalized_encoding == "gzip":
+        try:
+            data = gzip.decompress(data)
+            if len(data) > MAX_DECOMPRESSED_BYTES:
+                return "invalid", "size", None, None
+        except Exception:
+            return "invalid", "decompress", None, None
+    elif normalized_encoding == "zip":
+        if not allow_zip:
+            return "invalid", "nested_zip", None, "zip"
+        try:
+            members = extract_zip_members(
+                data,
+                max_members=MAX_ZIP_MEMBERS,
+                max_member_bytes=MAX_DECOMPRESSED_BYTES,
+                max_total_bytes=MAX_DECOMPRESSED_BYTES,
+            )
+        except ZipExtractionError as exc:
+            return "invalid", f"zip_{exc}", None, "zip"
+        if not members:
+            return "invalid", "zip_no_supported_members", None, "zip"
+        results = [
+            _process_blob(
+                config,
+                item_id,
+                member["content"],
+                _normalize_content_encoding(member.get("content_encoding")),
+                actor_user_id,
+                actor_role,
+                key_domain_ids,
+                archive_storage,
+                geoip_provider,
+                allow_zip=False,
+            )
+            for member in members
+        ]
+        return _combine_nested_results(results, default_report_type="zip")
+
+    if is_mime_message(data):
+        return _process_mime_message(
+            config, item_id, data, actor_user_id, actor_role, key_domain_ids, archive_storage, geoip_provider
+        )
+
+    return _process_raw_report(
+        config, item_id, data, actor_user_id, actor_role, key_domain_ids, archive_storage, geoip_provider
+    )
 
 
 def _process_mime_message(
@@ -176,6 +264,7 @@ def _process_mime_message(
     actor_role: str | None,
     key_domain_ids: frozenset[str] | None,
     archive_storage: FilesystemArchiveStorage | None = None,
+    geoip_provider=None,
 ) -> tuple[str, str | None, str | None, str | None]:
     """Extract attachments from MIME message and process each. Return best outcome."""
     attachments = extract_attachments(data)
@@ -184,40 +273,21 @@ def _process_mime_message(
 
     results: list[tuple[str, str | None, str | None, str | None]] = []
     for att in attachments:
-        att_data = att["content"]
-        att_encoding = att.get("content_encoding")
-        if att_encoding == "gzip":
-            try:
-                att_data = gzip.decompress(att_data)
-                if len(att_data) > MAX_DECOMPRESSED_BYTES:
-                    results.append(("invalid", "size", None, None))
-                    continue
-            except Exception:
-                results.append(("invalid", "decompress", None, None))
-                continue
-        result = _process_raw_report(config, item_id, att_data, actor_user_id, actor_role, key_domain_ids, archive_storage)
+        result = _process_blob(
+            config,
+            item_id,
+            att["content"],
+            _normalize_content_encoding(att.get("content_encoding")),
+            actor_user_id,
+            actor_role,
+            key_domain_ids,
+            archive_storage,
+            geoip_provider,
+            allow_zip=True,
+        )
         results.append(result)
 
-    if not results:
-        return "invalid", "no_attachments", None, "email"
-
-    accepted = [r for r in results if r[0] == "accepted"]
-    if accepted:
-        domains = [r[2] for r in accepted if r[2]]
-        domain_str = domains[0] if len(domains) == 1 else ("multiple" if len(domains) > 1 else None)
-        types = [r[3] for r in accepted if r[3]]
-        type_str = types[0] if len(set(types)) == 1 else ("mixed" if types else None)
-        return "accepted", None, domain_str, type_str
-
-    duplicates = [r for r in results if r[0] == "duplicate"]
-    if duplicates:
-        return duplicates[0]
-
-    rejected = [r for r in results if r[0] == "rejected"]
-    if rejected:
-        return rejected[0]
-
-    return results[0]
+    return _combine_nested_results(results, default_report_type="email")
 
 
 def _process_aggregate(
@@ -229,6 +299,7 @@ def _process_aggregate(
     key_domain_ids: frozenset[str] | None,
     archive_storage: FilesystemArchiveStorage | None = None,
     raw_data: bytes | None = None,
+    geoip_provider=None,
 ) -> tuple[str, str | None, str | None, str]:
     """Check domain auth, dedupe, persist aggregate report, archive raw. Return (status, reason, domain, 'aggregate')."""
     domain = parsed["domain"]
@@ -245,23 +316,47 @@ def _process_aggregate(
         agg_id = f"{AGGREGATE_ID_PREFIX}{uuid.uuid4().hex[:12]}"
         created_at = datetime.now(timezone.utc).isoformat()
         conn.execute(
-            """INSERT INTO aggregate_reports (id, report_id, org_name, domain, date_begin, date_end, job_item_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (agg_id, parsed["report_id"], parsed["org_name"] or "", domain, parsed["date_begin"], parsed["date_end"], item_id, created_at),
+            """INSERT INTO aggregate_reports
+               (id, report_id, org_name, domain, date_begin, date_end, job_item_id, created_at,
+                contact_email, extra_contact_info, error_messages_json, adkim, aspf, policy_p, policy_sp, policy_pct, policy_fo)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                agg_id,
+                parsed["report_id"],
+                parsed["org_name"] or "",
+                domain,
+                parsed["date_begin"],
+                parsed["date_end"],
+                item_id,
+                created_at,
+                parsed.get("contact_email"),
+                parsed.get("extra_contact_info"),
+                json.dumps(parsed.get("error_messages") or []),
+                parsed.get("adkim"),
+                parsed.get("aspf"),
+                parsed.get("policy_p"),
+                parsed.get("policy_sp"),
+                parsed.get("policy_pct"),
+                parsed.get("policy_fo"),
+            ),
         )
         for rec in parsed.get("records") or []:
             rec_id = f"rec_{uuid.uuid4().hex[:12]}"
-            resolved_name, resolved_name_domain = resolve_ip(rec.get("source_ip"))
+            resolved_name, resolved_name_domain = resolve_ip(config, rec.get("source_ip"))
+            geo_result = geoip_provider.lookup_country(rec.get("source_ip")) if geoip_provider else None
             conn.execute(
                 """INSERT INTO aggregate_report_records
-                   (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, country_code, country_name, geo_provider, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     rec_id,
                     agg_id,
                     rec.get("source_ip"),
                     resolved_name,
                     resolved_name_domain,
+                    geo_result.country_code if geo_result else None,
+                    geo_result.country_name if geo_result else None,
+                    geo_result.provider if geo_result else None,
                     rec.get("count") or 0,
                     rec.get("disposition"),
                     rec.get("dkim_result"),
@@ -271,6 +366,33 @@ def _process_aggregate(
                     rec.get("envelope_to"),
                 ),
             )
+            for override in rec.get("policy_overrides") or []:
+                conn.execute(
+                    """INSERT INTO aggregate_record_policy_overrides (id, aggregate_record_id, reason_type, comment)
+                       VALUES (?, ?, ?, ?)""",
+                    (
+                        f"ovr_{uuid.uuid4().hex[:12]}",
+                        rec_id,
+                        override.get("type"),
+                        override.get("comment"),
+                    ),
+                )
+            for auth_result in rec.get("auth_results") or []:
+                conn.execute(
+                    """INSERT INTO aggregate_record_auth_results
+                       (id, aggregate_record_id, auth_method, domain, selector, scope, result, human_result)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        f"auth_{uuid.uuid4().hex[:12]}",
+                        rec_id,
+                        auth_result.get("auth_method") or "",
+                        auth_result.get("domain"),
+                        auth_result.get("selector"),
+                        auth_result.get("scope"),
+                        auth_result.get("result"),
+                        auth_result.get("human_result"),
+                    ),
+                )
         conn.commit()
     except Exception as e:
         logger.exception("aggregate_reports insert: %s", e)
@@ -296,6 +418,7 @@ def _process_forensic(
     key_domain_ids: frozenset[str] | None,
     archive_storage: FilesystemArchiveStorage | None = None,
     raw_data: bytes | None = None,
+    geoip_provider=None,
 ) -> tuple[str, str | None, str | None, str]:
     """Check domain auth, dedupe, persist forensic report, archive raw. Return (status, reason, domain, 'forensic')."""
     domain = parsed["domain"]
@@ -311,11 +434,12 @@ def _process_forensic(
     try:
         for_id = f"{FORENSIC_ID_PREFIX}{uuid.uuid4().hex[:12]}"
         created_at = datetime.now(timezone.utc).isoformat()
-        resolved_name, resolved_name_domain = resolve_ip(parsed.get("source_ip"))
+        resolved_name, resolved_name_domain = resolve_ip(config, parsed.get("source_ip"))
+        geo_result = geoip_provider.lookup_country(parsed.get("source_ip")) if geoip_provider else None
         conn.execute(
             """INSERT INTO forensic_reports
-               (id, report_id, domain, source_ip, resolved_name, resolved_name_domain, arrival_time, org_name, header_from, envelope_from, envelope_to, spf_result, dkim_result, dmarc_result, failure_type, job_item_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, report_id, domain, source_ip, resolved_name, resolved_name_domain, country_code, country_name, geo_provider, arrival_time, org_name, header_from, envelope_from, envelope_to, spf_result, dkim_result, dmarc_result, failure_type, job_item_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 for_id,
                 parsed["report_id"],
@@ -323,6 +447,9 @@ def _process_forensic(
                 parsed.get("source_ip"),
                 resolved_name,
                 resolved_name_domain,
+                geo_result.country_code if geo_result else None,
+                geo_result.country_name if geo_result else None,
+                geo_result.provider if geo_result else None,
                 parsed.get("arrival_time"),
                 parsed.get("org_name") or "",
                 parsed.get("header_from"),
@@ -350,6 +477,36 @@ def _process_forensic(
             logger.warning("Failed to archive forensic report %s: %s", parsed["report_id"], e)
 
     return "accepted", None, domain, "forensic"
+
+
+def _combine_nested_results(
+    results: list[tuple[str, str | None, str | None, str | None]],
+    *,
+    default_report_type: str,
+) -> tuple[str, str | None, str | None, str | None]:
+    if not results:
+        return "invalid", f"{default_report_type}_no_supported_members", None, default_report_type
+    accepted = [r for r in results if r[0] == "accepted"]
+    if accepted:
+        domains = [r[2] for r in accepted if r[2]]
+        report_types = [r[3] for r in accepted if r[3]]
+        domain_detected = domains[0] if len(set(domains)) == 1 and domains else ("multiple" if len(domains) > 1 else None)
+        report_type = report_types[0] if len(set(report_types)) == 1 and report_types else ("mixed" if report_types else default_report_type)
+        return "accepted", None, domain_detected, report_type
+    duplicates = [r for r in results if r[0] == "duplicate"]
+    if duplicates:
+        return duplicates[0]
+    rejected = [r for r in results if r[0] == "rejected"]
+    if rejected:
+        return rejected[0]
+    return results[0]
+
+
+def _normalize_content_encoding(content_encoding: str | None) -> str | None:
+    value = (content_encoding or "").strip().lower()
+    if value in {"", "none"}:
+        return None
+    return value
 
 
 def run_loop(config: Config, stop_event: object | None = None, interval_seconds: float = 2.0) -> None:

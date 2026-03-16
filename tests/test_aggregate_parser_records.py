@@ -102,3 +102,91 @@ def test_parse_aggregate_no_records_returns_empty_list() -> None:
     result = parse_aggregate(xml)
     assert result is not None
     assert result["records"] == []
+
+
+def test_parse_aggregate_extracts_report_policy_and_auth_details() -> None:
+    xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<feedback>
+  <report_metadata>
+    <org_name>Example Org</org_name>
+    <email>dmarc@example.net</email>
+    <extra_contact_info>mailto:postmaster@example.net</extra_contact_info>
+    <report_id>report-advanced</report_id>
+    <error>sample-error</error>
+    <date_range>
+      <begin>1735689600</begin>
+      <end>1735776000</end>
+    </date_range>
+  </report_metadata>
+  <policy_published>
+    <domain>example.com</domain>
+    <adkim>s</adkim>
+    <aspf>r</aspf>
+    <p>reject</p>
+    <sp>quarantine</sp>
+    <pct>75</pct>
+    <fo>1:d</fo>
+  </policy_published>
+  <record>
+    <row>
+      <source_ip>192.0.2.1</source_ip>
+      <count>10</count>
+      <policy_evaluated>
+        <disposition>none</disposition>
+        <dkim>pass</dkim>
+        <spf>pass</spf>
+        <reason>
+          <type>forwarded</type>
+          <comment>via list</comment>
+        </reason>
+      </policy_evaluated>
+    </row>
+    <identifiers>
+      <header_from>example.com</header_from>
+    </identifiers>
+    <auth_results>
+      <dkim>
+        <domain>example.com</domain>
+        <selector>mail</selector>
+        <result>pass</result>
+        <human_result>aligned</human_result>
+      </dkim>
+      <spf>
+        <domain>mailer.example.com</domain>
+        <scope>mfrom</scope>
+        <result>pass</result>
+      </spf>
+    </auth_results>
+  </record>
+</feedback>"""
+    result = parse_aggregate(xml)
+    assert result is not None
+    assert result["contact_email"] == "dmarc@example.net"
+    assert result["extra_contact_info"] == "mailto:postmaster@example.net"
+    assert result["error_messages"] == ["sample-error"]
+    assert result["adkim"] == "s"
+    assert result["aspf"] == "r"
+    assert result["policy_p"] == "reject"
+    assert result["policy_sp"] == "quarantine"
+    assert result["policy_pct"] == 75
+    assert result["policy_fo"] == "1:d"
+    record = result["records"][0]
+    assert record["policy_overrides"] == [{"type": "forwarded", "comment": "via list"}]
+    assert record["auth_results"] == [
+        {
+            "auth_method": "dkim",
+            "domain": "example.com",
+            "selector": "mail",
+            "scope": None,
+            "result": "pass",
+            "human_result": "aligned",
+        },
+        {
+            "auth_method": "spf",
+            "domain": "mailer.example.com",
+            "selector": None,
+            "scope": "mfrom",
+            "result": "pass",
+            "human_result": None,
+        },
+    ]

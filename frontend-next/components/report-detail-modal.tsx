@@ -94,7 +94,37 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
                 <span className="stat-label">Records</span>
                 <strong>{aggregate.records.length}</strong>
               </article>
+              <article className="detail-card detail-card-wide">
+                <span className="stat-label">Published policy</span>
+                <strong>
+                  {aggregate.published_policy
+                    ? `p=${aggregate.published_policy.p ?? "n/a"} sp=${aggregate.published_policy.sp ?? "n/a"} pct=${aggregate.published_policy.pct ?? "n/a"}`
+                    : "n/a"}
+                </strong>
+                <span className="status-text">
+                  {aggregate.published_policy
+                    ? `adkim=${aggregate.published_policy.adkim ?? "n/a"} aspf=${aggregate.published_policy.aspf ?? "n/a"} fo=${aggregate.published_policy.fo ?? "n/a"}`
+                    : ""}
+                </span>
+              </article>
+              <article className="detail-card detail-card-wide">
+                <span className="stat-label">Contact</span>
+                <strong>{aggregate.contact_email ?? "n/a"}</strong>
+                <span className="status-text">{aggregate.extra_contact_info ?? "n/a"}</span>
+              </article>
             </div>
+            {aggregate.error_messages?.length ? (
+              <div className="surface-card">
+                <p className="stat-label">Reporter errors</p>
+                <div className="pill-row">
+                  {aggregate.error_messages.map((message) => (
+                    <span className="pill warning-pill" key={message}>
+                      {message}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -102,11 +132,13 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
                     <th>Source IP</th>
                     <th>Resolved name</th>
                     <th>Resolved domain</th>
+                    <th>Country</th>
                     <th>Count</th>
                     <th>Disposition</th>
                     <th>DKIM</th>
                     <th>SPF</th>
                     <th>Header from</th>
+                    <th>Details</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -115,11 +147,30 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
                       <td>{record.source_ip ?? "n/a"}</td>
                       <td>{record.resolved_name ?? "n/a"}</td>
                       <td>{record.resolved_name_domain ?? "n/a"}</td>
+                      <td>{record.country_code ? `${record.country_code} ${record.country_name ?? ""}`.trim() : "n/a"}</td>
                       <td>{record.count}</td>
                       <td>{record.disposition ?? "n/a"}</td>
                       <td>{record.dkim_result ?? "n/a"}</td>
                       <td>{record.spf_result ?? "n/a"}</td>
                       <td>{record.header_from ?? "n/a"}</td>
+                      <td>
+                        <div className="stack" style={{ gap: 6 }}>
+                          <span className="status-text">
+                            Overrides:{" "}
+                            {record.policy_overrides.length
+                              ? record.policy_overrides.map((override) => override.type ?? override.comment ?? "n/a").join(", ")
+                              : "none"}
+                          </span>
+                          <span className="status-text">
+                            Auth:{" "}
+                            {record.auth_results.length
+                              ? record.auth_results
+                                  .map((result) => `${result.auth_method}:${result.result ?? "n/a"}:${result.domain ?? "n/a"}`)
+                                  .join(", ")
+                              : "none"}
+                          </span>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -137,6 +188,10 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
             <article className="detail-card">
               <span className="stat-label">Source IP</span>
               <strong>{forensic.source_ip ?? "n/a"}</strong>
+            </article>
+            <article className="detail-card">
+              <span className="stat-label">Country</span>
+              <strong>{forensic.country_code ? `${forensic.country_code} ${forensic.country_name ?? ""}`.trim() : "n/a"}</strong>
             </article>
             <article className="detail-card">
               <span className="stat-label">Header from</span>

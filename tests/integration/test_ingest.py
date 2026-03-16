@@ -1,6 +1,8 @@
 """Ingest slice: POST ingest, job runner, GET job detail, accepted/duplicate/rejected/invalid."""
 
 import pytest
+import io
+import zipfile
 from fastapi.testclient import TestClient
 
 from backend.app import app
@@ -221,6 +223,66 @@ def test_invalid_xml_yields_invalid(ingest_app_client) -> None:
     detail = client.get(f"/api/v1/ingest-jobs/{job_id}")
     assert detail.status_code == 200
     assert detail.json()["items"][0]["status"] == "invalid"
+
+
+def test_runner_accepts_valid_zip_payload_and_persists(ingest_app_client) -> None:
+    import base64
+
+    client, password, config = ingest_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w") as archive:
+        archive.writestr("report.xml", MINIMAL_AGGREGATE_XML)
+    encoded_zip = base64.b64encode(buffer.getvalue()).decode("ascii")
+    response = client.post(
+        "/api/v1/reports/ingest",
+        json={
+            "source": "test",
+            "reports": [{
+                "content_type": "application/zip",
+                "content_encoding": "zip",
+                "content_transfer_encoding": "base64",
+                "content": encoded_zip,
+            }],
+        },
+    )
+    assert response.status_code in (200, 202)
+    job_id = response.json()["job_id"]
+    run_one_job(config)
+    detail = client.get(f"/api/v1/ingest-jobs/{job_id}")
+    assert detail.status_code == 200
+    assert detail.json()["items"][0]["status"] == "accepted"
+
+
+def test_runner_zip_with_mixed_members_accepts_valid_reports(ingest_app_client) -> None:
+    import base64
+
+    client, password, config = ingest_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w") as archive:
+        archive.writestr("report.xml", MINIMAL_AGGREGATE_XML)
+        archive.writestr("notes.txt", "ignore me")
+        archive.writestr("bad.xml", "<not valid xml")
+    encoded_zip = base64.b64encode(buffer.getvalue()).decode("ascii")
+    response = client.post(
+        "/api/v1/reports/ingest",
+        json={
+            "source": "test",
+            "reports": [{
+                "content_type": "application/zip",
+                "content_encoding": "zip",
+                "content_transfer_encoding": "base64",
+                "content": encoded_zip,
+            }],
+        },
+    )
+    assert response.status_code in (200, 202)
+    job_id = response.json()["job_id"]
+    run_one_job(config)
+    detail = client.get(f"/api/v1/ingest-jobs/{job_id}")
+    assert detail.status_code == 200
+    assert detail.json()["items"][0]["status"] == "accepted"
 
 
 def test_get_job_detail_401_without_session(ingest_app_client) -> None:
@@ -608,6 +670,41 @@ def test_ingest_mime_email_with_gzip_attachment(ingest_app_client) -> None:
     data = detail.json()
     assert data["state"] in ("completed", "completed_with_warnings")
     assert data["items"][0]["status"] == "accepted"
+
+
+def test_ingest_mime_email_with_zip_attachment(ingest_app_client) -> None:
+    """MIME email with zip-compressed XML attachment is extracted and accepted."""
+    import base64
+
+    client, password, config = ingest_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w") as archive:
+        archive.writestr("report.xml", MINIMAL_AGGREGATE_XML)
+    email_content = _make_mime_email([
+        ("report.zip", "application/zip", buffer.getvalue())
+    ])
+    encoded_email = base64.b64encode(email_content.encode("utf-8")).decode("ascii")
+
+    r = client.post(
+        "/api/v1/reports/ingest",
+        json={
+            "source": "email",
+            "reports": [{
+                "content_type": "message/rfc822",
+                "content_transfer_encoding": "base64",
+                "content": encoded_email
+            }]
+        },
+    )
+    assert r.status_code in (200, 202)
+    job_id = r.json()["job_id"]
+    run_one_job(config)
+
+    detail = client.get(f"/api/v1/ingest-jobs/{job_id}")
+    assert detail.status_code == 200
+    assert detail.json()["items"][0]["status"] == "accepted"
 
 
 def test_ingest_mime_email_with_multiple_attachments(ingest_app_client) -> None:

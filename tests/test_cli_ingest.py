@@ -5,12 +5,13 @@ import gzip
 import io
 import json
 import tempfile
+import zipfile
 from pathlib import Path
 from unittest import mock
 
 import pytest
 
-from cli.commands import detect_content_type, ingest_files
+from cli.commands import detect_content_encoding, detect_content_type, ingest_files
 
 
 class TestDetectContentType:
@@ -58,6 +59,25 @@ class TestDetectContentType:
         content = buf.getvalue()
         f.write_bytes(content)
         assert detect_content_type(f, content) == "application/gzip"
+
+    def test_zip_by_extension(self, tmp_path: Path) -> None:
+        f = tmp_path / "report.zip"
+        f.write_bytes(b"not really zip")
+        assert detect_content_type(f, b"not really zip") == "application/zip"
+
+    def test_zip_by_magic(self, tmp_path: Path) -> None:
+        f = tmp_path / "report"
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w") as archive:
+            archive.writestr("report.xml", b"<feedback></feedback>")
+        content = buf.getvalue()
+        f.write_bytes(content)
+        assert detect_content_type(f, content) == "application/zip"
+
+    def test_detect_content_encoding_for_zip(self, tmp_path: Path) -> None:
+        f = tmp_path / "report.zip"
+        f.write_bytes(b"PK\x03\x04more")
+        assert detect_content_encoding(f, b"PK\x03\x04more") == "zip"
 
     def test_mime_by_content_type_header(self, tmp_path: Path) -> None:
         """File with Content-Type header detected as MIME."""
@@ -137,9 +157,32 @@ class TestIngestFiles:
         assert body["source"] == "cli"
         assert len(body["reports"]) == 1
         assert body["reports"][0]["content_type"] == "application/xml"
+        assert body["reports"][0]["content_encoding"] == ""
         assert body["reports"][0]["content_transfer_encoding"] == "base64"
         decoded = base64.b64decode(body["reports"][0]["content"])
         assert decoded == b"<feedback></feedback>"
+
+    def test_zip_submission_sets_zip_content_encoding(self, tmp_path: Path) -> None:
+        f = tmp_path / "report.zip"
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w") as archive:
+            archive.writestr("report.xml", b"<feedback></feedback>")
+        f.write_bytes(buf.getvalue())
+
+        with mock.patch("cli.commands.urllib.request.urlopen") as mock_urlopen:
+            mock_resp = mock.MagicMock()
+            mock_resp.read.return_value = b'{"job_id": "job_zip123"}'
+            mock_resp.__enter__ = mock.MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = mock.MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_resp
+
+            result = ingest_files("test_key", "http://example.com", [f])
+
+        assert result is True
+        req = mock_urlopen.call_args[0][0]
+        body = json.loads(req.data.decode("utf-8"))
+        assert body["reports"][0]["content_type"] == "application/zip"
+        assert body["reports"][0]["content_encoding"] == "zip"
 
     def test_http_error_reports_failure(self, tmp_path: Path, capsys) -> None:
         """HTTP error prints failure message."""

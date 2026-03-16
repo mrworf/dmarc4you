@@ -1,6 +1,8 @@
 """Unit tests for MIME email parsing."""
 
 import gzip
+import io
+import zipfile
 
 from backend.ingest.mime_parser import is_mime_message, extract_attachments
 
@@ -100,6 +102,27 @@ class TestExtractAttachments:
         attachments = extract_attachments(email)
         assert len(attachments) == 1
         assert attachments[0]["content_encoding"] == "gzip"
+
+    def test_zip_attachment_by_magic_bytes(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w") as archive:
+            archive.writestr("report.xml", SAMPLE_AGGREGATE_XML)
+        zipped = buf.getvalue()
+        email = _make_mime_email([("report.zip", "application/zip", zipped)])
+        attachments = extract_attachments(email)
+        assert len(attachments) == 1
+        assert attachments[0]["content"] == zipped
+        assert attachments[0]["content_encoding"] == "zip"
+
+    def test_zip_detected_by_filename(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w") as archive:
+            archive.writestr("report.xml", SAMPLE_AGGREGATE_XML)
+        zipped = buf.getvalue()
+        email = _make_mime_email([("report.zip", "application/octet-stream", zipped)])
+        attachments = extract_attachments(email)
+        assert len(attachments) == 1
+        assert attachments[0]["content_encoding"] == "zip"
 
     def test_multiple_attachments(self):
         xml2 = SAMPLE_AGGREGATE_XML.replace(b"test123", b"test456")

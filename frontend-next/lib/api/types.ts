@@ -68,6 +68,7 @@ export type DashboardSummary = {
   updated_at: string;
   domain_ids: string[];
   domain_names?: string[] | null;
+  visible_columns: string[];
 };
 
 export type DashboardsResponse = {
@@ -78,12 +79,14 @@ export type CreateDashboardBody = {
   name: string;
   description?: string;
   domain_ids: string[];
+  visible_columns?: string[];
 };
 
 export type UpdateDashboardBody = {
   name?: string;
   description?: string;
   domain_ids?: string[];
+  visible_columns?: string[];
 };
 
 export type DashboardDetailResponse = DashboardSummary;
@@ -291,6 +294,9 @@ export type AggregateSearchResult = {
   source_ip: string | null;
   resolved_name: string | null;
   resolved_name_domain: string | null;
+  country_code: string | null;
+  country_name: string | null;
+  geo_provider: string | null;
   count: number;
   disposition: string | null;
   dkim_result: string | null;
@@ -333,6 +339,9 @@ export type ForensicReportSummary = {
   source_ip: string | null;
   resolved_name: string | null;
   resolved_name_domain: string | null;
+  country_code: string | null;
+  country_name: string | null;
+  geo_provider: string | null;
   arrival_time: string | null;
   org_name: string | null;
   header_from: string | null;
@@ -357,6 +366,9 @@ export type AggregateReportDetailRecord = {
   source_ip: string | null;
   resolved_name: string | null;
   resolved_name_domain: string | null;
+  country_code: string | null;
+  country_name: string | null;
+  geo_provider: string | null;
   count: number;
   disposition: string | null;
   dkim_result: string | null;
@@ -364,6 +376,18 @@ export type AggregateReportDetailRecord = {
   header_from: string | null;
   envelope_from: string | null;
   envelope_to: string | null;
+  policy_overrides: Array<{
+    type: string | null;
+    comment: string | null;
+  }>;
+  auth_results: Array<{
+    auth_method: string;
+    domain: string | null;
+    selector: string | null;
+    scope: string | null;
+    result: string | null;
+    human_result: string | null;
+  }>;
 };
 
 export type AggregateReportDetailResponse = {
@@ -374,6 +398,17 @@ export type AggregateReportDetailResponse = {
   date_begin: number;
   date_end: number;
   created_at: string;
+  contact_email?: string | null;
+  extra_contact_info?: string | null;
+  error_messages?: string[];
+  published_policy?: {
+    adkim?: string | null;
+    aspf?: string | null;
+    p?: string | null;
+    sp?: string | null;
+    pct?: number | null;
+    fo?: string | null;
+  };
   records: AggregateReportDetailRecord[];
 };
 
@@ -384,6 +419,9 @@ export type ForensicReportDetailResponse = {
   source_ip: string | null;
   resolved_name: string | null;
   resolved_name_domain: string | null;
+  country_code: string | null;
+  country_name: string | null;
+  geo_provider: string | null;
   arrival_time: string | null;
   org_name: string | null;
   header_from: string | null;

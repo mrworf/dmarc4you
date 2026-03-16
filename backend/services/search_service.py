@@ -1,6 +1,7 @@
 """Search service: list aggregate reports and records with domain scoping, filters, pagination."""
 
 from datetime import datetime, timezone
+import json
 from typing import Any
 
 from backend.config.schema import Config
@@ -169,28 +170,73 @@ def get_aggregate_report_detail(
             return ("forbidden", None)
 
         cur = conn.execute(
-            """SELECT id, source_ip, resolved_name, resolved_name_domain, count, disposition, dkim_result, spf_result,
+            """SELECT id, source_ip, resolved_name, resolved_name_domain, country_code, country_name, geo_provider, count, disposition, dkim_result, spf_result,
                       header_from, envelope_from, envelope_to
                FROM aggregate_report_records WHERE aggregate_report_id = ?
                ORDER BY count DESC""",
             (report_id,),
         )
-        records = [
-            {
-                "id": r[0],
-                "source_ip": r[1],
-                "resolved_name": r[2],
-                "resolved_name_domain": r[3],
-                "count": r[4],
-                "disposition": r[5],
-                "dkim_result": r[6],
-                "spf_result": r[7],
-                "header_from": r[8],
-                "envelope_from": r[9],
-                "envelope_to": r[10],
-            }
-            for r in cur.fetchall()
-        ]
+        records = []
+        for r in cur.fetchall():
+            record_id = r[0]
+            override_cur = conn.execute(
+                """SELECT reason_type, comment
+                   FROM aggregate_record_policy_overrides
+                   WHERE aggregate_record_id = ?
+                   ORDER BY id""",
+                (record_id,),
+            )
+            auth_cur = conn.execute(
+                """SELECT auth_method, domain, selector, scope, result, human_result
+                   FROM aggregate_record_auth_results
+                   WHERE aggregate_record_id = ?
+                   ORDER BY id""",
+                (record_id,),
+            )
+            records.append(
+                {
+                    "id": record_id,
+                    "source_ip": r[1],
+                    "resolved_name": r[2],
+                    "resolved_name_domain": r[3],
+                    "country_code": r[4],
+                    "country_name": r[5],
+                    "geo_provider": r[6],
+                    "count": r[7],
+                    "disposition": r[8],
+                    "dkim_result": r[9],
+                    "spf_result": r[10],
+                    "header_from": r[11],
+                    "envelope_from": r[12],
+                    "envelope_to": r[13],
+                    "policy_overrides": [
+                        {"type": row[0], "comment": row[1]}
+                        for row in override_cur.fetchall()
+                    ],
+                    "auth_results": [
+                        {
+                            "auth_method": row[0],
+                            "domain": row[1],
+                            "selector": row[2],
+                            "scope": row[3],
+                            "result": row[4],
+                            "human_result": row[5],
+                        }
+                        for row in auth_cur.fetchall()
+                    ],
+                }
+            )
+        report["contact_email"] = row_get(report["id"], conn, "contact_email")
+        report["extra_contact_info"] = row_get(report["id"], conn, "extra_contact_info")
+        report["error_messages"] = _load_json_list(row_get(report["id"], conn, "error_messages_json"))
+        report["published_policy"] = {
+            "adkim": row_get(report["id"], conn, "adkim"),
+            "aspf": row_get(report["id"], conn, "aspf"),
+            "p": row_get(report["id"], conn, "policy_p"),
+            "sp": row_get(report["id"], conn, "policy_sp"),
+            "pct": row_get(report["id"], conn, "policy_pct"),
+            "fo": row_get(report["id"], conn, "policy_fo"),
+        }
         report["records"] = records
         return ("ok", report)
     finally:
@@ -211,7 +257,7 @@ def get_forensic_report_detail(
     conn = get_connection(config.database_path)
     try:
         cur = conn.execute(
-            """SELECT id, report_id, domain, source_ip, resolved_name, resolved_name_domain, arrival_time, org_name,
+            """SELECT id, report_id, domain, source_ip, resolved_name, resolved_name_domain, country_code, country_name, geo_provider, arrival_time, org_name,
                       header_from, envelope_from, envelope_to,
                       spf_result, dkim_result, dmarc_result, failure_type, created_at
                FROM forensic_reports WHERE id = ?""",
@@ -228,16 +274,19 @@ def get_forensic_report_detail(
             "source_ip": row[3],
             "resolved_name": row[4],
             "resolved_name_domain": row[5],
-            "arrival_time": row[6],
-            "org_name": row[7],
-            "header_from": row[8],
-            "envelope_from": row[9],
-            "envelope_to": row[10],
-            "spf_result": row[11],
-            "dkim_result": row[12],
-            "dmarc_result": row[13],
-            "failure_type": row[14],
-            "created_at": row[15],
+            "country_code": row[6],
+            "country_name": row[7],
+            "geo_provider": row[8],
+            "arrival_time": row[9],
+            "org_name": row[10],
+            "header_from": row[11],
+            "envelope_from": row[12],
+            "envelope_to": row[13],
+            "spf_result": row[14],
+            "dkim_result": row[15],
+            "dmarc_result": row[16],
+            "failure_type": row[17],
+            "created_at": row[18],
         }
 
         if report["domain"] not in allowed_domains:
@@ -300,7 +349,7 @@ def list_forensic_reports(
         total = cur.fetchone()[0]
 
         cur = conn.execute(
-            f"""SELECT id, report_id, domain, source_ip, resolved_name, resolved_name_domain, arrival_time, org_name,
+            f"""SELECT id, report_id, domain, source_ip, resolved_name, resolved_name_domain, country_code, country_name, geo_provider, arrival_time, org_name,
                        header_from, envelope_from, envelope_to,
                        spf_result, dkim_result, dmarc_result, failure_type, created_at
                 FROM forensic_reports WHERE {where_sql}
@@ -317,16 +366,19 @@ def list_forensic_reports(
                 "source_ip": r[3],
                 "resolved_name": r[4],
                 "resolved_name_domain": r[5],
-                "arrival_time": r[6],
-                "org_name": r[7],
-                "header_from": r[8],
-                "envelope_from": r[9],
-                "envelope_to": r[10],
-                "spf_result": r[11],
-                "dkim_result": r[12],
-                "dmarc_result": r[13],
-                "failure_type": r[14],
-                "created_at": r[15],
+                "country_code": r[6],
+                "country_name": r[7],
+                "geo_provider": r[8],
+                "arrival_time": r[9],
+                "org_name": r[10],
+                "header_from": r[11],
+                "envelope_from": r[12],
+                "envelope_to": r[13],
+                "spf_result": r[14],
+                "dkim_result": r[15],
+                "dmarc_result": r[16],
+                "failure_type": r[17],
+                "created_at": r[18],
             }
             for r in rows
         ]
@@ -483,7 +535,7 @@ def search_records(
 
         total = cur.fetchone()[0]
         cur = conn.execute(
-            f"""SELECT rec.id, rec.aggregate_report_id, rec.source_ip, rec.resolved_name, rec.resolved_name_domain, rec.count,
+            f"""SELECT rec.id, rec.aggregate_report_id, rec.source_ip, rec.resolved_name, rec.resolved_name_domain, rec.country_code, rec.country_name, rec.geo_provider, rec.count,
                        rec.disposition, rec.dkim_result, rec.spf_result,
                        rec.header_from, rec.envelope_from, rec.envelope_to,
                        ar.domain, ar.report_id, ar.org_name, ar.date_begin, ar.date_end
@@ -503,20 +555,41 @@ def search_records(
                 "source_ip": row[2],
                 "resolved_name": row[3],
                 "resolved_name_domain": row[4],
-                "count": row[5],
-                "disposition": row[6],
-                "dkim_result": row[7],
-                "spf_result": row[8],
-                "header_from": row[9],
-                "envelope_from": row[10],
-                "envelope_to": row[11],
-                "domain": row[12],
-                "report_id": row[13],
-                "org_name": row[14],
-                "date_begin": row[15],
-                "date_end": row[16],
-                "record_date": _record_date_from_ts(row[15]),
+                "country_code": row[5],
+                "country_name": row[6],
+                "geo_provider": row[7],
+                "count": row[8],
+                "disposition": row[9],
+                "dkim_result": row[10],
+                "spf_result": row[11],
+                "header_from": row[12],
+                "envelope_from": row[13],
+                "envelope_to": row[14],
+                "domain": row[15],
+                "report_id": row[16],
+                "org_name": row[17],
+                "date_begin": row[18],
+                "date_end": row[19],
+                "record_date": _record_date_from_ts(row[18]),
             })
         return {"items": items, "total": total, "page": page, "page_size": page_size, "group_by": None}
     finally:
         conn.close()
+
+
+def _load_json_list(raw_value: str | None) -> list[str]:
+    if not raw_value:
+        return []
+    try:
+        data = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(item) for item in data if isinstance(item, str)]
+
+
+def row_get(report_id: str, conn, column_name: str) -> Any:
+    cur = conn.execute(f"SELECT {column_name} FROM aggregate_reports WHERE id = ?", (report_id,))
+    row = cur.fetchone()
+    return row[0] if row else None

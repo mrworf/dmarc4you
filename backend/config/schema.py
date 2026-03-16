@@ -5,6 +5,7 @@ from typing import Literal
 
 LogLevel = Literal["VERBOSE", "INFO", "WARN", "ERROR"]
 SameSitePolicy = Literal["lax", "strict", "none"]
+GeoIpProvider = Literal["none", "dbip-lite-country", "maxmind-geolite2-country"]
 
 
 @dataclass(frozen=True)
@@ -24,3 +25,7 @@ class Config:
     api_public_url: str | None = None
     cors_allowed_origins: tuple[str, ...] = ()
     archive_storage_path: str | None = None
+    dns_nameservers: tuple[str, ...] = ()
+    dns_timeout_seconds: float = 1.0
+    geoip_provider: GeoIpProvider = "none"
+    geoip_database_path: str | None = None

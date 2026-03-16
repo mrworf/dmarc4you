@@ -280,6 +280,7 @@ def seed_e2e_environment(
         name="Seeded Operations",
         description="Seeded dashboard for Next.js browser validation.",
         domain_ids=[primary_domain_id],
+        visible_columns=[],
         owner_user_id=super_admin_id,
         current_user=super_admin,
     )

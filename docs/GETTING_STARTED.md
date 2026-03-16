@@ -58,6 +58,10 @@ Configuration is loaded from `config.yaml` (or the path in `DMARC_CONFIG` env va
 | `auth.session_cookie_name` | `DMARC_SESSION_COOKIE` | `dmarc_session` | Session cookie name |
 | `auth.session_max_age_days` | `DMARC_SESSION_MAX_AGE_DAYS` | `7` | Session lifetime in days |
 | `archive.storage_path` | `DMARC_ARCHIVE_STORAGE_PATH` | `null` | Path for raw artifact archival (optional) |
+| `dns.nameservers` | `DMARC_DNS_NAMESERVERS` | empty | Optional PTR resolver override list |
+| `dns.timeout_seconds` | `DMARC_DNS_TIMEOUT_SECONDS` | `1.0` | Reverse DNS timeout in seconds |
+| `geoip.provider` | `DMARC_GEOIP_PROVIDER` | `none` | Offline GeoIP provider |
+| `geoip.database_path` | `DMARC_GEOIP_DATABASE_PATH` | `null` | Local MMDB path for GeoIP |
 
 ### Production Configuration
 
@@ -72,6 +76,8 @@ For production deployments:
 2. **Set up the database path** to a persistent location with proper backups.
 
 3. **Enable artifact archival** by setting `archive.storage_path` if you want to retain raw report files.
+
+4. **Configure GeoIP** only if you want country enrichment. See [GeoIP Setup](GEOIP_SETUP.md).
 
 ## First Login
 

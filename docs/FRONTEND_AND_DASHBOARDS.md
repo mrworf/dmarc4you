@@ -81,6 +81,13 @@ Dashboard detail pages support temporary aggregate grouping by:
 
 Grouping is URL-state only in v1 and is not saved with the dashboard definition.
 
+## Dashboard visible fields
+
+- each dashboard persists an ordered `visible_columns` list for aggregate result tables
+- owners and other eligible editors can change the saved visible fields
+- viewers inherit the saved column layout
+- if no custom layout is stored, the backend applies a sensible DMARC analysis default
+
 ## Manager behavior
 
 Managers can:
@@ -94,6 +101,8 @@ Managers can:
 ## YAML import/export
 
 Export should serialize a portable dashboard definition without fixed environment-bound domain ids. The dashboard detail view includes an **Export** action that downloads the current dashboard as portable YAML (same format as the export API).
+
+Portable YAML also includes the saved `visible_columns` list.
 
 Import flow:
 

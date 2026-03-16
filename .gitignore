@@ -8,5 +8,7 @@ frontend-next/test-results/
 frontend-next/playwright-report/
 plans.txt
 pw.txt
-data/dmarc.db
+data/*.db
 .tmp/
+config.yaml
+*.mmdb

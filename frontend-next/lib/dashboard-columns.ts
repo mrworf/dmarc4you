@@ -1,0 +1,32 @@
+export const defaultVisibleColumns = [
+  "record_date",
+  "domain",
+  "org_name",
+  "source_ip",
+  "resolved_name",
+  "country_code",
+  "count",
+  "disposition",
+  "dkim_result",
+  "spf_result",
+  "header_from",
+];
+
+export const dashboardColumnOptions = [
+  { value: "record_date", label: "Record date" },
+  { value: "domain", label: "Domain" },
+  { value: "org_name", label: "Org" },
+  { value: "source_ip", label: "Source IP" },
+  { value: "resolved_name", label: "Resolved name" },
+  { value: "resolved_name_domain", label: "Resolved domain" },
+  { value: "country_code", label: "Country code" },
+  { value: "country_name", label: "Country name" },
+  { value: "count", label: "Count" },
+  { value: "disposition", label: "Disposition" },
+  { value: "dkim_result", label: "DKIM" },
+  { value: "spf_result", label: "SPF" },
+  { value: "header_from", label: "Header from" },
+  { value: "envelope_from", label: "Envelope from" },
+  { value: "envelope_to", label: "Envelope to" },
+  { value: "report_id", label: "Report ID" },
+];

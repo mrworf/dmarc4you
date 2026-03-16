@@ -70,11 +70,13 @@ export function AggregateSearchResultsTable({
   onViewReport,
   onQuickFilter,
   result,
+  visibleColumns,
 }: {
   emptyMessage: string;
   onViewReport?: (reportId: string) => void;
   onQuickFilter?: (option: SearchQuickFilterOption) => void;
   result: SearchRecordsResponse;
+  visibleColumns?: string[];
 }) {
   if (!result.items.length) {
     return <p className="status-text">{emptyMessage}</p>;
@@ -114,21 +116,18 @@ export function AggregateSearchResultsTable({
     );
   }
 
+  const columns = visibleColumns?.length
+    ? visibleColumns
+    : ["record_date", "source_ip", "resolved_name", "resolved_name_domain", "count", "disposition", "dkim_result", "spf_result", "domain", "org_name"];
+
   return (
     <div className="table-wrap">
       <table className="data-table">
         <thead>
           <tr>
-            <th>Record date</th>
-            <th>Source IP</th>
-            <th>Resolved name</th>
-            <th>Resolved domain</th>
-            <th>Count</th>
-            <th>Disposition</th>
-            <th>DKIM</th>
-            <th>SPF</th>
-            <th>Domain</th>
-            <th>Org</th>
+            {columns.map((column) => (
+              <th key={column}>{columnLabel(column)}</th>
+            ))}
             <th>Detail</th>
           </tr>
         </thead>
@@ -139,101 +138,9 @@ export function AggregateSearchResultsTable({
             }
             return (
               <tr key={item.id}>
-                <td>{item.record_date ?? "n/a"}</td>
-                <td>
-                  <CellValueWithActions
-                    actions={
-                      item.source_ip
-                        ? [{ label: "Include in search", target: "query", value: item.source_ip }]
-                        : []
-                    }
-                    onQuickFilter={onQuickFilter}
-                    value={item.source_ip ?? "n/a"}
-                  />
-                </td>
-                <td>
-                  <CellValueWithActions
-                    actions={
-                      item.resolved_name
-                        ? [{ label: "Include in search", target: "query", value: item.resolved_name }]
-                        : []
-                    }
-                    onQuickFilter={onQuickFilter}
-                    value={item.resolved_name ?? "n/a"}
-                  />
-                </td>
-                <td>
-                  <CellValueWithActions
-                    actions={
-                      item.resolved_name_domain
-                        ? [{ label: "Include in search", target: "query", value: item.resolved_name_domain }]
-                        : []
-                    }
-                    onQuickFilter={onQuickFilter}
-                    value={item.resolved_name_domain ?? "n/a"}
-                  />
-                </td>
-                <td>{item.count}</td>
-                <td>
-                  <CellValueWithActions
-                    actions={
-                      item.disposition
-                        ? [
-                            { label: "Include disposition", target: "include_disposition", value: item.disposition },
-                            { label: "Exclude disposition", target: "exclude_disposition", value: item.disposition },
-                          ]
-                        : []
-                    }
-                    onQuickFilter={onQuickFilter}
-                    value={item.disposition ?? "n/a"}
-                  />
-                </td>
-                <td>
-                  <CellValueWithActions
-                    actions={
-                      item.dkim_result
-                        ? [
-                            { label: "Include DKIM", target: "include_dkim", value: item.dkim_result },
-                            { label: "Exclude DKIM", target: "exclude_dkim", value: item.dkim_result },
-                          ]
-                        : []
-                    }
-                    onQuickFilter={onQuickFilter}
-                    value={item.dkim_result ?? "n/a"}
-                  />
-                </td>
-                <td>
-                  <CellValueWithActions
-                    actions={
-                      item.spf_result
-                        ? [
-                            { label: "Include SPF", target: "include_spf", value: item.spf_result },
-                            { label: "Exclude SPF", target: "exclude_spf", value: item.spf_result },
-                          ]
-                        : []
-                    }
-                    onQuickFilter={onQuickFilter}
-                    value={item.spf_result ?? "n/a"}
-                  />
-                </td>
-                <td>
-                  <CellValueWithActions
-                    actions={item.domain ? [{ label: "Limit to domain", target: "domains", value: item.domain }] : []}
-                    onQuickFilter={onQuickFilter}
-                    value={item.domain}
-                  />
-                </td>
-                <td>
-                  <CellValueWithActions
-                    actions={
-                      item.org_name
-                        ? [{ label: "Include in search", target: "query", value: item.org_name }]
-                        : []
-                    }
-                    onQuickFilter={onQuickFilter}
-                    value={item.org_name ?? "n/a"}
-                  />
-                </td>
+                {columns.map((column) => (
+                  <td key={column}>{renderAggregateCell(column, item, onQuickFilter)}</td>
+                ))}
                 <td>
                   {onViewReport ? (
                     <button className="button-link" onClick={() => onViewReport(item.aggregate_report_id)} type="button">
@@ -250,6 +157,142 @@ export function AggregateSearchResultsTable({
       </table>
     </div>
   );
+}
+
+function columnLabel(column: string): string {
+  const labels: Record<string, string> = {
+    record_date: "Record date",
+    source_ip: "Source IP",
+    resolved_name: "Resolved name",
+    resolved_name_domain: "Resolved domain",
+    country_code: "Country code",
+    country_name: "Country name",
+    count: "Count",
+    disposition: "Disposition",
+    dkim_result: "DKIM",
+    spf_result: "SPF",
+    domain: "Domain",
+    org_name: "Org",
+    header_from: "Header from",
+    envelope_from: "Envelope from",
+    envelope_to: "Envelope to",
+    report_id: "Report ID",
+  };
+  return labels[column] ?? column;
+}
+
+function renderAggregateCell(
+  column: string,
+  item: AggregateSearchResult,
+  onQuickFilter?: (option: SearchQuickFilterOption) => void,
+) {
+  switch (column) {
+    case "record_date":
+      return item.record_date ?? "n/a";
+    case "source_ip":
+      return (
+        <CellValueWithActions
+          actions={item.source_ip ? [{ label: "Include in search", target: "query", value: item.source_ip }] : []}
+          onQuickFilter={onQuickFilter}
+          value={item.source_ip ?? "n/a"}
+        />
+      );
+    case "resolved_name":
+      return (
+        <CellValueWithActions
+          actions={item.resolved_name ? [{ label: "Include in search", target: "query", value: item.resolved_name }] : []}
+          onQuickFilter={onQuickFilter}
+          value={item.resolved_name ?? "n/a"}
+        />
+      );
+    case "resolved_name_domain":
+      return (
+        <CellValueWithActions
+          actions={
+            item.resolved_name_domain ? [{ label: "Include in search", target: "query", value: item.resolved_name_domain }] : []
+          }
+          onQuickFilter={onQuickFilter}
+          value={item.resolved_name_domain ?? "n/a"}
+        />
+      );
+    case "country_code":
+      return item.country_code ?? "n/a";
+    case "country_name":
+      return item.country_name ?? "n/a";
+    case "count":
+      return item.count;
+    case "disposition":
+      return (
+        <CellValueWithActions
+          actions={
+            item.disposition
+              ? [
+                  { label: "Include disposition", target: "include_disposition", value: item.disposition },
+                  { label: "Exclude disposition", target: "exclude_disposition", value: item.disposition },
+                ]
+              : []
+          }
+          onQuickFilter={onQuickFilter}
+          value={item.disposition ?? "n/a"}
+        />
+      );
+    case "dkim_result":
+      return (
+        <CellValueWithActions
+          actions={
+            item.dkim_result
+              ? [
+                  { label: "Include DKIM", target: "include_dkim", value: item.dkim_result },
+                  { label: "Exclude DKIM", target: "exclude_dkim", value: item.dkim_result },
+                ]
+              : []
+          }
+          onQuickFilter={onQuickFilter}
+          value={item.dkim_result ?? "n/a"}
+        />
+      );
+    case "spf_result":
+      return (
+        <CellValueWithActions
+          actions={
+            item.spf_result
+              ? [
+                  { label: "Include SPF", target: "include_spf", value: item.spf_result },
+                  { label: "Exclude SPF", target: "exclude_spf", value: item.spf_result },
+                ]
+              : []
+          }
+          onQuickFilter={onQuickFilter}
+          value={item.spf_result ?? "n/a"}
+        />
+      );
+    case "domain":
+      return (
+        <CellValueWithActions
+          actions={item.domain ? [{ label: "Limit to domain", target: "domains", value: item.domain }] : []}
+          onQuickFilter={onQuickFilter}
+          value={item.domain}
+        />
+      );
+    case "org_name":
+      return (
+        <CellValueWithActions
+          actions={item.org_name ? [{ label: "Include in search", target: "query", value: item.org_name }] : []}
+          onQuickFilter={onQuickFilter}
+          value={item.org_name ?? "n/a"}
+        />
+      );
+    case "header_from":
+      return item.header_from ?? "n/a";
+    case "envelope_from":
+      return item.envelope_from ?? "n/a";
+    case "envelope_to":
+      return item.envelope_to ?? "n/a";
+    case "report_id":
+      return item.report_id;
+    default:
+      return "n/a";
+  }
 }
 
 export function ForensicResultsTable({
@@ -276,6 +319,7 @@ export function ForensicResultsTable({
             <th>Source IP</th>
             <th>Resolved name</th>
             <th>Resolved domain</th>
+            <th>Country</th>
             <th>Header from</th>
             <th>SPF</th>
             <th>DKIM</th>
@@ -298,6 +342,7 @@ export function ForensicResultsTable({
               <td>{item.source_ip ?? "n/a"}</td>
               <td>{item.resolved_name ?? "n/a"}</td>
               <td>{item.resolved_name_domain ?? "n/a"}</td>
+              <td>{item.country_code ? `${item.country_code} ${item.country_name ?? ""}`.trim() : "n/a"}</td>
               <td>{item.header_from ?? "n/a"}</td>
               <td>{item.spf_result ?? "n/a"}</td>
               <td>{item.dkim_result ?? "n/a"}</td>

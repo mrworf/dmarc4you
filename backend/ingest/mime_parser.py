@@ -4,6 +4,8 @@ import email
 import email.policy
 from email.message import EmailMessage
 
+from backend.ingest.compression import detect_content_encoding
+
 MAX_ATTACHMENTS = 20
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024  # 10 MB per attachment
 
@@ -111,11 +113,4 @@ def _extract_from_part(part: EmailMessage, attachments: list[dict]) -> None:
 
 def _detect_encoding(payload: bytes, filename: str, content_type: str) -> str | None:
     """Detect if payload is gzip/zip compressed."""
-    if payload[:2] == b"\x1f\x8b":
-        return "gzip"
-    filename_lower = filename.lower()
-    if filename_lower.endswith(".gz") or filename_lower.endswith(".gzip"):
-        return "gzip"
-    if "gzip" in content_type or "x-gzip" in content_type:
-        return "gzip"
-    return None
+    return detect_content_encoding(payload, filename=filename, content_type=content_type)

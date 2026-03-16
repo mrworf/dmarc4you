@@ -76,8 +76,16 @@ Common reasons:
 ## Reverse DNS enrichment
 
 - Ingest attempts reverse DNS resolution for aggregate and forensic source IPs
+- YAML may optionally specify explicit DNS resolvers; otherwise the host default resolver is used
 - Lookup failure or timeout never rejects the report
 - Normalized rows keep the original IP and store nullable `resolved_name` / `resolved_name_domain`
+
+## GeoIP enrichment
+
+- Ingest may perform offline country enrichment for aggregate and forensic source IPs
+- GeoIP providers are configured in YAML and use local MMDB files
+- Lookup failure or missing databases never reject the report
+- Normalized rows keep nullable `country_code`, `country_name`, and `geo_provider`
 
 ## Partial acceptance
 

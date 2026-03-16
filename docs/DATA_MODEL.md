@@ -81,6 +81,7 @@ Fields:
 - `created_by_user_id`
 - `created_at`
 - `updated_at`
+- `visible_columns`
 - `is_dormant`
 - `dormant_reason`
 
@@ -100,6 +101,8 @@ Fields:
 ### Widgets and filters
 
 Store widget definitions and dashboard filters as structured configuration rows or JSON documents with strong validation.
+
+Dashboards also persist an ordered `visible_columns` list. When no explicit list is stored, the backend applies a default aggregate-analysis column set.
 
 ## Ingest model
 
@@ -153,16 +156,20 @@ Suggested normalized fields:
 - report org name
 - report id
 - date range start/end
+- report contact email / extra contact info / reporter errors
 - policy domain
 - adkim / aspf / p / sp / pct
 - source IP
 - resolved hostname (optional)
 - resolved hostname domain/grouping key (optional)
+- country code/name/provider (optional)
 - message count
 - disposition
 - DKIM result
 - SPF result
 - header-from / envelope-from / envelope-to
+- override reasons/comments
+- multi-value auth_results rows for DKIM/SPF details
 
 ### Forensic reports
 
@@ -172,6 +179,7 @@ Store normalized and searchable fields only:
 - source IP
 - resolved hostname (optional)
 - resolved hostname domain/grouping key (optional)
+- country code/name/provider (optional)
 - arrival time
 - reporting organization
 - envelope/header identifiers

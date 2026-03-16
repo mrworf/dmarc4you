@@ -5,11 +5,13 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import type { DomainSummary } from "@/lib/api/types";
+import { dashboardColumnOptions, defaultVisibleColumns } from "@/lib/dashboard-columns";
 
 const createDashboardSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   description: z.string().optional(),
   domain_ids: z.array(z.string()).min(1, "Select at least one domain"),
+  visible_columns: z.array(z.string()).min(1, "Select at least one visible field"),
 });
 
 export type CreateDashboardValues = z.infer<typeof createDashboardSchema>;
@@ -33,6 +35,7 @@ export function CreateDashboardForm({
       name: "",
       description: "",
       domain_ids: [],
+      visible_columns: defaultVisibleColumns,
     },
   });
 
@@ -73,6 +76,18 @@ export function CreateDashboardForm({
           <p className="status-text">No active domains are available yet.</p>
         )}
         {errors.domain_ids ? <span className="error-text">{errors.domain_ids.message}</span> : null}
+      </div>
+      <div className="stack" style={{ gap: 10 }}>
+        <span className="field-label" style={{ gap: 0 }}>
+          Visible fields
+        </span>
+        {dashboardColumnOptions.map((column) => (
+          <label className="checkbox-card" key={column.value}>
+            <input type="checkbox" value={column.value} {...register("visible_columns")} />
+            <span>{column.label}</span>
+          </label>
+        ))}
+        {errors.visible_columns ? <span className="error-text">{errors.visible_columns.message}</span> : null}
       </div>
       <button className="button-primary" disabled={isSubmitting || !domains.length} type="submit">
         {isSubmitting ? "Creating..." : "Create dashboard"}

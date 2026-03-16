@@ -85,6 +85,12 @@ Example:
 }
 ```
 
+Supported `content_encoding` values are:
+
+- empty / omitted for plain XML or MIME email payloads
+- `gzip` for gzip-compressed content
+- `zip` for ZIP archives containing supported report payloads
+
 Immediate response:
 
 ```json

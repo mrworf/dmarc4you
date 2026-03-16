@@ -1,88 +1,61 @@
 # DMARC Analyzer
 
-A self-hosted DMARC analysis platform for ingesting, storing, and visualizing DMARC aggregate and forensic reports.
+A self-hosted DMARC analysis platform for ingesting, storing, and reviewing DMARC aggregate and forensic reports.
+
+## What It Does
+
+- Ingest DMARC reports asynchronously
+- Normalize aggregate and forensic data for search and dashboards
+- Enforce domain-scoped RBAC and API-key-based ingest
+- Support reverse DNS and optional offline GeoIP enrichment
+- Provide dashboards, search, upload, audit, and domain lifecycle controls
 
 ## Quick Start
 
 ```bash
-# Clone and set up
 git clone <repository-url>
 cd dmarc4you
+
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Configure
 cp config.example.yaml config.yaml
-# Edit config.yaml — at minimum, change auth.session_secret for production
+# Edit config.yaml and set a real auth.session_secret
 
-# Run
 python -m backend.main
 ```
 
-On first startup, the bootstrap admin password is printed to stderr — **save it immediately**.
+On first startup, the bootstrap admin password is printed to stderr. Save it immediately.
 
-Open `http://localhost:8000` and log in with username `admin`.
+Open `http://localhost:8000` and log in as `admin`.
 
-For the split-origin Next.js migration workspace, see [Frontend Migration](docs/FRONTEND_MIGRATION.md) for `.env.local`, CORS, cookie, CSRF, reverse-proxy guidance, and the final legacy-SPA cutover checklist.
+## Supported Ingest Formats
 
-## Documentation
+- XML DMARC reports
+- Gzip-compressed XML (`.gz`, `.gzip`)
+- ZIP archives containing supported report payloads
+- MIME/RFC822 email messages with report attachments
 
-| Guide | Description |
-|-------|-------------|
-| [Getting Started](docs/GETTING_STARTED.md) | Installation, configuration, first login, user roles |
-| [Submitting Reports](docs/SUBMITTING_REPORTS.md) | Send DMARC reports via API, CLI, or browser upload |
-| [API v1 Specification](docs/API_V1.md) | REST API reference |
-| [Product Specification](docs/PRODUCT.md) | Product requirements and feature scope |
-| [Architecture](docs/ARCHITECTURE.md) | System design and component overview |
-| [Security and Audit](docs/SECURITY_AND_AUDIT.md) | Authentication, RBAC, and audit logging |
-| [Data Model](docs/DATA_MODEL.md) | Database schema and relationships |
-| [Domain Lifecycle](docs/DOMAIN_LIFECYCLE.md) | Archive, restore, retention, and purge |
-| [Frontend and Dashboards](docs/FRONTEND_AND_DASHBOARDS.md) | SPA and dashboard specifications |
-| [Frontend Migration](docs/FRONTEND_MIGRATION.md) | Next.js frontend foundation, deployment, rollout notes, and seeded browser verification |
-| [Frontend Migration Slices](docs/FRONTEND_MIGRATION_SLICES.md) | Slice-by-slice plan for the Next.js migration and related scaling work |
+## Core Features
 
-## Features
-
-- **Ingest** — Accept DMARC aggregate and forensic reports via API, CLI, or web upload
-- **Search** — Query reports with filters, date ranges, and full-text search
-- **Dashboards** — Create shareable dashboards with drill-down and bookmarkable URLs
-- **RBAC** — Role-based access control with domain scoping
-- **API Keys** — Domain-bound keys for automated ingest
-- **Archival** — Archive domains with configurable retention and restore capability
-- **Audit** — Comprehensive audit trail for security-sensitive actions
+- Asynchronous ingest jobs with per-report outcomes
+- Aggregate and forensic report search
+- Shared dashboards with domain scoping
+- API key management for automated ingest
+- Domain archive, restore, retention, and purge
+- Audit trail for security-sensitive actions
 
 ## User Roles
 
 | Role | Description |
 |------|-------------|
-| **super-admin** | Full access to all domains and system settings |
-| **admin** | Manage users and dashboards within assigned domains |
-| **manager** | Create and share dashboards |
-| **viewer** | Read-only access to assigned dashboards |
+| `super-admin` | Full access to all domains and system settings |
+| `admin` | Manage users and dashboards within assigned domains |
+| `manager` | Create and share dashboards |
+| `viewer` | Read-only access to assigned dashboards |
 
-See [Getting Started](docs/GETTING_STARTED.md) for detailed role permissions.
-
-## CLI Commands
-
-```bash
-# Submit DMARC reports
-python -m cli ingest --api-key KEY report.xml [report2.xml.gz ...]
-
-# Reset admin password (break-glass recovery)
-python -m cli reset-admin-password [config.yaml]
-
-# Seed the deterministic frontend E2E environment
-python -m cli seed-e2e [config.e2e.yaml]
-
-# Full seeded frontend browser regression run
-cd frontend-next
-npm run test:e2e:seeded
-```
-
-See [Submitting Reports](docs/SUBMITTING_REPORTS.md) for CLI details.
-
-For the Next.js migration wrap-up, the primary regression path is now the seeded browser harness. See [Frontend Migration](docs/FRONTEND_MIGRATION.md) and [Getting Started](docs/GETTING_STARTED.md#seeded-e2e-browser-environment) for the seeded credentials, reset command, logs, and CI expectations.
+See [Getting Started](docs/GETTING_STARTED.md) for detailed permissions and first-login guidance.
 
 ## Configuration
 
@@ -93,41 +66,55 @@ database:
   path: data/dmarc.db
 
 log:
-  level: INFO  # VERBOSE | INFO | WARN | ERROR
+  level: INFO
 
 auth:
-  session_secret: change-me-in-production  # Required for production
+  session_secret: change-me-in-production
   session_max_age_days: 7
 
 archive:
-  storage_path: null  # Optional: path for raw artifact storage
+  storage_path: null
 
-frontend:
-  public_origin: null  # Optional: http://localhost:3000 for split-origin dev
+dns:
+  nameservers: []
+  timeout_seconds: 1.0
 
-api:
-  public_url: null  # Optional: backend public URL for separate frontend deployments
-
-cors:
-  allowed_origins: []  # Optional: browser origins allowed to call the API
+geoip:
+  provider: none
+  database_path: null
 ```
+
+Notes:
+
+- `dns.nameservers` is optional. If unset, the host default resolver is used for reverse DNS.
+- `geoip.provider` supports `none`, `dbip-lite-country`, and `maxmind-geolite2-country`.
+- GeoIP requires a local MMDB file. See [GeoIP Setup](docs/GEOIP_SETUP.md).
 
 All options can be overridden with `DMARC_*` environment variables.
 
----
+## CLI
 
-## Cursor Workspace Notes
+```bash
+# Submit reports
+python -m cli ingest --api-key YOUR_KEY report.xml report.xml.gz report.zip report.eml
 
-This repository includes Cursor-specific configuration for AI-assisted development:
+# Break-glass admin reset
+python -m cli reset-admin-password [config.yaml]
+```
 
-- `AGENTS.md` — Agent instructions for Cursor and AGENTS.md-aware tools
-- `.cursor/rules/*.mdc` — Project rules for code style and architecture
-- `.cursor/commands/*.md` — Reusable slash commands
-- `.cursor/plans/` — Implementation plans
+See [Submitting Reports](docs/SUBMITTING_REPORTS.md) for API, CLI, and browser-upload examples.
 
-### Recommended Cursor workflow
+## Documentation
 
-1. Keep `AGENTS.md` at the root
-2. Start with `/plan-next-slice` before large features
-3. Implement as thin vertical slices
-4. Read relevant `docs/*.md` before making changes
+| Guide | Description |
+|-------|-------------|
+| [Getting Started](docs/GETTING_STARTED.md) | Installation, configuration, bootstrap login, and role overview |
+| [Submitting Reports](docs/SUBMITTING_REPORTS.md) | API, CLI, and browser upload flows |
+| [API v1](docs/API_V1.md) | REST API reference |
+| [GeoIP Setup](docs/GEOIP_SETUP.md) | How to obtain and configure the MMDB database |
+| [Architecture](docs/ARCHITECTURE.md) | System design overview |
+| [Data Model](docs/DATA_MODEL.md) | Database and normalized ingest model |
+| [Security and Audit](docs/SECURITY_AND_AUDIT.md) | Auth, RBAC, and audit behavior |
+| [Domain Lifecycle](docs/DOMAIN_LIFECYCLE.md) | Archive, restore, retention, and purge |
+| [Frontend and Dashboards](docs/FRONTEND_AND_DASHBOARDS.md) | UI and dashboard behavior |
+| [Project History](docs/PROJECT_HISTORY.md) | Migration and implementation-history references |

@@ -1,5 +1,6 @@
 """Dashboard service: create, list, get, update, delete, transfer_ownership, export_yaml, import_yaml, share, unshare."""
 
+import json
 import uuid
 import yaml
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from backend.policies.dashboard_policy import (
     can_unshare_dashboard,
     can_be_shared_with,
 )
+from backend.services.dashboard_columns import normalize_visible_columns
 
 DASHBOARD_ID_PREFIX = "dash_"
 
@@ -28,6 +30,7 @@ def create_dashboard(
     name: str,
     description: str,
     domain_ids: list[str],
+    visible_columns: list[str],
     owner_user_id: str,
     current_user: dict[str, Any],
 ) -> tuple[str, dict[str, Any] | None]:
@@ -42,12 +45,22 @@ def create_dashboard(
         return "forbidden", None
     dashboard_id = f"{DASHBOARD_ID_PREFIX}{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
+    normalized_visible_columns = normalize_visible_columns(visible_columns)
     conn = get_connection(config.database_path)
     try:
         conn.execute(
-            """INSERT INTO dashboards (id, name, description, owner_user_id, created_by_user_id, created_at, updated_at, is_dormant, dormant_reason)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL)""",
-            (dashboard_id, name, description or "", owner_user_id, owner_user_id, now, now),
+            """INSERT INTO dashboards (id, name, description, owner_user_id, created_by_user_id, created_at, updated_at, is_dormant, dormant_reason, visible_columns_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)""",
+            (
+                dashboard_id,
+                name,
+                description or "",
+                owner_user_id,
+                owner_user_id,
+                now,
+                now,
+                json.dumps(normalized_visible_columns),
+            ),
         )
         for domain_id in domain_ids:
             conn.execute(
@@ -62,7 +75,7 @@ def create_dashboard(
 
 def _build_dashboard_dict(conn, dashboard_id: str) -> dict[str, Any] | None:
     cur = conn.execute(
-        "SELECT id, name, description, owner_user_id, created_by_user_id, created_at, updated_at FROM dashboards WHERE id = ?",
+        "SELECT id, name, description, owner_user_id, created_by_user_id, created_at, updated_at, visible_columns_json FROM dashboards WHERE id = ?",
         (dashboard_id,),
     )
     row = cur.fetchone()
@@ -86,6 +99,7 @@ def _build_dashboard_dict(conn, dashboard_id: str) -> dict[str, Any] | None:
         "created_by_user_id": row[4],
         "created_at": row[5],
         "updated_at": row[6],
+        "visible_columns": normalize_visible_columns(_load_json_list(row[7])),
         "domain_ids": domain_ids,
         "domain_names": domain_names,
     }
@@ -101,12 +115,12 @@ def list_dashboards(config: Config, current_user: dict[str, Any]) -> list[dict[s
         user_id = current_user.get("id") or ""
         if current_user.get("role") == ROLE_SUPER_ADMIN:
             cur = conn.execute(
-                "SELECT id, name, description, owner_user_id, created_at, updated_at FROM dashboards WHERE owner_user_id = ? ORDER BY updated_at DESC",
+                "SELECT id, name, description, owner_user_id, created_at, updated_at, visible_columns_json FROM dashboards WHERE owner_user_id = ? ORDER BY updated_at DESC",
                 (user_id,),
             )
         else:
             cur = conn.execute(
-                """SELECT id, name, description, owner_user_id, created_at, updated_at FROM dashboards
+                """SELECT id, name, description, owner_user_id, created_at, updated_at, visible_columns_json FROM dashboards
                    WHERE owner_user_id = ? AND id NOT IN (
                      SELECT s.dashboard_id FROM dashboard_domain_scope s
                      INNER JOIN domains d ON d.id = s.domain_id
@@ -129,6 +143,7 @@ def list_dashboards(config: Config, current_user: dict[str, Any]) -> list[dict[s
                 "owner_user_id": row[3],
                 "created_at": row[4],
                 "updated_at": row[5],
+                "visible_columns": normalize_visible_columns(_load_json_list(row[6])),
                 "domain_ids": domain_ids,
             })
         return out
@@ -174,6 +189,7 @@ def export_dashboard_yaml(
         "name": dashboard["name"],
         "description": dashboard.get("description") or "",
         "domains": dashboard.get("domain_names") or [],
+        "visible_columns": dashboard.get("visible_columns") or [],
     }
     return yaml.safe_dump(payload, default_flow_style=False, sort_keys=False), None
 
@@ -207,6 +223,11 @@ def import_dashboard_yaml(
         description = ""
     if not isinstance(description, str):
         description = ""
+    visible_columns = data.get("visible_columns")
+    if visible_columns is None:
+        visible_columns = []
+    if not isinstance(visible_columns, list) or not all(isinstance(column, str) for column in visible_columns):
+        return "invalid", None
     if not isinstance(domain_remap, dict):
         return "invalid", None
     for d in domains:
@@ -217,7 +238,7 @@ def import_dashboard_yaml(
     if not can_create_dashboard_with_domains(domain_ids, allowed):
         return "forbidden", None
     code, dashboard = create_dashboard(
-        config, name, description, domain_ids, current_user["id"], current_user
+        config, name, description, domain_ids, visible_columns, current_user["id"], current_user
     )
     if code != "ok" or not dashboard:
         return "forbidden", None
@@ -230,6 +251,7 @@ def update_dashboard(
     name: str | None,
     description: str | None,
     domain_ids: list[str] | None,
+    visible_columns: list[str] | None,
     current_user: dict[str, Any],
 ) -> tuple[str, dict[str, Any] | None]:
     """
@@ -239,7 +261,7 @@ def update_dashboard(
     conn = get_connection(config.database_path)
     try:
         cur = conn.execute(
-            "SELECT id, name, description, owner_user_id FROM dashboards WHERE id = ?",
+            "SELECT id, name, description, owner_user_id, visible_columns_json FROM dashboards WHERE id = ?",
             (dashboard_id,),
         )
         row = cur.fetchone()
@@ -256,6 +278,7 @@ def update_dashboard(
             "description": row[2] or "",
             "owner_user_id": row[3],
             "domain_ids": existing_domain_ids,
+            "visible_columns": normalize_visible_columns(_load_json_list(row[4])),
         }
         allowed = [d["id"] for d in list_domains(config, current_user)]
         if not can_edit_dashboard(current_user, dashboard, allowed):
@@ -263,6 +286,9 @@ def update_dashboard(
         new_name = name.strip() if name is not None else dashboard["name"]
         new_description = description if description is not None else dashboard["description"]
         new_domain_ids = domain_ids if domain_ids is not None else existing_domain_ids
+        new_visible_columns = normalize_visible_columns(
+            visible_columns if visible_columns is not None else dashboard["visible_columns"]
+        )
         if not new_name:
             return "invalid", None
         if not new_domain_ids:
@@ -271,8 +297,8 @@ def update_dashboard(
             return "forbidden", None
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
-            "UPDATE dashboards SET name = ?, description = ?, updated_at = ? WHERE id = ?",
-            (new_name, new_description, now, dashboard_id),
+            "UPDATE dashboards SET name = ?, description = ?, updated_at = ?, visible_columns_json = ? WHERE id = ?",
+            (new_name, new_description, now, json.dumps(new_visible_columns), dashboard_id),
         )
         if set(new_domain_ids) != set(existing_domain_ids):
             conn.execute(
@@ -415,6 +441,18 @@ def _get_dashboard_with_domains(conn, dashboard_id: str) -> dict[str, Any] | Non
         "owner_user_id": row[3],
         "domain_ids": domain_ids,
     }
+
+
+def _load_json_list(raw_value: str | None) -> list[str]:
+    if not raw_value:
+        return []
+    try:
+        data = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(item) for item in data if isinstance(item, str)]
 
 
 def _get_user_effective_domain_ids(config: Config, conn, user: dict[str, Any]) -> list[str]:
