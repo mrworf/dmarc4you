@@ -11,6 +11,9 @@ DEFAULT_VISIBLE_COLUMNS = [
     "disposition",
     "dkim_result",
     "spf_result",
+    "dmarc_alignment",
+    "dkim_alignment",
+    "spf_alignment",
     "header_from",
 ]
 
@@ -28,6 +31,9 @@ ALLOWED_VISIBLE_COLUMNS = frozenset(
         "disposition",
         "dkim_result",
         "spf_result",
+        "dmarc_alignment",
+        "dkim_alignment",
+        "spf_alignment",
         "header_from",
         "envelope_from",
         "envelope_to",

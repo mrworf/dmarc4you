@@ -34,13 +34,13 @@ def test_create_dashboard_stores_visible_columns() -> None:
         name="Ops",
         description="Visibility",
         domain_ids=[domain_id],
-        visible_columns=["domain", "source_ip", "country_code"],
+        visible_columns=["domain", "source_ip", "dmarc_alignment"],
         owner_user_id=current_user["id"],
         current_user=current_user,
     )
     assert status == "ok"
     assert dashboard is not None
-    assert dashboard["visible_columns"] == ["domain", "source_ip", "country_code"]
+    assert dashboard["visible_columns"] == ["domain", "source_ip", "dmarc_alignment"]
 
 
 def test_export_import_dashboard_round_trips_visible_columns() -> None:
@@ -50,7 +50,7 @@ def test_export_import_dashboard_round_trips_visible_columns() -> None:
         name="Ops",
         description="Visibility",
         domain_ids=[domain_id],
-        visible_columns=["domain", "source_ip", "country_code"],
+        visible_columns=["domain", "source_ip", "dmarc_alignment"],
         owner_user_id=current_user["id"],
         current_user=current_user,
     )
@@ -69,4 +69,4 @@ def test_export_import_dashboard_round_trips_visible_columns() -> None:
     )
     assert imported_status == "ok"
     assert imported is not None
-    assert imported["visible_columns"] == ["domain", "source_ip", "country_code"]
+    assert imported["visible_columns"] == ["domain", "source_ip", "dmarc_alignment"]

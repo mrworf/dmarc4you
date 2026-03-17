@@ -181,7 +181,8 @@ Request example:
   "from": "2026-03-01T00:00:00Z",
   "to": "2026-03-08T00:00:00Z",
   "include": {
-    "spf_result": ["fail"]
+    "spf_result": ["fail"],
+    "dmarc_alignment": ["fail"]
   },
   "exclude": {
     "disposition": ["none"]
@@ -195,6 +196,71 @@ Request example:
 ```
 
 `group_by` is optional and supported for aggregate search on `record_date`, `source_ip`, `resolved_name`, and `resolved_name_domain`.
+
+Aggregate search filters also support `dkim_alignment`, `spf_alignment`, and `dmarc_alignment`.
+
+## Domain maintenance endpoints
+
+### `POST /api/v1/domains/{domain_id}/recompute`
+
+Enqueue a background maintenance job for the domain. Current action: recompute already-ingested aggregate report derived fields, including persisted DMARC alignment.
+
+Authentication and RBAC:
+
+- `super-admin` may enqueue for any domain, including archived domains
+- assigned `admin` may enqueue only for active domains currently in their scope
+- `manager` and `viewer` receive 403
+
+Response:
+
+```json
+{
+  "job": {
+    "job_id": "dmjob_123",
+    "domain_id": "dom_123",
+    "domain_name": "example.com",
+    "action": "recompute_aggregate_reports",
+    "state": "queued",
+    "submitted_at": "2026-03-16T12:00:00Z",
+    "reports_scanned": 0,
+    "reports_skipped": 0,
+    "records_updated": 0
+  }
+}
+```
+
+Returns 409 if a recompute job for the same domain/action is already queued or processing.
+
+### `GET /api/v1/domains/{domain_id}/maintenance-jobs`
+
+List domain maintenance jobs visible for the target domain, newest first. Visibility follows the same RBAC rules as enqueue for that domain.
+
+Response:
+
+```json
+{
+  "jobs": [
+    {
+      "job_id": "dmjob_123",
+      "domain_id": "dom_123",
+      "domain_name": "example.com",
+      "action": "recompute_aggregate_reports",
+      "state": "completed",
+      "submitted_at": "2026-03-16T12:00:00Z",
+      "started_at": "2026-03-16T12:00:02Z",
+      "completed_at": "2026-03-16T12:00:04Z",
+      "reports_scanned": 3,
+      "reports_skipped": 0,
+      "records_updated": 42,
+      "summary": "Recomputed aggregate alignment for 42 records across 3 reports."
+    }
+  ]
+}
+```
+
+### `GET /api/v1/domain-maintenance-jobs/{job_id}`
+
+Return one maintenance job detail. Visibility is domain-scoped: `super-admin` can view any job; assigned `admin` can view jobs only while the backing domain remains active and assigned to them.
 
 ### `GET /api/v1/reports/aggregate`
 
@@ -245,6 +311,9 @@ Response (200):
       "disposition": "none",
       "dkim_result": "pass",
       "spf_result": "pass",
+      "dkim_alignment": "strict",
+      "spf_alignment": "relaxed",
+      "dmarc_alignment": "pass",
       "header_from": "example.com",
       "envelope_from": null,
       "envelope_to": null
@@ -254,6 +323,8 @@ Response (200):
 ```
 
 Errors: 403 if user lacks access to the report's domain; 404 if report not found.
+
+`header_from` is the visible RFC5322.From domain used for DMARC alignment. `dkim_alignment` and `spf_alignment` are `strict`, `relaxed`, `none`, or `unknown`; `dmarc_alignment` is `pass`, `fail`, or `unknown`.
 
 ### `GET /api/v1/reports/forensic`
 

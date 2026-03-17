@@ -9,6 +9,8 @@ from backend.api.v1.schemas.domains import (
     ArchiveDomainBody,
     ArtifactListResponse,
     CreateDomainBody,
+    DomainMaintenanceJobListResponse,
+    DomainMaintenanceJobMutationResponse,
     DomainMutationResponse,
     DomainStatsResponse,
     DomainsListResponse,
@@ -17,7 +19,7 @@ from backend.api.v1.schemas.domains import (
 )
 from backend.config.schema import Config
 from backend.api.v1.deps import get_config, get_current_user
-from backend.services import domain_service
+from backend.services import domain_maintenance_service, domain_service
 
 router = APIRouter(prefix="/domains", tags=["domains"])
 
@@ -240,3 +242,55 @@ def get_artifact(
         media_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{artifact_id}.raw"'},
     )
+
+
+@router.post(
+    "/{domain_id}/recompute",
+    response_model=DomainMaintenanceJobMutationResponse,
+    responses=ERROR_RESPONSES,
+)
+def enqueue_domain_recompute(
+    domain_id: str,
+    current_user: dict = Depends(get_current_user),
+    config: Config = Depends(get_config),
+) -> dict:
+    """POST /api/v1/domains/{domain_id}/recompute: enqueue aggregate recompute maintenance job."""
+    status_code, job = domain_maintenance_service.enqueue_recompute_job(
+        config,
+        domain_id=domain_id,
+        actor=current_user,
+    )
+    if status_code == "forbidden":
+        raise api_http_exception(status.HTTP_403_FORBIDDEN, "forbidden", "Forbidden")
+    if status_code == "not_found":
+        raise api_http_exception(status.HTTP_404_NOT_FOUND, "domain_not_found", "Not found")
+    if status_code == "conflict":
+        raise api_http_exception(
+            status.HTTP_409_CONFLICT,
+            "domain_maintenance_job_conflict",
+            "A recompute job is already queued or running for this domain",
+        )
+    return {"job": job}
+
+
+@router.get(
+    "/{domain_id}/maintenance-jobs",
+    response_model=DomainMaintenanceJobListResponse,
+    responses=ERROR_RESPONSES,
+)
+def list_domain_maintenance_jobs(
+    domain_id: str,
+    current_user: dict = Depends(get_current_user),
+    config: Config = Depends(get_config),
+) -> dict:
+    """GET /api/v1/domains/{domain_id}/maintenance-jobs: list maintenance jobs visible for this domain."""
+    status_code, jobs = domain_maintenance_service.list_domain_jobs(
+        config,
+        domain_id=domain_id,
+        actor=current_user,
+    )
+    if status_code == "forbidden":
+        raise api_http_exception(status.HTTP_403_FORBIDDEN, "forbidden", "Forbidden")
+    if status_code == "not_found":
+        raise api_http_exception(status.HTTP_404_NOT_FOUND, "domain_not_found", "Not found")
+    return {"jobs": jobs or []}

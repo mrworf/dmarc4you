@@ -40,6 +40,8 @@ AGGREGATE_XML_WITH_RECORDS = """<?xml version="1.0" encoding="UTF-8"?>
   </report_metadata>
   <policy_published>
     <domain>example.com</domain>
+    <adkim>s</adkim>
+    <aspf>r</aspf>
   </policy_published>
   <record>
     <row>
@@ -53,7 +55,20 @@ AGGREGATE_XML_WITH_RECORDS = """<?xml version="1.0" encoding="UTF-8"?>
     </row>
     <identifiers>
       <header_from>example.com</header_from>
+      <envelope_from>bounce.example.com</envelope_from>
     </identifiers>
+    <auth_results>
+      <dkim>
+        <domain>example.com</domain>
+        <selector>mail</selector>
+        <result>pass</result>
+      </dkim>
+      <spf>
+        <domain>bounce.example.com</domain>
+        <scope>mfrom</scope>
+        <result>pass</result>
+      </spf>
+    </auth_results>
   </record>
   <record>
     <row>
@@ -67,7 +82,20 @@ AGGREGATE_XML_WITH_RECORDS = """<?xml version="1.0" encoding="UTF-8"?>
     </row>
     <identifiers>
       <header_from>example.com</header_from>
+      <envelope_from>mailer.other.net</envelope_from>
     </identifiers>
+    <auth_results>
+      <dkim>
+        <domain>other.net</domain>
+        <selector>bad</selector>
+        <result>fail</result>
+      </dkim>
+      <spf>
+        <domain>mailer.other.net</domain>
+        <scope>mfrom</scope>
+        <result>fail</result>
+      </spf>
+    </auth_results>
   </record>
 </feedback>
 """
@@ -237,6 +265,7 @@ def test_post_search_returns_records(search_records_client) -> None:
     assert data["total"] == 2
     assert len(data["items"]) == 2
     assert data["items"][0]["record_date"] == "2025-01-01"
+    assert {"dmarc_alignment", "dkim_alignment", "spf_alignment"} <= set(data["items"][0].keys())
 
 
 def test_post_search_include_spf_fail(search_records_client) -> None:
@@ -247,6 +276,16 @@ def test_post_search_include_spf_fail(search_records_client) -> None:
     assert data["total"] == 1
     assert data["items"][0]["spf_result"] == "fail"
     assert data["items"][0]["source_ip"] == "198.51.100.5"
+
+
+def test_post_search_include_alignment_filter(search_records_client) -> None:
+    client, _ = search_records_client
+    r = client.post("/api/v1/search", json={"include": {"dmarc_alignment": ["pass"]}})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 1
+    assert data["items"][0]["source_ip"] == "192.0.2.1"
+    assert data["items"][0]["dmarc_alignment"] == "pass"
 
 
 def test_post_search_exclude_disposition_none(search_records_client) -> None:
@@ -344,6 +383,10 @@ def test_get_aggregate_detail_returns_report_with_records(search_records_client,
     assert len(data["records"]) == 2
     ips = {rec["source_ip"] for rec in data["records"]}
     assert ips == {"192.0.2.1", "198.51.100.5"}
+    first_record = next(rec for rec in data["records"] if rec["source_ip"] == "192.0.2.1")
+    assert first_record["dkim_alignment"] == "strict"
+    assert first_record["spf_alignment"] == "relaxed"
+    assert first_record["dmarc_alignment"] == "pass"
 
 
 def test_get_aggregate_detail_404_not_found(search_records_client) -> None:

@@ -18,7 +18,13 @@ export type SearchQuickFilterOption = {
     | "include_dkim"
     | "exclude_dkim"
     | "include_disposition"
-    | "exclude_disposition";
+    | "exclude_disposition"
+    | "include_dkim_alignment"
+    | "exclude_dkim_alignment"
+    | "include_spf_alignment"
+    | "exclude_spf_alignment"
+    | "include_dmarc_alignment"
+    | "exclude_dmarc_alignment";
 };
 
 function isGroupedResult(item: AggregateSearchResult | GroupedSearchResult): item is GroupedSearchResult {
@@ -119,7 +125,20 @@ export function AggregateSearchResultsTable({
 
   const columns = visibleColumns?.length
     ? visibleColumns.filter((column) => column !== "resolved_name_domain")
-    : ["record_date", "source_ip", "resolved_name", "count", "disposition", "dkim_result", "spf_result", "domain", "org_name"];
+    : [
+        "record_date",
+        "source_ip",
+        "resolved_name",
+        "count",
+        "disposition",
+        "dkim_result",
+        "spf_result",
+        "dmarc_alignment",
+        "dkim_alignment",
+        "spf_alignment",
+        "domain",
+        "org_name",
+      ];
 
   return (
     <div className="table-wrap">
@@ -246,6 +265,51 @@ function renderAggregateCell(
           }
           onQuickFilter={onQuickFilter}
           value={item.spf_result ?? "n/a"}
+        />
+      );
+    case "dmarc_alignment":
+      return (
+        <CellValueWithActions
+          actions={
+            item.dmarc_alignment
+              ? [
+                  { label: "Include DMARC alignment", target: "include_dmarc_alignment", value: item.dmarc_alignment },
+                  { label: "Exclude DMARC alignment", target: "exclude_dmarc_alignment", value: item.dmarc_alignment },
+                ]
+              : []
+          }
+          onQuickFilter={onQuickFilter}
+          value={item.dmarc_alignment ?? "n/a"}
+        />
+      );
+    case "dkim_alignment":
+      return (
+        <CellValueWithActions
+          actions={
+            item.dkim_alignment
+              ? [
+                  { label: "Include DKIM alignment", target: "include_dkim_alignment", value: item.dkim_alignment },
+                  { label: "Exclude DKIM alignment", target: "exclude_dkim_alignment", value: item.dkim_alignment },
+                ]
+              : []
+          }
+          onQuickFilter={onQuickFilter}
+          value={item.dkim_alignment ?? "n/a"}
+        />
+      );
+    case "spf_alignment":
+      return (
+        <CellValueWithActions
+          actions={
+            item.spf_alignment
+              ? [
+                  { label: "Include SPF alignment", target: "include_spf_alignment", value: item.spf_alignment },
+                  { label: "Exclude SPF alignment", target: "exclude_spf_alignment", value: item.spf_alignment },
+                ]
+              : []
+          }
+          onQuickFilter={onQuickFilter}
+          value={item.spf_alignment ?? "n/a"}
         />
       );
     case "domain":

@@ -11,6 +11,9 @@ export const defaultVisibleColumns = [
   "disposition",
   "dkim_result",
   "spf_result",
+  "dmarc_alignment",
+  "dkim_alignment",
+  "spf_alignment",
   "header_from",
 ];
 
@@ -26,6 +29,9 @@ export const dashboardColumnOptions = [
   { value: "disposition", label: getAggregateFieldLabel("disposition") },
   { value: "dkim_result", label: getAggregateFieldLabel("dkim_result") },
   { value: "spf_result", label: getAggregateFieldLabel("spf_result") },
+  { value: "dmarc_alignment", label: getAggregateFieldLabel("dmarc_alignment") },
+  { value: "dkim_alignment", label: getAggregateFieldLabel("dkim_alignment") },
+  { value: "spf_alignment", label: getAggregateFieldLabel("spf_alignment") },
   { value: "header_from", label: getAggregateFieldLabel("header_from") },
   { value: "envelope_from", label: getAggregateFieldLabel("envelope_from") },
   { value: "envelope_to", label: getAggregateFieldLabel("envelope_to") },

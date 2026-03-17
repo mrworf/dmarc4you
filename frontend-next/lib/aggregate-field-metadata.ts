@@ -11,6 +11,9 @@ export type AggregateFieldKey =
   | "disposition"
   | "dkim_result"
   | "spf_result"
+  | "dmarc_alignment"
+  | "dkim_alignment"
+  | "spf_alignment"
   | "header_from"
   | "envelope_from"
   | "envelope_to"
@@ -72,6 +75,18 @@ export const aggregateFieldMetadata: Record<AggregateFieldKey, AggregateFieldMet
   spf_result: {
     label: "SPF",
     tooltip: "SPF pass or fail result recorded in the aggregate data.",
+  },
+  dmarc_alignment: {
+    label: "DMARC alignment",
+    tooltip: "Final DMARC-aligned outcome for the row: pass when either aligned SPF or aligned DKIM succeeds.",
+  },
+  dkim_alignment: {
+    label: "DKIM alignment",
+    tooltip: "Whether a passing DKIM signature aligned with the visible From domain under strict or relaxed policy.",
+  },
+  spf_alignment: {
+    label: "SPF alignment",
+    tooltip: "Whether the authenticated Mail From domain aligned with the visible From domain under strict or relaxed policy.",
   },
   header_from: {
     label: "Header From domain",

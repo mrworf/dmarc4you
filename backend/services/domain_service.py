@@ -6,6 +6,7 @@ from typing import Any
 
 from backend.config.schema import Config
 from backend.policies.domain_policy import can_create_domain, can_archive_domain, can_restore_domain, can_delete_domain
+from backend.services import domain_maintenance_service
 from backend.storage.sqlite import get_connection
 from backend.archive.filesystem import FilesystemArchiveStorage
 
@@ -59,8 +60,9 @@ def list_domains(config: Config, current_user: dict[str, Any]) -> list[dict[str,
                 (current_user["id"], STATUS_ACTIVE),
             )
         rows = cur.fetchall()
-        return [
-            {
+        items = []
+        for r in rows:
+            item = {
                 "id": r[0],
                 "name": r[1],
                 "status": r[2],
@@ -69,8 +71,11 @@ def list_domains(config: Config, current_user: dict[str, Any]) -> list[dict[str,
                 "retention_delete_at": r[5],
                 "retention_paused": r[6] if r[6] is not None else 0,
             }
-            for r in rows
-        ]
+            latest_job = domain_maintenance_service.get_latest_job_for_domain(config, domain_id=r[0])
+            if latest_job:
+                item["latest_maintenance_job"] = latest_job
+            items.append(item)
+        return items
     finally:
         conn.close()
 
@@ -148,6 +153,7 @@ def _purge_domain_data(config: Config, domain_id: str, domain_name: str) -> None
         conn.execute("DELETE FROM user_domain_assignments WHERE domain_id = ?", (domain_id,))
         conn.execute("DELETE FROM dashboard_domain_scope WHERE domain_id = ?", (domain_id,))
         conn.execute("DELETE FROM api_key_domains WHERE domain_id = ?", (domain_id,))
+        conn.execute("DELETE FROM domain_maintenance_jobs WHERE domain_id = ?", (domain_id,))
         conn.execute("DELETE FROM aggregate_reports WHERE domain = ?", (domain_name,))
         conn.execute("DELETE FROM forensic_reports WHERE domain = ?", (domain_name,))
         conn.execute("DELETE FROM domains WHERE id = ?", (domain_id,))

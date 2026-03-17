@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -12,6 +13,7 @@ import type {
   ArchiveDomainBody,
   CreateDomainBody,
   DomainMutationResponse,
+  DomainMaintenanceJobMutationResponse,
   DomainSummary,
   DomainsResponse,
   SetDomainRetentionBody,
@@ -22,12 +24,20 @@ type DomainActionState =
   | { kind: "retention"; domain: DomainSummary }
   | null;
 
+function formatJobAction(action: string) {
+  if (action === "recompute_aggregate_reports") {
+    return "Recompute aggregate reports";
+  }
+  return action;
+}
+
 export function DomainsContent() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [activeAction, setActiveAction] = useState<DomainActionState>(null);
   const [deleteDomain, setDeleteDomain] = useState<DomainSummary | null>(null);
+  const [recomputeDomain, setRecomputeDomain] = useState<DomainSummary | null>(null);
   const [createName, setCreateName] = useState("");
   const [archiveRetentionDays, setArchiveRetentionDays] = useState("");
   const [retentionDays, setRetentionDays] = useState("");
@@ -95,6 +105,15 @@ export function DomainsContent() {
     },
   });
 
+  const recomputeReports = useMutation({
+    mutationFn: (domainId: string) =>
+      apiClient.post<DomainMaintenanceJobMutationResponse>(`/api/v1/domains/${domainId}/recompute`),
+    onSuccess: async () => {
+      setRecomputeDomain(null);
+      await queryClient.invalidateQueries({ queryKey: ["domains"] });
+    },
+  });
+
   const domains = domainsQuery.data?.domains ?? [];
   const canManageDomains = user?.role === "super-admin";
   const activeCount = domains.filter((domain) => domain.status === "active").length;
@@ -106,7 +125,9 @@ export function DomainsContent() {
   const pauseError = pauseRetention.error instanceof ApiError ? pauseRetention.error.message : null;
   const unpauseError = unpauseRetention.error instanceof ApiError ? unpauseRetention.error.message : null;
   const deleteError = deleteDomainMutation.error instanceof ApiError ? deleteDomainMutation.error.message : null;
+  const recomputeError = recomputeReports.error instanceof ApiError ? recomputeReports.error.message : null;
   const listMutationError = restoreError ?? pauseError ?? unpauseError;
+  const canRecomputeReports = user?.role === "super-admin" || user?.role === "admin";
 
   async function handleCreateDomain() {
     if (!createName.trim()) {
@@ -206,9 +227,35 @@ export function DomainsContent() {
                       ) : null}
                       {domain.retention_paused ? <span>Retention paused</span> : null}
                     </div>
+                    {domain.latest_maintenance_job ? (
+                      <div className="domain-meta">
+                        <span>Maintenance: {domain.latest_maintenance_job.state}</span>
+                        <span>{formatJobAction(domain.latest_maintenance_job.action)}</span>
+                        <span>Submitted {new Date(domain.latest_maintenance_job.submitted_at).toLocaleString()}</span>
+                        {domain.latest_maintenance_job.completed_at ? (
+                          <span>Completed {new Date(domain.latest_maintenance_job.completed_at).toLocaleString()}</span>
+                        ) : null}
+                        <span>{domain.latest_maintenance_job.records_updated} records updated</span>
+                        <Link className="button-link" href={`/domain-maintenance-jobs/${domain.latest_maintenance_job.job_id}`}>
+                          View maintenance job
+                        </Link>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="section-actions">
                     <span className="pill">{domain.status}</span>
+                    {canRecomputeReports ? (
+                      <button
+                        className="button-secondary"
+                        disabled={domain.latest_maintenance_job?.state === "queued" || domain.latest_maintenance_job?.state === "processing"}
+                        onClick={() => setRecomputeDomain(domain)}
+                        type="button"
+                      >
+                        {domain.latest_maintenance_job?.state === "queued" || domain.latest_maintenance_job?.state === "processing"
+                          ? "Recompute queued"
+                          : "Recompute reports"}
+                      </button>
+                    ) : null}
                     {canManageDomains ? (
                       <>
                         {domain.status === "active" ? (
@@ -375,6 +422,25 @@ export function DomainsContent() {
           </div>
         </form>
       </SlideOverPanel>
+
+      <ConfirmDialog
+        confirmLabel="Recompute reports"
+        description={
+          recomputeDomain
+            ? `Recompute derived aggregate report data for ${recomputeDomain.name}. This runs in the background and refreshes stored alignment fields without re-ingesting reports.`
+            : ""
+        }
+        error={recomputeError ? <p className="error-text">{recomputeError}</p> : null}
+        isPending={recomputeReports.isPending}
+        onCancel={() => setRecomputeDomain(null)}
+        onConfirm={() => {
+          if (recomputeDomain) {
+            void recomputeReports.mutateAsync(recomputeDomain.id);
+          }
+        }}
+        open={Boolean(recomputeDomain)}
+        title="Recompute aggregate reports"
+      />
 
       <ConfirmDialog
         confirmLabel="Delete domain"

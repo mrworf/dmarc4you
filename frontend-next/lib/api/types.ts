@@ -33,6 +33,7 @@ export type DomainSummary = {
   retention_delete_at?: string | null;
   retention_paused?: number | boolean | null;
   retention_remaining_seconds?: number | null;
+  latest_maintenance_job?: DomainMaintenanceJobSummary | null;
 };
 
 export type DomainsResponse = {
@@ -57,6 +58,31 @@ export type PauseDomainRetentionBody = {
 
 export type DomainMutationResponse = {
   domain: DomainSummary;
+};
+
+export type DomainMaintenanceJobSummary = {
+  job_id: string;
+  domain_id: string;
+  domain_name: string;
+  action: string;
+  actor_user_id: string;
+  state: string;
+  submitted_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  reports_scanned: number;
+  reports_skipped: number;
+  records_updated: number;
+  last_error?: string | null;
+  summary?: string | null;
+};
+
+export type DomainMaintenanceJobMutationResponse = {
+  job: DomainMaintenanceJobSummary;
+};
+
+export type DomainMaintenanceJobListResponse = {
+  jobs: DomainMaintenanceJobSummary[];
 };
 
 export type DashboardSummary = {
@@ -304,6 +330,9 @@ export type AggregateSearchResult = {
   disposition: string | null;
   dkim_result: string | null;
   spf_result: string | null;
+  dkim_alignment: string | null;
+  spf_alignment: string | null;
+  dmarc_alignment: string | null;
   header_from: string | null;
   envelope_from: string | null;
   envelope_to: string | null;
@@ -376,6 +405,9 @@ export type AggregateReportDetailRecord = {
   disposition: string | null;
   dkim_result: string | null;
   spf_result: string | null;
+  dkim_alignment: string | null;
+  spf_alignment: string | null;
+  dmarc_alignment: string | null;
   header_from: string | null;
   envelope_from: string | null;
   envelope_to: string | null;

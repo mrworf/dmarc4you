@@ -30,9 +30,15 @@ type SearchState = {
   query: string;
   from: string;
   to: string;
+  includeDmarcAlignment: string;
+  includeDkimAlignment: string;
+  includeSpfAlignment: string;
   includeSpf: string;
   includeDkim: string;
   includeDisposition: string;
+  excludeDmarcAlignment: string;
+  excludeDkimAlignment: string;
+  excludeSpfAlignment: string;
   excludeSpf: string;
   excludeDkim: string;
   excludeDisposition: string;
@@ -52,9 +58,15 @@ const defaultSearchState: SearchState = {
   query: "",
   from: "",
   to: "",
+  includeDmarcAlignment: "",
+  includeDkimAlignment: "",
+  includeSpfAlignment: "",
   includeSpf: "",
   includeDkim: "",
   includeDisposition: "",
+  excludeDmarcAlignment: "",
+  excludeDkimAlignment: "",
+  excludeSpfAlignment: "",
   excludeSpf: "",
   excludeDkim: "",
   excludeDisposition: "",
@@ -72,6 +84,21 @@ const dispositionOptions = [
   { value: "none", label: "None" },
   { value: "quarantine", label: "Quarantine" },
   { value: "reject", label: "Reject" },
+];
+
+const dmarcAlignmentOptions = [
+  { value: "", label: "Any alignment" },
+  { value: "pass", label: "Pass" },
+  { value: "fail", label: "Fail" },
+  { value: "unknown", label: "Unknown" },
+];
+
+const alignmentModeOptions = [
+  { value: "", label: "Any alignment" },
+  { value: "strict", label: "Strict" },
+  { value: "relaxed", label: "Relaxed" },
+  { value: "none", label: "None" },
+  { value: "unknown", label: "Unknown" },
 ];
 
 function parseDomainsParam(value: string | null): string[] {
@@ -92,9 +119,15 @@ function parseSearchState(searchParams: URLSearchParams): SearchState {
     query: parseStringParam(searchParams.get("query")),
     from: parseStringParam(searchParams.get("from")),
     to: parseStringParam(searchParams.get("to")),
+    includeDmarcAlignment: parseStringParam(searchParams.get("include_dmarc_alignment")),
+    includeDkimAlignment: parseStringParam(searchParams.get("include_dkim_alignment")),
+    includeSpfAlignment: parseStringParam(searchParams.get("include_spf_alignment")),
     includeSpf: parseStringParam(searchParams.get("include_spf")),
     includeDkim: parseStringParam(searchParams.get("include_dkim")),
     includeDisposition: parseStringParam(searchParams.get("include_disposition")),
+    excludeDmarcAlignment: parseStringParam(searchParams.get("exclude_dmarc_alignment")),
+    excludeDkimAlignment: parseStringParam(searchParams.get("exclude_dkim_alignment")),
+    excludeSpfAlignment: parseStringParam(searchParams.get("exclude_spf_alignment")),
     excludeSpf: parseStringParam(searchParams.get("exclude_spf")),
     excludeDkim: parseStringParam(searchParams.get("exclude_dkim")),
     excludeDisposition: parseStringParam(searchParams.get("exclude_disposition")),
@@ -109,9 +142,15 @@ function buildSearchRouteParams(state: SearchState): string {
     query: state.query,
     from: state.from,
     to: state.to,
+    include_dmarc_alignment: state.reportType === "aggregate" ? state.includeDmarcAlignment : "",
+    include_dkim_alignment: state.reportType === "aggregate" ? state.includeDkimAlignment : "",
+    include_spf_alignment: state.reportType === "aggregate" ? state.includeSpfAlignment : "",
     include_spf: state.reportType === "aggregate" ? state.includeSpf : "",
     include_dkim: state.reportType === "aggregate" ? state.includeDkim : "",
     include_disposition: state.reportType === "aggregate" ? state.includeDisposition : "",
+    exclude_dmarc_alignment: state.reportType === "aggregate" ? state.excludeDmarcAlignment : "",
+    exclude_dkim_alignment: state.reportType === "aggregate" ? state.excludeDkimAlignment : "",
+    exclude_spf_alignment: state.reportType === "aggregate" ? state.excludeSpfAlignment : "",
     exclude_spf: state.reportType === "aggregate" ? state.excludeSpf : "",
     exclude_dkim: state.reportType === "aggregate" ? state.excludeDkim : "",
     exclude_disposition: state.reportType === "aggregate" ? state.excludeDisposition : "",
@@ -123,6 +162,15 @@ function buildAggregateRequest(state: SearchState): SearchRecordsBody {
   const include: Record<string, string[]> = {};
   const exclude: Record<string, string[]> = {};
 
+  if (state.includeDmarcAlignment) {
+    include.dmarc_alignment = [state.includeDmarcAlignment];
+  }
+  if (state.includeDkimAlignment) {
+    include.dkim_alignment = [state.includeDkimAlignment];
+  }
+  if (state.includeSpfAlignment) {
+    include.spf_alignment = [state.includeSpfAlignment];
+  }
   if (state.includeSpf) {
     include.spf_result = [state.includeSpf];
   }
@@ -134,6 +182,15 @@ function buildAggregateRequest(state: SearchState): SearchRecordsBody {
   }
   if (state.excludeSpf) {
     exclude.spf_result = [state.excludeSpf];
+  }
+  if (state.excludeDmarcAlignment) {
+    exclude.dmarc_alignment = [state.excludeDmarcAlignment];
+  }
+  if (state.excludeDkimAlignment) {
+    exclude.dkim_alignment = [state.excludeDkimAlignment];
+  }
+  if (state.excludeSpfAlignment) {
+    exclude.spf_alignment = [state.excludeSpfAlignment];
   }
   if (state.excludeDkim) {
     exclude.dkim_result = [state.excludeDkim];
@@ -211,9 +268,15 @@ function hasActiveSearchCriteria(state: SearchState): boolean {
   if (state.reportType === "aggregate") {
     return !!(
       state.query ||
+      state.includeDmarcAlignment ||
+      state.includeDkimAlignment ||
+      state.includeSpfAlignment ||
       state.includeSpf ||
       state.includeDkim ||
       state.includeDisposition ||
+      state.excludeDmarcAlignment ||
+      state.excludeDkimAlignment ||
+      state.excludeSpfAlignment ||
       state.excludeSpf ||
       state.excludeDkim ||
       state.excludeDisposition
@@ -300,6 +363,51 @@ function buildAppliedChips(
       label: `Not disposition: ${formatOptionLabel(state.excludeDisposition)}`,
       tone: "exclude",
       onRemove: () => onRemove((current) => ({ ...current, excludeDisposition: "" })),
+    });
+  }
+  if (state.includeDmarcAlignment) {
+    chips.push({
+      id: "include-dmarc-alignment",
+      label: `DMARC alignment: ${formatOptionLabel(state.includeDmarcAlignment)}`,
+      onRemove: () => onRemove((current) => ({ ...current, includeDmarcAlignment: "" })),
+    });
+  }
+  if (state.excludeDmarcAlignment) {
+    chips.push({
+      id: "exclude-dmarc-alignment",
+      label: `Not DMARC alignment: ${formatOptionLabel(state.excludeDmarcAlignment)}`,
+      tone: "exclude",
+      onRemove: () => onRemove((current) => ({ ...current, excludeDmarcAlignment: "" })),
+    });
+  }
+  if (state.includeDkimAlignment) {
+    chips.push({
+      id: "include-dkim-alignment",
+      label: `DKIM alignment: ${formatOptionLabel(state.includeDkimAlignment)}`,
+      onRemove: () => onRemove((current) => ({ ...current, includeDkimAlignment: "" })),
+    });
+  }
+  if (state.excludeDkimAlignment) {
+    chips.push({
+      id: "exclude-dkim-alignment",
+      label: `Not DKIM alignment: ${formatOptionLabel(state.excludeDkimAlignment)}`,
+      tone: "exclude",
+      onRemove: () => onRemove((current) => ({ ...current, excludeDkimAlignment: "" })),
+    });
+  }
+  if (state.includeSpfAlignment) {
+    chips.push({
+      id: "include-spf-alignment",
+      label: `SPF alignment: ${formatOptionLabel(state.includeSpfAlignment)}`,
+      onRemove: () => onRemove((current) => ({ ...current, includeSpfAlignment: "" })),
+    });
+  }
+  if (state.excludeSpfAlignment) {
+    chips.push({
+      id: "exclude-spf-alignment",
+      label: `Not SPF alignment: ${formatOptionLabel(state.excludeSpfAlignment)}`,
+      tone: "exclude",
+      onRemove: () => onRemove((current) => ({ ...current, excludeSpfAlignment: "" })),
     });
   }
 
@@ -410,6 +518,24 @@ export function SearchContent() {
     } else if (option.target === "exclude_disposition") {
       nextState.excludeDisposition = option.value;
       nextState.includeDisposition = "";
+    } else if (option.target === "include_dmarc_alignment") {
+      nextState.includeDmarcAlignment = option.value;
+      nextState.excludeDmarcAlignment = "";
+    } else if (option.target === "exclude_dmarc_alignment") {
+      nextState.excludeDmarcAlignment = option.value;
+      nextState.includeDmarcAlignment = "";
+    } else if (option.target === "include_dkim_alignment") {
+      nextState.includeDkimAlignment = option.value;
+      nextState.excludeDkimAlignment = "";
+    } else if (option.target === "exclude_dkim_alignment") {
+      nextState.excludeDkimAlignment = option.value;
+      nextState.includeDkimAlignment = "";
+    } else if (option.target === "include_spf_alignment") {
+      nextState.includeSpfAlignment = option.value;
+      nextState.excludeSpfAlignment = "";
+    } else if (option.target === "exclude_spf_alignment") {
+      nextState.excludeSpfAlignment = option.value;
+      nextState.includeSpfAlignment = "";
     }
 
     setDraftState(nextState);
@@ -454,9 +580,15 @@ export function SearchContent() {
                   reportType: event.target.value === "forensic" ? "forensic" : "aggregate",
                   page: 1,
                   query: event.target.value === "forensic" ? "" : current.query,
+                  includeDmarcAlignment: event.target.value === "forensic" ? "" : current.includeDmarcAlignment,
+                  includeDkimAlignment: event.target.value === "forensic" ? "" : current.includeDkimAlignment,
+                  includeSpfAlignment: event.target.value === "forensic" ? "" : current.includeSpfAlignment,
                   includeSpf: event.target.value === "forensic" ? "" : current.includeSpf,
                   includeDkim: event.target.value === "forensic" ? "" : current.includeDkim,
                   includeDisposition: event.target.value === "forensic" ? "" : current.includeDisposition,
+                  excludeDmarcAlignment: event.target.value === "forensic" ? "" : current.excludeDmarcAlignment,
+                  excludeDkimAlignment: event.target.value === "forensic" ? "" : current.excludeDkimAlignment,
+                  excludeSpfAlignment: event.target.value === "forensic" ? "" : current.excludeSpfAlignment,
                   excludeSpf: event.target.value === "forensic" ? "" : current.excludeSpf,
                   excludeDkim: event.target.value === "forensic" ? "" : current.excludeDkim,
                   excludeDisposition: event.target.value === "forensic" ? "" : current.excludeDisposition,
@@ -644,6 +776,48 @@ export function SearchContent() {
           {draftState.reportType === "aggregate" ? (
             <div className="search-state-grid">
               <label className="field-label">
+                Include DMARC alignment
+                <select
+                  className="field-input"
+                  onChange={(event) => setDraftState((current) => ({ ...current, includeDmarcAlignment: event.target.value }))}
+                  value={draftState.includeDmarcAlignment}
+                >
+                  {dmarcAlignmentOptions.map((option) => (
+                    <option key={`include-dmarc-alignment-${option.value || "any"}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-label">
+                Include DKIM alignment
+                <select
+                  className="field-input"
+                  onChange={(event) => setDraftState((current) => ({ ...current, includeDkimAlignment: event.target.value }))}
+                  value={draftState.includeDkimAlignment}
+                >
+                  {alignmentModeOptions.map((option) => (
+                    <option key={`include-dkim-alignment-${option.value || "any"}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-label">
+                Include SPF alignment
+                <select
+                  className="field-input"
+                  onChange={(event) => setDraftState((current) => ({ ...current, includeSpfAlignment: event.target.value }))}
+                  value={draftState.includeSpfAlignment}
+                >
+                  {alignmentModeOptions.map((option) => (
+                    <option key={`include-spf-alignment-${option.value || "any"}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-label">
                 Include SPF
                 <select
                   className="field-input"
@@ -680,6 +854,48 @@ export function SearchContent() {
                 >
                   {dispositionOptions.map((option) => (
                     <option key={`include-disposition-${option.value || "any"}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-label">
+                Exclude DMARC alignment
+                <select
+                  className="field-input"
+                  onChange={(event) => setDraftState((current) => ({ ...current, excludeDmarcAlignment: event.target.value }))}
+                  value={draftState.excludeDmarcAlignment}
+                >
+                  {dmarcAlignmentOptions.map((option) => (
+                    <option key={`exclude-dmarc-alignment-${option.value || "any"}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-label">
+                Exclude DKIM alignment
+                <select
+                  className="field-input"
+                  onChange={(event) => setDraftState((current) => ({ ...current, excludeDkimAlignment: event.target.value }))}
+                  value={draftState.excludeDkimAlignment}
+                >
+                  {alignmentModeOptions.map((option) => (
+                    <option key={`exclude-dkim-alignment-${option.value || "any"}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-label">
+                Exclude SPF alignment
+                <select
+                  className="field-input"
+                  onChange={(event) => setDraftState((current) => ({ ...current, excludeSpfAlignment: event.target.value }))}
+                  value={draftState.excludeSpfAlignment}
+                >
+                  {alignmentModeOptions.map((option) => (
+                    <option key={`exclude-spf-alignment-${option.value || "any"}`} value={option.value}>
                       {option.label}
                     </option>
                   ))}

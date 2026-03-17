@@ -6,12 +6,23 @@ from typing import Any
 
 from backend.config.schema import Config
 from backend.storage.sqlite import get_connection
+from backend.services.dmarc_alignment import backfill_missing_aggregate_alignment, load_record_auth_results
 from backend.services.domain_service import list_domains
 
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 500
 
-ALLOWED_FILTER_FIELDS = frozenset(["spf_result", "dkim_result", "disposition", "source_ip"])
+ALLOWED_FILTER_FIELDS = frozenset(
+    [
+        "spf_result",
+        "dkim_result",
+        "disposition",
+        "source_ip",
+        "spf_alignment",
+        "dkim_alignment",
+        "dmarc_alignment",
+    ]
+)
 ALLOWED_GROUP_FIELDS = {
     "record_date": "date(ar.date_begin, 'unixepoch')",
     "source_ip": "COALESCE(rec.source_ip, '')",
@@ -143,6 +154,7 @@ def get_aggregate_report_detail(
 
     Returns (status, report_dict) where status is "ok", "not_found", or "forbidden".
     """
+    backfill_missing_aggregate_alignment(config.database_path)
     allowed_domains = [d["name"] for d in list_domains(config, current_user)]
 
     conn = get_connection(config.database_path)
@@ -171,7 +183,7 @@ def get_aggregate_report_detail(
 
         cur = conn.execute(
             """SELECT id, source_ip, resolved_name, resolved_name_domain, country_code, country_name, geo_provider, count, disposition, dkim_result, spf_result,
-                      header_from, envelope_from, envelope_to
+                      dkim_alignment, spf_alignment, dmarc_alignment, header_from, envelope_from, envelope_to
                FROM aggregate_report_records WHERE aggregate_report_id = ?
                ORDER BY count DESC""",
             (report_id,),
@@ -182,13 +194,6 @@ def get_aggregate_report_detail(
             override_cur = conn.execute(
                 """SELECT reason_type, comment
                    FROM aggregate_record_policy_overrides
-                   WHERE aggregate_record_id = ?
-                   ORDER BY id""",
-                (record_id,),
-            )
-            auth_cur = conn.execute(
-                """SELECT auth_method, domain, selector, scope, result, human_result
-                   FROM aggregate_record_auth_results
                    WHERE aggregate_record_id = ?
                    ORDER BY id""",
                 (record_id,),
@@ -206,24 +211,17 @@ def get_aggregate_report_detail(
                     "disposition": r[8],
                     "dkim_result": r[9],
                     "spf_result": r[10],
-                    "header_from": r[11],
-                    "envelope_from": r[12],
-                    "envelope_to": r[13],
+                    "dkim_alignment": r[11],
+                    "spf_alignment": r[12],
+                    "dmarc_alignment": r[13],
+                    "header_from": r[14],
+                    "envelope_from": r[15],
+                    "envelope_to": r[16],
                     "policy_overrides": [
                         {"type": row[0], "comment": row[1]}
                         for row in override_cur.fetchall()
                     ],
-                    "auth_results": [
-                        {
-                            "auth_method": row[0],
-                            "domain": row[1],
-                            "selector": row[2],
-                            "scope": row[3],
-                            "result": row[4],
-                            "human_result": row[5],
-                        }
-                        for row in auth_cur.fetchall()
-                    ],
+                    "auth_results": load_record_auth_results(conn, record_id),
                 }
             )
         report["contact_email"] = row_get(report["id"], conn, "contact_email")
@@ -416,6 +414,7 @@ def search_records(
     exclude: e.g. {"disposition": ["none"]} -> only rows where disposition NOT IN ('none')
     query: free-text search over source_ip, header_from, envelope_from, envelope_to, org_name
     """
+    backfill_missing_aggregate_alignment(config.database_path)
     allowed_domains = [d["name"] for d in list_domains(config, current_user)]
     if not allowed_domains:
         return {"items": [], "total": 0, "page": max(1, page), "page_size": _cap_page_size(page_size)}
@@ -536,7 +535,7 @@ def search_records(
         total = cur.fetchone()[0]
         cur = conn.execute(
             f"""SELECT rec.id, rec.aggregate_report_id, rec.source_ip, rec.resolved_name, rec.resolved_name_domain, rec.country_code, rec.country_name, rec.geo_provider, rec.count,
-                       rec.disposition, rec.dkim_result, rec.spf_result,
+                       rec.disposition, rec.dkim_result, rec.spf_result, rec.dkim_alignment, rec.spf_alignment, rec.dmarc_alignment,
                        rec.header_from, rec.envelope_from, rec.envelope_to,
                        ar.domain, ar.report_id, ar.org_name, ar.date_begin, ar.date_end
                 FROM aggregate_report_records rec
@@ -562,15 +561,18 @@ def search_records(
                 "disposition": row[9],
                 "dkim_result": row[10],
                 "spf_result": row[11],
-                "header_from": row[12],
-                "envelope_from": row[13],
-                "envelope_to": row[14],
-                "domain": row[15],
-                "report_id": row[16],
-                "org_name": row[17],
-                "date_begin": row[18],
-                "date_end": row[19],
-                "record_date": _record_date_from_ts(row[18]),
+                "dkim_alignment": row[12],
+                "spf_alignment": row[13],
+                "dmarc_alignment": row[14],
+                "header_from": row[15],
+                "envelope_from": row[16],
+                "envelope_to": row[17],
+                "domain": row[18],
+                "report_id": row[19],
+                "org_name": row[20],
+                "date_begin": row[21],
+                "date_end": row[22],
+                "record_date": _record_date_from_ts(row[21]),
             })
         return {"items": items, "total": total, "page": page, "page_size": page_size, "group_by": None}
     finally:

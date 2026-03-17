@@ -135,6 +135,27 @@ Fields:
 - `started_at`
 - `completed_at`
 
+### Domain maintenance jobs
+
+Fields:
+
+- `id`
+- `domain_id`
+- `domain_name`
+- `action` (`recompute_aggregate_reports` in the first slice)
+- `actor_user_id`
+- `submitted_at`
+- `started_at`
+- `completed_at`
+- `state` (`queued`, `processing`, `completed`, `completed_with_warnings`, `failed`)
+- `reports_scanned`
+- `reports_skipped`
+- `records_updated`
+- `last_error`
+- `summary`
+
+These jobs are separate from ingest jobs. They exist so admins can refresh derived aggregate fields for one domain without re-submitting source payloads.
+
 ### Source files / archived artifacts
 
 Fields:
@@ -167,9 +188,14 @@ Suggested normalized fields:
 - disposition
 - DKIM result
 - SPF result
+- DKIM alignment
+- SPF alignment
+- DMARC alignment
 - header-from / envelope-from / envelope-to
 - override reasons/comments
 - multi-value auth_results rows for DKIM/SPF details
+
+`header_from` is the visible RFC5322.From domain used as the DMARC alignment anchor. `dkim_alignment` and `spf_alignment` capture strict/relaxed/none/unknown outcomes, and `dmarc_alignment` captures the final pass/fail/unknown outcome for the row.
 
 ### Forensic reports
 

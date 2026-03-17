@@ -196,6 +196,9 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
                     <th>{getAggregateFieldLabel("disposition")}</th>
                     <th>{getAggregateFieldLabel("dkim_result")}</th>
                     <th>{getAggregateFieldLabel("spf_result")}</th>
+                    <th>{getAggregateFieldLabel("dmarc_alignment")}</th>
+                    <th>{getAggregateFieldLabel("dkim_alignment")}</th>
+                    <th>{getAggregateFieldLabel("spf_alignment")}</th>
                     <th>{getAggregateFieldLabel("header_from")}</th>
                     <th>{getAggregateFieldLabel("details")}</th>
                   </tr>
@@ -210,6 +213,9 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
                       <td>{record.disposition ?? "n/a"}</td>
                       <td>{record.dkim_result ?? "n/a"}</td>
                       <td>{record.spf_result ?? "n/a"}</td>
+                      <td>{record.dmarc_alignment ?? "n/a"}</td>
+                      <td>{record.dkim_alignment ?? "n/a"}</td>
+                      <td>{record.spf_alignment ?? "n/a"}</td>
                       <td>{record.header_from ?? "n/a"}</td>
                       <td>
                         <div className="stack" style={{ gap: 6 }}>

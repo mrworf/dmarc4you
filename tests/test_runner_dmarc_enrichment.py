@@ -108,7 +108,7 @@ def test_run_one_job_persists_rich_aggregate_fields(monkeypatch) -> None:
            FROM aggregate_reports"""
     ).fetchone()
     record = conn.execute(
-        """SELECT resolved_name, resolved_name_domain, country_code, country_name, geo_provider
+        """SELECT resolved_name, resolved_name_domain, country_code, country_name, geo_provider, dkim_alignment, spf_alignment, dmarc_alignment
            FROM aggregate_report_records"""
     ).fetchone()
     override = conn.execute(
@@ -130,7 +130,7 @@ def test_run_one_job_persists_rich_aggregate_fields(monkeypatch) -> None:
         75,
         "1:d",
     )
-    assert record == ("mail.example.net", "example.net", "US", "United States", "dbip-lite-country")
+    assert record == ("mail.example.net", "example.net", "US", "United States", "dbip-lite-country", "strict", "none", "pass")
     assert override == ("forwarded", "mailing list")
     assert auth_rows == [
         ("dkim", "example.com", "mail", None, "pass"),

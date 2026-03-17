@@ -18,7 +18,8 @@ from backend.ingest.dedupe import is_duplicate, is_forensic_duplicate
 from backend.ingest.dns_resolver import resolve_ip
 from backend.ingest.geoip import build_geoip_provider
 from backend.ingest.mime_parser import is_mime_message, extract_attachments
-from backend.services import domain_service
+from backend.services import domain_maintenance_service, domain_service
+from backend.services.dmarc_alignment import compute_aggregate_alignment
 from backend.storage.sqlite import get_connection
 
 logger = logging.getLogger(__name__)
@@ -344,10 +345,19 @@ def _process_aggregate(
             rec_id = f"rec_{uuid.uuid4().hex[:12]}"
             resolved_name, resolved_name_domain = resolve_ip(config, rec.get("source_ip"))
             geo_result = geoip_provider.lookup_country(rec.get("source_ip")) if geoip_provider else None
+            alignment = compute_aggregate_alignment(
+                header_from=rec.get("header_from"),
+                envelope_from=rec.get("envelope_from"),
+                dkim_result=rec.get("dkim_result"),
+                spf_result=rec.get("spf_result"),
+                auth_results=rec.get("auth_results"),
+                adkim=parsed.get("adkim"),
+                aspf=parsed.get("aspf"),
+            )
             conn.execute(
                 """INSERT INTO aggregate_report_records
-                   (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, country_code, country_name, geo_provider, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, country_code, country_name, geo_provider, count, disposition, dkim_result, spf_result, dkim_alignment, spf_alignment, dmarc_alignment, header_from, envelope_from, envelope_to)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     rec_id,
                     agg_id,
@@ -361,6 +371,9 @@ def _process_aggregate(
                     rec.get("disposition"),
                     rec.get("dkim_result"),
                     rec.get("spf_result"),
+                    alignment["dkim_alignment"],
+                    alignment["spf_alignment"],
+                    alignment["dmarc_alignment"],
                     rec.get("header_from"),
                     rec.get("envelope_from"),
                     rec.get("envelope_to"),
@@ -517,6 +530,10 @@ def run_loop(config: Config, stop_event: object | None = None, interval_seconds:
             run_one_job(config)
         except Exception as e:
             logger.exception("job runner: %s", e)
+        try:
+            domain_maintenance_service.run_one_job(config)
+        except Exception as e:
+            logger.exception("domain maintenance runner: %s", e)
         try:
             domain_service.run_retention_purge(config)
         except Exception as e:

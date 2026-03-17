@@ -20,6 +20,7 @@ Why this shape:
 - `/app/search` (implemented)
 - `/app/upload` (implemented)
 - `/app/domains` (implemented)
+- `/app/domain-maintenance-jobs/:id` (implemented)
 - `/app/users` (implemented)
 - `/app/apikeys` (implemented)
 - `/app/audit` (implemented)
@@ -86,6 +87,7 @@ Grouping is URL-state only in v1 and is not saved with the dashboard definition.
 - each dashboard persists an ordered `visible_columns` list for aggregate result tables
 - owners and other eligible editors can change the saved visible fields
 - editors can reorder saved fields directly in the dashboard edit flow; drag interactions should reflow the list live while dragging and must have a non-drag alternative such as move up/down controls
+- aggregate dashboards and search can expose DMARC alignment columns (`dmarc_alignment`, `dkim_alignment`, `spf_alignment`) alongside raw SPF/DKIM results
 - viewers inherit the saved column layout
 - if no custom layout is stored, the backend applies a sensible DMARC analysis default
 
@@ -122,3 +124,9 @@ Import flow:
 - obvious archived/dormant states
 - concise error messaging without oversharing sensitive internals
 - good empty states for unconfigured domains / no data / archived domain effects
+
+## Domain admin UX
+
+- the Domains page should surface the latest maintenance status per visible domain
+- eligible users can trigger a background `Recompute reports` action per domain
+- recompute job detail lives on its own route instead of reusing the ingest-job views

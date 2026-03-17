@@ -29,9 +29,15 @@ type DashboardFilterState = {
   from: string;
   to: string;
   groupBy: string;
+  includeDmarcAlignment: string;
+  includeDkimAlignment: string;
+  includeSpfAlignment: string;
   includeSpf: string;
   includeDkim: string;
   includeDisposition: string;
+  excludeDmarcAlignment: string;
+  excludeDkimAlignment: string;
+  excludeSpfAlignment: string;
   excludeSpf: string;
   excludeDkim: string;
   excludeDisposition: string;
@@ -59,14 +65,35 @@ const dispositionOptions = [
   { value: "reject", label: "Reject" },
 ];
 
+const dmarcAlignmentOptions = [
+  { value: "", label: "Any alignment" },
+  { value: "pass", label: "Pass" },
+  { value: "fail", label: "Fail" },
+  { value: "unknown", label: "Unknown" },
+];
+
+const alignmentModeOptions = [
+  { value: "", label: "Any alignment" },
+  { value: "strict", label: "Strict" },
+  { value: "relaxed", label: "Relaxed" },
+  { value: "none", label: "None" },
+  { value: "unknown", label: "Unknown" },
+];
+
 function parseDashboardState(searchParams: URLSearchParams): DashboardFilterState {
   return {
     from: parseStringParam(searchParams.get("from")),
     to: parseStringParam(searchParams.get("to")),
     groupBy: parseStringParam(searchParams.get("group_by")),
+    includeDmarcAlignment: parseStringParam(searchParams.get("include_dmarc_alignment")),
+    includeDkimAlignment: parseStringParam(searchParams.get("include_dkim_alignment")),
+    includeSpfAlignment: parseStringParam(searchParams.get("include_spf_alignment")),
     includeSpf: parseStringParam(searchParams.get("include_spf")),
     includeDkim: parseStringParam(searchParams.get("include_dkim")),
     includeDisposition: parseStringParam(searchParams.get("include_disposition")),
+    excludeDmarcAlignment: parseStringParam(searchParams.get("exclude_dmarc_alignment")),
+    excludeDkimAlignment: parseStringParam(searchParams.get("exclude_dkim_alignment")),
+    excludeSpfAlignment: parseStringParam(searchParams.get("exclude_spf_alignment")),
     excludeSpf: parseStringParam(searchParams.get("exclude_spf")),
     excludeDkim: parseStringParam(searchParams.get("exclude_dkim")),
     excludeDisposition: parseStringParam(searchParams.get("exclude_disposition")),
@@ -79,9 +106,15 @@ function buildDashboardParams(state: DashboardFilterState): string {
     from: state.from,
     to: state.to,
     group_by: state.groupBy,
+    include_dmarc_alignment: state.includeDmarcAlignment,
+    include_dkim_alignment: state.includeDkimAlignment,
+    include_spf_alignment: state.includeSpfAlignment,
     include_spf: state.includeSpf,
     include_dkim: state.includeDkim,
     include_disposition: state.includeDisposition,
+    exclude_dmarc_alignment: state.excludeDmarcAlignment,
+    exclude_dkim_alignment: state.excludeDkimAlignment,
+    exclude_spf_alignment: state.excludeSpfAlignment,
     exclude_spf: state.excludeSpf,
     exclude_dkim: state.excludeDkim,
     exclude_disposition: state.excludeDisposition,
@@ -93,6 +126,15 @@ function buildSearchBody(domainNames: string[], state: DashboardFilterState): Se
   const include: Record<string, string[]> = {};
   const exclude: Record<string, string[]> = {};
 
+  if (state.includeDmarcAlignment) {
+    include.dmarc_alignment = [state.includeDmarcAlignment];
+  }
+  if (state.includeDkimAlignment) {
+    include.dkim_alignment = [state.includeDkimAlignment];
+  }
+  if (state.includeSpfAlignment) {
+    include.spf_alignment = [state.includeSpfAlignment];
+  }
   if (state.includeSpf) {
     include.spf_result = [state.includeSpf];
   }
@@ -104,6 +146,15 @@ function buildSearchBody(domainNames: string[], state: DashboardFilterState): Se
   }
   if (state.excludeSpf) {
     exclude.spf_result = [state.excludeSpf];
+  }
+  if (state.excludeDmarcAlignment) {
+    exclude.dmarc_alignment = [state.excludeDmarcAlignment];
+  }
+  if (state.excludeDkimAlignment) {
+    exclude.dkim_alignment = [state.excludeDkimAlignment];
+  }
+  if (state.excludeSpfAlignment) {
+    exclude.spf_alignment = [state.excludeSpfAlignment];
   }
   if (state.excludeDkim) {
     exclude.dkim_result = [state.excludeDkim];
@@ -217,9 +268,15 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
       from: "",
       to: "",
       groupBy: "",
+      includeDmarcAlignment: "",
+      includeDkimAlignment: "",
+      includeSpfAlignment: "",
       includeSpf: "",
       includeDkim: "",
       includeDisposition: "",
+      excludeDmarcAlignment: "",
+      excludeDkimAlignment: "",
+      excludeSpfAlignment: "",
       excludeSpf: "",
       excludeDkim: "",
       excludeDisposition: "",
@@ -482,6 +539,48 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
             </select>
           </label>
           <label className="field-label">
+            Include DMARC alignment
+            <select
+              className="field-input"
+              onChange={(event) => setDraftState((current) => ({ ...current, includeDmarcAlignment: event.target.value }))}
+              value={draftState.includeDmarcAlignment}
+            >
+              {dmarcAlignmentOptions.map((option) => (
+                <option key={`include-dmarc-alignment-${option.value || "any"}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-label">
+            Include DKIM alignment
+            <select
+              className="field-input"
+              onChange={(event) => setDraftState((current) => ({ ...current, includeDkimAlignment: event.target.value }))}
+              value={draftState.includeDkimAlignment}
+            >
+              {alignmentModeOptions.map((option) => (
+                <option key={`include-dkim-alignment-${option.value || "any"}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-label">
+            Include SPF alignment
+            <select
+              className="field-input"
+              onChange={(event) => setDraftState((current) => ({ ...current, includeSpfAlignment: event.target.value }))}
+              value={draftState.includeSpfAlignment}
+            >
+              {alignmentModeOptions.map((option) => (
+                <option key={`include-spf-alignment-${option.value || "any"}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-label">
             Include SPF
             <select
               className="field-input"
@@ -518,6 +617,48 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
             >
               {dispositionOptions.map((option) => (
                 <option key={`include-disposition-${option.value || "any"}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-label">
+            Exclude DMARC alignment
+            <select
+              className="field-input"
+              onChange={(event) => setDraftState((current) => ({ ...current, excludeDmarcAlignment: event.target.value }))}
+              value={draftState.excludeDmarcAlignment}
+            >
+              {dmarcAlignmentOptions.map((option) => (
+                <option key={`exclude-dmarc-alignment-${option.value || "any"}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-label">
+            Exclude DKIM alignment
+            <select
+              className="field-input"
+              onChange={(event) => setDraftState((current) => ({ ...current, excludeDkimAlignment: event.target.value }))}
+              value={draftState.excludeDkimAlignment}
+            >
+              {alignmentModeOptions.map((option) => (
+                <option key={`exclude-dkim-alignment-${option.value || "any"}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-label">
+            Exclude SPF alignment
+            <select
+              className="field-input"
+              onChange={(event) => setDraftState((current) => ({ ...current, excludeSpfAlignment: event.target.value }))}
+              value={draftState.excludeSpfAlignment}
+            >
+              {alignmentModeOptions.map((option) => (
+                <option key={`exclude-spf-alignment-${option.value || "any"}`} value={option.value}>
                   {option.label}
                 </option>
               ))}
