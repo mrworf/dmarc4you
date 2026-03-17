@@ -52,6 +52,7 @@ export function EditDashboardForm({
 }) {
   const initialVisibleColumns = dashboard.visible_columns?.length ? dashboard.visible_columns : defaultVisibleColumns;
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
+  const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
   const {
     formState: { errors },
     handleSubmit,
@@ -81,6 +82,7 @@ export function EditDashboardForm({
       visible_columns: dashboard.visible_columns?.length ? dashboard.visible_columns : defaultVisibleColumns,
     });
     setDraggedColumn(null);
+    setHoveredColumn(null);
   }, [dashboard, reset]);
 
   function updateVisibleColumns(nextValues: string[]) {
@@ -104,15 +106,43 @@ export function EditDashboardForm({
     updateVisibleColumns([...selectedColumns, column]);
   }
 
-  function handleDrop(targetColumn: string) {
+  function clearDragState() {
+    setDraggedColumn(null);
+    setHoveredColumn(null);
+  }
+
+  function moveDraggedColumn(targetColumn: string) {
     if (!draggedColumn || draggedColumn === targetColumn) {
-      setDraggedColumn(null);
       return;
     }
     const fromIndex = selectedColumns.indexOf(draggedColumn);
     const toIndex = selectedColumns.indexOf(targetColumn);
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+      return;
+    }
     updateVisibleColumns(moveItem(selectedColumns, fromIndex, toIndex));
-    setDraggedColumn(null);
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    clearDragState();
+  }
+
+  function handleDragStart(column: string, event: React.DragEvent<HTMLButtonElement>) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", column);
+    setDraggedColumn(column);
+    setHoveredColumn(column);
+  }
+
+  function handleDragOver(targetColumn: string, event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    if (!draggedColumn) {
+      return;
+    }
+    event.dataTransfer.dropEffect = "move";
+    setHoveredColumn(targetColumn);
+    moveDraggedColumn(targetColumn);
   }
 
   return (
@@ -173,16 +203,21 @@ export function EditDashboardForm({
               <div
                 className="selection-row"
                 data-dragging={draggedColumn === column}
+                data-drop-target={hoveredColumn === column && draggedColumn !== column}
+                data-column-value={column}
                 key={column}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => handleDrop(column)}
+                onDragEnter={() => setHoveredColumn(column)}
+                onDragOver={(event) => handleDragOver(column, event)}
+                onDragLeave={() => setHoveredColumn((current) => (current === column ? null : current))}
+                onDrop={(event) => handleDrop(event)}
               >
                 <button
                   aria-label={`Drag to reorder ${option.label}`}
+                  aria-grabbed={draggedColumn === column}
                   className="drag-handle"
                   draggable
-                  onDragEnd={() => setDraggedColumn(null)}
-                  onDragStart={() => setDraggedColumn(column)}
+                  onDragEnd={clearDragState}
+                  onDragStart={(event) => handleDragStart(column, event)}
                   type="button"
                 >
                   ::

@@ -40,6 +40,12 @@ async function openAnyDashboardDetail(page: Page): Promise<void> {
   await firstDetailLink.click();
 }
 
+async function getVisibleColumnOrder(page: Page): Promise<string[]> {
+  return page.locator(".slideover-panel [data-column-value]").evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute("data-column-value") ?? ""),
+  );
+}
+
 async function expectJobLink(page: Page): Promise<Locator> {
   const jobLink = page.locator('a[href^="/ingest-jobs/"]').first();
   await expect(jobLink).toBeVisible();
@@ -82,6 +88,66 @@ test.describe("frontend-next critical happy paths", () => {
     await page.reload();
 
     await expect(page.getByLabel("Include SPF")).toHaveValue("pass");
+  });
+
+  test("dashboard detail edit supports live drag reordering and persists visible columns", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await openAnyDashboardDetail(page);
+
+    await page.getByRole("button", { name: "Edit dashboard" }).click();
+    await expect(page.getByRole("heading", { name: "Edit dashboard" })).toBeVisible();
+
+    const initialOrder = await getVisibleColumnOrder(page);
+    expect(initialOrder.length).toBeGreaterThan(2);
+
+    const draggedColumn = initialOrder[0];
+    const hoverTarget = initialOrder[2];
+    const dragHandle = page.locator(`[data-column-value="${draggedColumn}"] .drag-handle`);
+    const targetRow = page.locator(`[data-column-value="${hoverTarget}"]`);
+    const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+
+    await dragHandle.dispatchEvent("dragstart", { dataTransfer });
+    await targetRow.dispatchEvent("dragenter", { dataTransfer });
+    await targetRow.dispatchEvent("dragover", { dataTransfer });
+
+    const reorderedBeforeDrop = await getVisibleColumnOrder(page);
+    expect(reorderedBeforeDrop.indexOf(draggedColumn)).toBe(2);
+
+    await targetRow.dispatchEvent("drop", { dataTransfer });
+    await dragHandle.dispatchEvent("dragend", { dataTransfer });
+
+    const reorderedAfterDrop = await getVisibleColumnOrder(page);
+    expect(reorderedAfterDrop.indexOf(draggedColumn)).toBe(2);
+
+    const movedColumn = reorderedAfterDrop[0];
+    await page.locator(`[data-column-value="${movedColumn}"]`).getByRole("button", { name: "Move down" }).click();
+
+    const afterMoveButton = await getVisibleColumnOrder(page);
+    expect(afterMoveButton.indexOf(movedColumn)).toBe(1);
+
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByRole("heading", { name: "Edit dashboard" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Edit dashboard" }).click();
+    await expect(page.getByRole("heading", { name: "Edit dashboard" })).toBeVisible();
+    await expect.poll(() => getVisibleColumnOrder(page)).toEqual(afterMoveButton);
+  });
+
+  test("authenticated shell expands on ultrawide resize", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await openAnyDashboardDetail(page);
+
+    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    const standardWidth = await page.locator("main.app-frame-app").evaluate((element) => element.getBoundingClientRect().width);
+
+    await page.setViewportSize({ width: 2200, height: 1100 });
+    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    const wideWidth = await page.locator("main.app-frame-app").evaluate((element) => element.getBoundingClientRect().width);
+
+    expect(wideWidth).toBeGreaterThan(standardWidth + 500);
+    expect(wideWidth).toBeGreaterThan(2000);
   });
 
   test("upload route submits XML and links to the ingest job detail", async ({ page }) => {

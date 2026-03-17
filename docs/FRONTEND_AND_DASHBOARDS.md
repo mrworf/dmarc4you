@@ -85,7 +85,7 @@ Grouping is URL-state only in v1 and is not saved with the dashboard definition.
 
 - each dashboard persists an ordered `visible_columns` list for aggregate result tables
 - owners and other eligible editors can change the saved visible fields
-- editors can reorder saved fields directly in the dashboard edit flow; drag interactions must have a non-drag alternative such as move up/down controls
+- editors can reorder saved fields directly in the dashboard edit flow; drag interactions should reflow the list live while dragging and must have a non-drag alternative such as move up/down controls
 - viewers inherit the saved column layout
 - if no custom layout is stored, the backend applies a sensible DMARC analysis default
 
@@ -117,6 +117,7 @@ Import flow:
 ## UI design goals
 
 - fast filtering and drill-down
+- responsive layouts that expand to use large desktop and ultrawide viewports without breaking smaller screens
 - clear domain context in every view
 - obvious archived/dormant states
 - concise error messaging without oversharing sensitive internals
