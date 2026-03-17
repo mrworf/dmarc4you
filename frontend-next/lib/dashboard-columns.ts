@@ -1,3 +1,5 @@
+import { getAggregateFieldLabel } from "@/lib/aggregate-field-metadata";
+
 export const defaultVisibleColumns = [
   "record_date",
   "domain",
@@ -13,20 +15,19 @@ export const defaultVisibleColumns = [
 ];
 
 export const dashboardColumnOptions = [
-  { value: "record_date", label: "Record date" },
-  { value: "domain", label: "Domain" },
-  { value: "org_name", label: "Org" },
-  { value: "source_ip", label: "Source IP" },
-  { value: "resolved_name", label: "Resolved name" },
-  { value: "resolved_name_domain", label: "Resolved domain" },
-  { value: "country_code", label: "Country code" },
-  { value: "country_name", label: "Country name" },
-  { value: "count", label: "Count" },
-  { value: "disposition", label: "Disposition" },
-  { value: "dkim_result", label: "DKIM" },
-  { value: "spf_result", label: "SPF" },
-  { value: "header_from", label: "Header from" },
-  { value: "envelope_from", label: "Envelope from" },
-  { value: "envelope_to", label: "Envelope to" },
-  { value: "report_id", label: "Report ID" },
+  { value: "record_date", label: getAggregateFieldLabel("record_date") },
+  { value: "domain", label: getAggregateFieldLabel("domain") },
+  { value: "org_name", label: getAggregateFieldLabel("org_name") },
+  { value: "source_ip", label: getAggregateFieldLabel("source_ip") },
+  { value: "resolved_name", label: getAggregateFieldLabel("resolved_name") },
+  { value: "country_code", label: getAggregateFieldLabel("country_code") },
+  { value: "country_name", label: getAggregateFieldLabel("country_name") },
+  { value: "count", label: getAggregateFieldLabel("count") },
+  { value: "disposition", label: getAggregateFieldLabel("disposition") },
+  { value: "dkim_result", label: getAggregateFieldLabel("dkim_result") },
+  { value: "spf_result", label: getAggregateFieldLabel("spf_result") },
+  { value: "header_from", label: getAggregateFieldLabel("header_from") },
+  { value: "envelope_from", label: getAggregateFieldLabel("envelope_from") },
+  { value: "envelope_to", label: getAggregateFieldLabel("envelope_to") },
+  { value: "report_id", label: getAggregateFieldLabel("report_id") },
 ];

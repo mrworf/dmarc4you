@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/app-shell";
+import { ReportDetailModal } from "@/components/report-detail-modal";
 import { apiClient } from "@/lib/api/client";
 import type { IngestJobDetailResponse } from "@/lib/api/types";
 
 export function IngestJobDetailContent({ jobId }: { jobId: string }) {
+  const [selectedReport, setSelectedReport] = useState<{ id: string; kind: "aggregate" | "forensic" } | null>(null);
   const jobQuery = useQuery({
     queryKey: ["ingest-job", jobId],
     queryFn: () => apiClient.get<IngestJobDetailResponse>(`/api/v1/ingest-jobs/${jobId}`),
@@ -84,6 +87,7 @@ export function IngestJobDetailContent({ jobId }: { jobId: string }) {
                       <th>Domain</th>
                       <th>Status</th>
                       <th>Reason</th>
+                      <th>Report detail</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -95,6 +99,19 @@ export function IngestJobDetailContent({ jobId }: { jobId: string }) {
                         <td>{item.domain_detected ?? "n/a"}</td>
                         <td>{item.status ?? "n/a"}</td>
                         <td>{item.status_reason ?? "n/a"}</td>
+                        <td>
+                          {item.normalized_report_id && item.normalized_report_kind ? (
+                            <button
+                              className="button-link"
+                              onClick={() => setSelectedReport({ id: item.normalized_report_id!, kind: item.normalized_report_kind! })}
+                              type="button"
+                            >
+                              View report
+                            </button>
+                          ) : (
+                            "n/a"
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -106,6 +123,13 @@ export function IngestJobDetailContent({ jobId }: { jobId: string }) {
           </>
         ) : null}
       </section>
+      {selectedReport ? (
+        <ReportDetailModal
+          kind={selectedReport.kind}
+          onClose={() => setSelectedReport(null)}
+          reportId={selectedReport.id}
+        />
+      ) : null}
     </AppShell>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -17,6 +17,26 @@ const editDashboardSchema = z.object({
 
 export type EditDashboardValues = z.infer<typeof editDashboardSchema>;
 
+type DashboardColumnOption = (typeof dashboardColumnOptions)[number];
+
+function moveItem(values: string[], fromIndex: number, toIndex: number): string[] {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= values.length || toIndex >= values.length) {
+    return values;
+  }
+  const nextValues = [...values];
+  const [moved] = nextValues.splice(fromIndex, 1);
+  nextValues.splice(toIndex, 0, moved);
+  return nextValues;
+}
+
+function findColumnOption(value: string): DashboardColumnOption | undefined {
+  return dashboardColumnOptions.find((option) => option.value === value);
+}
+
+function toggleValue(values: string[], value: string): string[] {
+  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+}
+
 export function EditDashboardForm({
   dashboard,
   domains,
@@ -30,20 +50,28 @@ export function EditDashboardForm({
   onCancel: () => void;
   onSubmit: (values: EditDashboardValues) => Promise<void>;
 }) {
+  const initialVisibleColumns = dashboard.visible_columns?.length ? dashboard.visible_columns : defaultVisibleColumns;
+  const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
   const {
     formState: { errors },
     handleSubmit,
     register,
     reset,
+    setValue,
+    watch,
   } = useForm<EditDashboardValues>({
     resolver: zodResolver(editDashboardSchema),
     defaultValues: {
       name: dashboard.name,
       description: dashboard.description ?? "",
       domain_ids: dashboard.domain_ids,
-      visible_columns: dashboard.visible_columns?.length ? dashboard.visible_columns : defaultVisibleColumns,
+      visible_columns: initialVisibleColumns,
     },
   });
+
+  const selectedDomainIds = watch("domain_ids");
+  const selectedColumns = watch("visible_columns");
+  const availableColumns = dashboardColumnOptions.filter((option) => !selectedColumns.includes(option.value));
 
   useEffect(() => {
     reset({
@@ -52,7 +80,40 @@ export function EditDashboardForm({
       domain_ids: dashboard.domain_ids,
       visible_columns: dashboard.visible_columns?.length ? dashboard.visible_columns : defaultVisibleColumns,
     });
+    setDraggedColumn(null);
   }, [dashboard, reset]);
+
+  function updateVisibleColumns(nextValues: string[]) {
+    setValue("visible_columns", nextValues, { shouldDirty: true, shouldValidate: true });
+  }
+
+  function resetVisibleColumns() {
+    updateVisibleColumns(defaultVisibleColumns);
+  }
+
+  function moveColumn(column: string, direction: -1 | 1) {
+    const index = selectedColumns.indexOf(column);
+    updateVisibleColumns(moveItem(selectedColumns, index, index + direction));
+  }
+
+  function removeColumn(column: string) {
+    updateVisibleColumns(selectedColumns.filter((value) => value !== column));
+  }
+
+  function addColumn(column: string) {
+    updateVisibleColumns([...selectedColumns, column]);
+  }
+
+  function handleDrop(targetColumn: string) {
+    if (!draggedColumn || draggedColumn === targetColumn) {
+      setDraggedColumn(null);
+      return;
+    }
+    const fromIndex = selectedColumns.indexOf(draggedColumn);
+    const toIndex = selectedColumns.indexOf(targetColumn);
+    updateVisibleColumns(moveItem(selectedColumns, fromIndex, toIndex));
+    setDraggedColumn(null);
+  }
 
   return (
     <form className="stack" onSubmit={handleSubmit(onSubmit)}>
@@ -72,7 +133,16 @@ export function EditDashboardForm({
         {domains.length ? (
           domains.map((domain) => (
             <label className="checkbox-card" key={domain.id}>
-              <input type="checkbox" value={domain.id} {...register("domain_ids")} />
+              <input
+                checked={selectedDomainIds.includes(domain.id)}
+                onChange={() =>
+                  setValue("domain_ids", toggleValue(selectedDomainIds, domain.id), {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+                type="checkbox"
+              />
               <span>{domain.name}</span>
             </label>
           ))
@@ -81,31 +151,91 @@ export function EditDashboardForm({
         )}
         {errors.domain_ids ? <span className="error-text">{errors.domain_ids.message}</span> : null}
       </div>
-      <div className="stack" style={{ gap: 10 }}>
+      <div className="stack" style={{ gap: 14 }}>
         <div className="section-actions">
           <span className="field-label" style={{ gap: 0 }}>
             Visible fields
           </span>
-          <button
-            className="button-link"
-            onClick={() => reset({
-              name: dashboard.name,
-              description: dashboard.description ?? "",
-              domain_ids: dashboard.domain_ids,
-              visible_columns: defaultVisibleColumns,
-            })}
-            type="button"
-          >
+          <button className="button-link" onClick={resetVisibleColumns} type="button">
             Reset to default
           </button>
         </div>
-        {dashboardColumnOptions.map((column) => (
-          <label className="checkbox-card" key={column.value}>
-            <input type="checkbox" value={column.value} {...register("visible_columns")} />
-            <span>{column.label}</span>
-          </label>
-        ))}
+        <p className="status-text">
+          Reorder saved fields with drag handles or move buttons. Remove anything you do not want shown by default.
+        </p>
+        <div className="selection-list">
+          {selectedColumns.map((column, index) => {
+            const option = findColumnOption(column);
+            if (!option) {
+              return null;
+            }
+            return (
+              <div
+                className="selection-row"
+                data-dragging={draggedColumn === column}
+                key={column}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => handleDrop(column)}
+              >
+                <button
+                  aria-label={`Drag to reorder ${option.label}`}
+                  className="drag-handle"
+                  draggable
+                  onDragEnd={() => setDraggedColumn(null)}
+                  onDragStart={() => setDraggedColumn(column)}
+                  type="button"
+                >
+                  ::
+                </button>
+                <div className="selection-row-copy">
+                  <span className="selection-row-title">{option.label}</span>
+                  <span className="selection-row-description">Shown in position {index + 1}</span>
+                </div>
+                <div className="selection-row-actions">
+                  <button className="button-secondary" disabled={index === 0} onClick={() => moveColumn(column, -1)} type="button">
+                    Move up
+                  </button>
+                  <button
+                    className="button-secondary"
+                    disabled={index === selectedColumns.length - 1}
+                    onClick={() => moveColumn(column, 1)}
+                    type="button"
+                  >
+                    Move down
+                  </button>
+                  <button className="button-secondary" onClick={() => removeColumn(column)} type="button">
+                    Remove
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
         {errors.visible_columns ? <span className="error-text">{errors.visible_columns.message}</span> : null}
+      </div>
+      <div className="stack" style={{ gap: 12 }}>
+        <span className="field-label" style={{ gap: 0 }}>
+          Available fields
+        </span>
+        {availableColumns.length ? (
+          <div className="selection-list">
+            {availableColumns.map((column) => (
+              <div className="selection-row" key={column.value}>
+                <div className="selection-row-copy" style={{ gridColumn: "1 / span 2" }}>
+                  <span className="selection-row-title">{column.label}</span>
+                  <span className="selection-row-description">Not shown in the saved table layout.</span>
+                </div>
+                <div className="selection-row-actions">
+                  <button className="button-secondary" onClick={() => addColumn(column.value)} type="button">
+                    Add
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="status-text">All supported fields are already visible.</p>
+        )}
       </div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <button className="button-primary" disabled={isSubmitting || !domains.length} type="submit">

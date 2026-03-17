@@ -85,6 +85,7 @@ Grouping is URL-state only in v1 and is not saved with the dashboard definition.
 
 - each dashboard persists an ordered `visible_columns` list for aggregate result tables
 - owners and other eligible editors can change the saved visible fields
+- editors can reorder saved fields directly in the dashboard edit flow; drag interactions must have a non-drag alternative such as move up/down controls
 - viewers inherit the saved column layout
 - if no custom layout is stored, the backend applies a sensible DMARC analysis default
 

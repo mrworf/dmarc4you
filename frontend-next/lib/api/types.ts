@@ -163,6 +163,8 @@ export type IngestJobItem = {
   domain_detected?: string;
   status?: string;
   status_reason?: string;
+  normalized_report_id?: string | null;
+  normalized_report_kind?: "aggregate" | "forensic" | null;
 };
 
 export type IngestJobDetailResponse = {
@@ -274,6 +276,7 @@ export type AuditEvent = {
 
 export type AuditEventsResponse = {
   events: AuditEvent[];
+  available_action_types: string[];
 };
 
 export type SearchRecordsBody = {

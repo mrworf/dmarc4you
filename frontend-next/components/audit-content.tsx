@@ -10,7 +10,7 @@ import type { AuditEventsResponse } from "@/lib/api/types";
 import { buildSearchParams, parseIntegerParam, parseStringParam } from "@/lib/url-state";
 
 type AuditState = {
-  actionType: string;
+  actionTypes: string[];
   from: string;
   to: string;
   actor: string;
@@ -19,9 +19,21 @@ type AuditState = {
 
 const pageSize = 50;
 
+function parseActionTypes(value: string | null): string[] {
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function parseAuditState(searchParams: URLSearchParams): AuditState {
+  const actionTypes = parseActionTypes(searchParams.get("action_types"));
+  const legacyActionType = parseStringParam(searchParams.get("action_type"));
   return {
-    actionType: parseStringParam(searchParams.get("action_type")),
+    actionTypes: actionTypes.length ? actionTypes : legacyActionType ? [legacyActionType] : [],
     from: parseStringParam(searchParams.get("from")),
     to: parseStringParam(searchParams.get("to")),
     actor: parseStringParam(searchParams.get("actor")),
@@ -31,7 +43,7 @@ function parseAuditState(searchParams: URLSearchParams): AuditState {
 
 function buildAuditRouteParams(state: AuditState): string {
   return buildSearchParams({
-    action_type: state.actionType,
+    action_types: state.actionTypes.length ? state.actionTypes.join(",") : "",
     from: state.from,
     to: state.to,
     actor: state.actor,
@@ -43,12 +55,16 @@ function buildAuditPath(state: AuditState): string {
   const params = buildSearchParams({
     limit: String(pageSize),
     offset: String((state.page - 1) * pageSize),
-    action_type: state.actionType,
+    action_types: state.actionTypes.length ? state.actionTypes.join(",") : "",
     from: state.from,
     to: state.to,
     actor: state.actor,
   });
   return params ? `/api/v1/audit?${params}` : "/api/v1/audit";
+}
+
+function toggleValue(values: string[], value: string): string[] {
+  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
 }
 
 export function AuditContent() {
@@ -70,6 +86,7 @@ export function AuditContent() {
   });
 
   const events = auditQuery.data?.events ?? [];
+  const availableActionTypes = auditQuery.data?.available_action_types ?? [];
   const hasNextPage = events.length >= pageSize;
   const hasPreviousPage = currentState.page > 1;
 
@@ -84,7 +101,7 @@ export function AuditContent() {
 
   function resetFilters() {
     const resetState: AuditState = {
-      actionType: "",
+      actionTypes: [],
       from: "",
       to: "",
       actor: "",
@@ -115,16 +132,35 @@ export function AuditContent() {
             <p className="section-intro">Filter by action, time range, or actor to focus on the events you need.</p>
           </div>
         </div>
+        <div className="stack" style={{ gap: 12 }}>
+          <span className="field-label" style={{ gap: 0 }}>
+            Action types
+          </span>
+          {auditQuery.isLoading && !availableActionTypes.length ? <p className="status-text">Loading action types...</p> : null}
+          {!auditQuery.isLoading && !availableActionTypes.length ? (
+            <p className="status-text">No audit action types are available yet.</p>
+          ) : null}
+          {availableActionTypes.length ? (
+            <div className="multi-select-list">
+              {availableActionTypes.map((actionType) => (
+                <label className="checkbox-card" key={actionType}>
+                  <input
+                    checked={draftState.actionTypes.includes(actionType)}
+                    onChange={() =>
+                      setDraftState((state) => ({
+                        ...state,
+                        actionTypes: toggleValue(state.actionTypes, actionType),
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  <span>{actionType}</span>
+                </label>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <div className="search-state-grid">
-          <label className="field-label">
-            Action type
-            <input
-              className="field-input"
-              onChange={(event) => setDraftState((state) => ({ ...state, actionType: event.target.value }))}
-              placeholder="login_success"
-              value={draftState.actionType}
-            />
-          </label>
           <label className="field-label">
             From
             <input
@@ -153,6 +189,28 @@ export function AuditContent() {
             />
           </label>
         </div>
+        {draftState.actionTypes.length ? (
+          <div className="filter-chip-row">
+            {draftState.actionTypes.map((actionType) => (
+              <span className="filter-chip" key={actionType}>
+                <span>{actionType}</span>
+                <button
+                  aria-label={`Remove ${actionType}`}
+                  className="filter-chip-remove"
+                  onClick={() =>
+                    setDraftState((state) => ({
+                      ...state,
+                      actionTypes: state.actionTypes.filter((entry) => entry !== actionType),
+                    }))
+                  }
+                  type="button"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <button className="button-primary" onClick={applyFilters} type="button">
             Apply filters

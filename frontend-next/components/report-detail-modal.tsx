@@ -8,6 +8,8 @@ import type {
   AggregateReportDetailResponse,
   ForensicReportDetailResponse,
 } from "@/lib/api/types";
+import { getAggregateFieldLabel } from "@/lib/aggregate-field-metadata";
+import { isHttpUrl, isLikelyEmail } from "@/lib/contact-links";
 
 type AggregateModalProps = {
   kind: "aggregate";
@@ -22,6 +24,68 @@ type ForensicModalProps = {
 };
 
 type ReportDetailModalProps = AggregateModalProps | ForensicModalProps;
+
+function policyLabel(value: string | null | undefined): string {
+  if (!value) {
+    return "not specified";
+  }
+  if (value === "none") {
+    return "monitor only";
+  }
+  if (value === "quarantine") {
+    return "send suspicious mail to quarantine";
+  }
+  if (value === "reject") {
+    return "reject failing mail";
+  }
+  return value;
+}
+
+function buildPolicySummary(report: AggregateReportDetailResponse): string {
+  if (!report.published_policy) {
+    return "The sender did not publish a DMARC policy summary in this report.";
+  }
+  const pct = report.published_policy.pct ?? 100;
+  const subdomainPolicy = report.published_policy.sp ? ` Subdomains use ${policyLabel(report.published_policy.sp)}.` : "";
+  return `Primary policy: ${policyLabel(report.published_policy.p)}. Enforcement applies to ${pct}% of mail.${subdomainPolicy}`;
+}
+
+function formatDerivedDomain(hostname: string | null | undefined, derivedDomain: string | null | undefined): string {
+  if (!hostname || !derivedDomain) {
+    return "n/a";
+  }
+  if (hostname === derivedDomain) {
+    return "n/a";
+  }
+  return derivedDomain;
+}
+
+function renderContactValue(value: string | null | undefined, styleClassName?: string) {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) {
+    return <strong className={styleClassName}>n/a</strong>;
+  }
+  if (isLikelyEmail(trimmed)) {
+    return (
+      <a className={`inline-link${styleClassName ? ` ${styleClassName}` : ""}`} href={`mailto:${trimmed}`}>
+        {trimmed}
+      </a>
+    );
+  }
+  if (isHttpUrl(trimmed)) {
+    return (
+      <a
+        className={`inline-link${styleClassName ? ` ${styleClassName}` : ""}`}
+        href={trimmed}
+        rel="noreferrer noopener"
+        target="_blank"
+      >
+        {trimmed}
+      </a>
+    );
+  }
+  return <span className={styleClassName}>{trimmed}</span>;
+}
 
 export function ReportDetailModal(props: ReportDetailModalProps) {
   useEffect(() => {
@@ -83,12 +147,12 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
                 <strong>{aggregate.domain}</strong>
               </article>
               <article className="detail-card">
-                <span className="stat-label">Org</span>
+                <span className="stat-label">Reporting organization</span>
                 <strong>{aggregate.org_name ?? "n/a"}</strong>
               </article>
-              <article className="detail-card">
-                <span className="stat-label">Report ID</span>
-                <strong>{aggregate.report_id}</strong>
+              <article className="detail-card detail-card-wide">
+                <span className="stat-label">{getAggregateFieldLabel("report_id")}</span>
+                <strong className="detail-card-code monospace">{aggregate.report_id}</strong>
               </article>
               <article className="detail-card">
                 <span className="stat-label">Records</span>
@@ -96,21 +160,17 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
               </article>
               <article className="detail-card detail-card-wide">
                 <span className="stat-label">Published policy</span>
-                <strong>
-                  {aggregate.published_policy
-                    ? `p=${aggregate.published_policy.p ?? "n/a"} sp=${aggregate.published_policy.sp ?? "n/a"} pct=${aggregate.published_policy.pct ?? "n/a"}`
-                    : "n/a"}
-                </strong>
-                <span className="status-text">
-                  {aggregate.published_policy
-                    ? `adkim=${aggregate.published_policy.adkim ?? "n/a"} aspf=${aggregate.published_policy.aspf ?? "n/a"} fo=${aggregate.published_policy.fo ?? "n/a"}`
-                    : ""}
+                <strong>{buildPolicySummary(aggregate)}</strong>
+                <span className="detail-card-subtle">
+                  Raw values: p={aggregate.published_policy?.p ?? "n/a"} sp={aggregate.published_policy?.sp ?? "n/a"} pct=
+                  {aggregate.published_policy?.pct ?? "n/a"} adkim={aggregate.published_policy?.adkim ?? "n/a"} aspf=
+                  {aggregate.published_policy?.aspf ?? "n/a"} fo={aggregate.published_policy?.fo ?? "n/a"}
                 </span>
               </article>
               <article className="detail-card detail-card-wide">
                 <span className="stat-label">Contact</span>
-                <strong>{aggregate.contact_email ?? "n/a"}</strong>
-                <span className="status-text">{aggregate.extra_contact_info ?? "n/a"}</span>
+                {renderContactValue(aggregate.contact_email, "detail-card-code")}
+                <span className="status-text detail-card-code">{renderContactValue(aggregate.extra_contact_info)}</span>
               </article>
             </div>
             {aggregate.error_messages?.length ? (
@@ -129,16 +189,15 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Source IP</th>
-                    <th>Resolved name</th>
-                    <th>Resolved domain</th>
-                    <th>Country</th>
-                    <th>Count</th>
-                    <th>Disposition</th>
-                    <th>DKIM</th>
-                    <th>SPF</th>
-                    <th>Header from</th>
-                    <th>Details</th>
+                    <th>{getAggregateFieldLabel("source_ip")}</th>
+                    <th>{getAggregateFieldLabel("resolved_name")}</th>
+                    <th>{getAggregateFieldLabel("country_code")}</th>
+                    <th>{getAggregateFieldLabel("count")}</th>
+                    <th>{getAggregateFieldLabel("disposition")}</th>
+                    <th>{getAggregateFieldLabel("dkim_result")}</th>
+                    <th>{getAggregateFieldLabel("spf_result")}</th>
+                    <th>{getAggregateFieldLabel("header_from")}</th>
+                    <th>{getAggregateFieldLabel("details")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -146,7 +205,6 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
                     <tr key={record.id}>
                       <td>{record.source_ip ?? "n/a"}</td>
                       <td>{record.resolved_name ?? "n/a"}</td>
-                      <td>{record.resolved_name_domain ?? "n/a"}</td>
                       <td>{record.country_code ? `${record.country_code} ${record.country_name ?? ""}`.trim() : "n/a"}</td>
                       <td>{record.count}</td>
                       <td>{record.disposition ?? "n/a"}</td>
@@ -185,6 +243,10 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
               <span className="stat-label">Domain</span>
               <strong>{forensic.domain}</strong>
             </article>
+            <article className="detail-card detail-card-wide">
+              <span className="stat-label">Report ID</span>
+              <strong className="detail-card-code monospace">{forensic.report_id}</strong>
+            </article>
             <article className="detail-card">
               <span className="stat-label">Source IP</span>
               <strong>{forensic.source_ip ?? "n/a"}</strong>
@@ -194,7 +256,7 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
               <strong>{forensic.country_code ? `${forensic.country_code} ${forensic.country_name ?? ""}`.trim() : "n/a"}</strong>
             </article>
             <article className="detail-card">
-              <span className="stat-label">Header from</span>
+              <span className="stat-label">Header From domain</span>
               <strong>{forensic.header_from ?? "n/a"}</strong>
             </article>
             <article className="detail-card">
@@ -218,9 +280,9 @@ export function ReportDetailModal(props: ReportDetailModalProps) {
               <strong>{forensic.arrival_time ?? "n/a"}</strong>
             </article>
             <article className="detail-card detail-card-wide">
-              <span className="stat-label">Resolved host</span>
+              <span className="stat-label">Resolved host (PTR)</span>
               <strong>{forensic.resolved_name ?? "n/a"}</strong>
-              <span className="status-text">{forensic.resolved_name_domain ?? "n/a"}</span>
+              <span className="status-text">Derived domain: {formatDerivedDomain(forensic.resolved_name, forensic.resolved_name_domain)}</span>
             </article>
             <article className="detail-card detail-card-wide">
               <span className="stat-label">Envelope</span>

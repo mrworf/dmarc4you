@@ -45,7 +45,7 @@ export function AppShell({ title, description, children, actions }: AppShellProp
   const visibleItems = navItems.filter((item) => !item.roles || (user && item.roles.includes(user.role)));
 
   return (
-    <main className="app-frame app-shell-layout">
+    <main className="app-frame app-frame-app app-shell-layout">
       <div className="mobile-nav-row">
         <button
           aria-expanded={isNavOpen}

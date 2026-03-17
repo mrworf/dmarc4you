@@ -14,6 +14,7 @@ def get_audit(
     limit: int = 50,
     offset: int = 0,
     action_type: str | None = Query(default=None, alias="action_type"),
+    action_types: str | None = Query(default=None, alias="action_types"),
     from_date: str | None = Query(default=None, alias="from"),
     to_date: str | None = Query(default=None, alias="to"),
     actor: str | None = Query(default=None),
@@ -21,16 +22,17 @@ def get_audit(
     config: Config = Depends(get_config),
 ) -> dict:
     """GET /api/v1/audit: list audit log entries with optional filters. Super-admin only; 403 for others."""
-    events, err = audit_service.list_audit_events(
+    payload, err = audit_service.list_audit_events(
         config,
         current_user,
         limit=limit,
         offset=offset,
         action_type=action_type,
+        action_types=[action_types] if action_types else None,
         from_date=from_date,
         to_date=to_date,
         actor_user_id=actor,
     )
     if err == "forbidden":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-    return {"events": events}
+    return payload

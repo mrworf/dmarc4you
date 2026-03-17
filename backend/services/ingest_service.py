@@ -126,6 +126,23 @@ def get_job_detail(
         )
         items = []
         for r in cur.fetchall():
+            normalized_report_id = None
+            normalized_report_kind = None
+            aggregate_row = conn.execute(
+                "SELECT id FROM aggregate_reports WHERE job_item_id = ? LIMIT 1",
+                (r[0],),
+            ).fetchone()
+            if aggregate_row:
+                normalized_report_id = aggregate_row[0]
+                normalized_report_kind = "aggregate"
+            else:
+                forensic_row = conn.execute(
+                    "SELECT id FROM forensic_reports WHERE job_item_id = ? LIMIT 1",
+                    (r[0],),
+                ).fetchone()
+                if forensic_row:
+                    normalized_report_id = forensic_row[0]
+                    normalized_report_kind = "forensic"
             items.append({
                 "item_id": r[0],
                 "job_id": r[1],
@@ -134,6 +151,8 @@ def get_job_detail(
                 "domain_detected": r[4],
                 "status": r[5],
                 "status_reason": r[6],
+                "normalized_report_id": normalized_report_id,
+                "normalized_report_kind": normalized_report_kind,
             })
         job["items"] = items
         job["accepted_count"] = sum(1 for i in items if i.get("status") == "accepted")

@@ -17,17 +17,17 @@ async function applyDefaultAggregateFilters(page: Page) {
   const configuredDomain = process.env.DMARC_E2E_SEARCH_DOMAIN;
 
   await page.getByLabel("Free-text search").fill(process.env.DMARC_E2E_SEARCH_QUERY ?? "google");
-  await page.getByRole("button", { name: "More filters" }).click();
-  const filtersPanel = page.locator('[role="dialog"]').filter({ has: page.getByRole("heading", { name: "More filters" }) });
 
   if (configuredDomain) {
-    await filtersPanel.getByLabel(configuredDomain, { exact: true }).check();
+    await page.getByLabel(configuredDomain, { exact: true }).check();
   } else {
-    const firstDomainCheckbox = filtersPanel.locator(".checkbox-grid input[type='checkbox']").first();
+    const firstDomainCheckbox = page.locator(".search-domain-grid input[type='checkbox']").first();
     await expect(firstDomainCheckbox).toBeVisible();
     await firstDomainCheckbox.check();
   }
 
+  await page.getByRole("button", { name: "More filters" }).click();
+  const filtersPanel = page.locator('[role="dialog"]').filter({ has: page.getByRole("heading", { name: "More filters" }) });
   await filtersPanel.getByLabel("Include SPF").selectOption("pass");
   await page.getByRole("button", { name: "Apply filters" }).click();
 }
@@ -38,6 +38,7 @@ test.describe("frontend-next search coverage", () => {
     await page.goto("/search");
 
     await expect(page.getByRole("heading", { name: "Search", exact: true })).toBeVisible();
+    await expect(page.getByText("Nothing is loaded yet.")).toBeVisible();
     await applyDefaultAggregateFilters(page);
 
     await expect(page).toHaveURL(/\/search\?/);
@@ -55,18 +56,9 @@ test.describe("frontend-next search coverage", () => {
     await expect(page.locator('[role="dialog"]').filter({ has: page.getByRole("heading", { name: "More filters" }) }).getByLabel("Include SPF")).toHaveValue("pass");
 
     if (process.env.DMARC_E2E_SEARCH_DOMAIN) {
-      await expect(
-        page.locator('[role="dialog"]').filter({ has: page.getByRole("heading", { name: "More filters" }) }).getByLabel(
-          process.env.DMARC_E2E_SEARCH_DOMAIN,
-          { exact: true },
-        ),
-      ).toBeChecked();
+      await expect(page.getByLabel(process.env.DMARC_E2E_SEARCH_DOMAIN, { exact: true })).toBeChecked();
     } else {
-      await expect(
-        page.locator('[role="dialog"]').filter({ has: page.getByRole("heading", { name: "More filters" }) }).locator(
-          ".checkbox-grid input[type='checkbox']",
-        ).first(),
-      ).toBeChecked();
+      await expect(page.locator(".search-domain-grid input[type='checkbox']").first()).toBeChecked();
     }
   });
 
@@ -81,7 +73,7 @@ test.describe("frontend-next search coverage", () => {
     await expect(page).toHaveURL(/report_type=forensic/);
     await expect(page.getByRole("heading", { name: "Forensic reports" })).toBeVisible();
     await expect(page.getByLabel("Free-text search")).toBeDisabled();
-    await expect(page.getByText("Forensic reports use domain and date filters only.")).toBeVisible();
+    await expect(page.getByText("Forensic reports require a domain or date filter before loading.")).toBeVisible();
 
     await page.reload();
 

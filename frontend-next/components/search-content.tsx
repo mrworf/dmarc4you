@@ -196,12 +196,30 @@ function getDomainSummaryLabel(selectedCount: number, totalCount: number): strin
     return "No domains";
   }
   if (!selectedCount) {
-    return `All visible domains (${totalCount})`;
+    return `All visible domains available (${totalCount})`;
   }
   if (selectedCount === 1) {
     return "1 domain selected";
   }
   return `${selectedCount} domains selected`;
+}
+
+function hasActiveSearchCriteria(state: SearchState): boolean {
+  if (state.domains.length || state.from || state.to) {
+    return true;
+  }
+  if (state.reportType === "aggregate") {
+    return !!(
+      state.query ||
+      state.includeSpf ||
+      state.includeDkim ||
+      state.includeDisposition ||
+      state.excludeSpf ||
+      state.excludeDkim ||
+      state.excludeDisposition
+    );
+  }
+  return false;
 }
 
 function buildAppliedChips(
@@ -310,17 +328,18 @@ export function SearchContent() {
 
   const aggregateRequest = useMemo(() => buildAggregateRequest(currentState), [currentState]);
   const forensicPath = useMemo(() => buildForensicPath(currentState), [currentState]);
+  const hasAppliedSearch = hasActiveSearchCriteria(currentState);
 
   const aggregateQuery = useQuery({
     queryKey: ["search", "aggregate", aggregateRequest],
     queryFn: () => apiClient.post<SearchRecordsResponse>("/api/v1/search", aggregateRequest),
-    enabled: currentState.reportType === "aggregate",
+    enabled: currentState.reportType === "aggregate" && hasAppliedSearch,
   });
 
   const forensicQuery = useQuery({
     queryKey: ["search", "forensic", forensicPath],
     queryFn: () => apiClient.get<ForensicReportsResponse>(forensicPath),
-    enabled: currentState.reportType === "forensic",
+    enabled: currentState.reportType === "forensic" && hasAppliedSearch,
   });
 
   const aggregateResult = aggregateQuery.data;
@@ -334,12 +353,15 @@ export function SearchContent() {
     const nextState = updater(currentState);
     updateUrl({ ...nextState, page: 1 });
   });
-  const hasAppliedFilters = appliedChips.length > 0 || currentState.reportType !== "aggregate";
-  const resultsSummary = activeResult
-    ? `Showing ${activeResult.items.length} of ${activeResult.total} ${currentState.reportType === "aggregate" ? "matching records" : "reports"}.`
-    : currentState.reportType === "aggregate"
-      ? "Search aggregate records across your visible domains."
-      : "Review forensic reports for the domains you can access.";
+  const resultsSummary = !hasAppliedSearch
+    ? currentState.reportType === "aggregate"
+      ? "Start with a query, domain, date, or advanced filter to avoid broad random-looking result lists."
+      : "Pick a domain or date range before loading forensic reports."
+    : activeResult
+      ? `Showing ${activeResult.items.length} of ${activeResult.total} ${currentState.reportType === "aggregate" ? "matching records" : "reports"}.`
+      : currentState.reportType === "aggregate"
+        ? "Search aggregate records across your visible domains."
+        : "Review forensic reports for the domains you can access.";
 
   function updateUrl(state: SearchState) {
     const nextParams = buildSearchRouteParams(state);
@@ -403,8 +425,10 @@ export function SearchContent() {
           className="button-secondary"
           onClick={() => {
             domainsQuery.refetch();
-            aggregateQuery.refetch();
-            forensicQuery.refetch();
+            if (hasAppliedSearch) {
+              aggregateQuery.refetch();
+              forensicQuery.refetch();
+            }
           }}
           type="button"
         >
@@ -429,6 +453,7 @@ export function SearchContent() {
                   ...current,
                   reportType: event.target.value === "forensic" ? "forensic" : "aggregate",
                   page: 1,
+                  query: event.target.value === "forensic" ? "" : current.query,
                   includeSpf: event.target.value === "forensic" ? "" : current.includeSpf,
                   includeDkim: event.target.value === "forensic" ? "" : current.includeDkim,
                   includeDisposition: event.target.value === "forensic" ? "" : current.includeDisposition,
@@ -449,7 +474,7 @@ export function SearchContent() {
               className="field-input"
               disabled={draftState.reportType === "forensic"}
               onChange={(event) => setDraftState((current) => ({ ...current, query: event.target.value }))}
-              placeholder={draftState.reportType === "forensic" ? "Not available for forensic reports" : "IP, org, host, or address"}
+              placeholder={draftState.reportType === "forensic" ? "Forensic reports use domain or date filters" : "IP, org, host, or address"}
               value={draftState.query}
             />
           </label>
@@ -472,9 +497,11 @@ export function SearchContent() {
             />
           </label>
           <div className="search-toolbar-actions">
-            <button className="button-secondary" onClick={() => setIsFiltersOpen(true)} type="button">
-              More filters
-            </button>
+            {draftState.reportType === "aggregate" ? (
+              <button className="button-secondary" onClick={() => setIsFiltersOpen(true)} type="button">
+                More filters
+              </button>
+            ) : null}
             <button className="button-primary" type="submit">
               Search
             </button>
@@ -483,11 +510,41 @@ export function SearchContent() {
             </button>
           </div>
         </form>
+        <div className="search-domain-picker">
+          <span className="field-label" style={{ gap: 0 }}>
+            Domains
+          </span>
+          {domainsQuery.isLoading ? <p className="status-text">Loading visible domains...</p> : null}
+          {!domainsQuery.isLoading && !domains.length ? (
+            <p className="status-text">No visible domains are available for this account yet.</p>
+          ) : null}
+          {domains.length ? (
+            <div className="search-domain-grid">
+              {domains.map((domain: DomainSummary) => (
+                <label className="checkbox-card" key={domain.id}>
+                  <input
+                    checked={draftState.domains.includes(domain.name)}
+                    onChange={() =>
+                      setDraftState((current) => ({
+                        ...current,
+                        domains: toggleValue(current.domains, domain.name),
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  <span>{domain.name}</span>
+                </label>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <div className="search-toolbar-meta">
           <span className="status-text">{getDomainSummaryLabel(draftState.domains.length, domains.length)}</span>
-          {draftState.reportType === "forensic" ? (
-            <span className="status-text">Forensic reports use domain and date filters only.</span>
-          ) : null}
+          {draftState.reportType === "aggregate" ? (
+            <span className="status-text">Use at least one filter before loading aggregate results.</span>
+          ) : (
+            <span className="status-text">Forensic reports require a domain or date filter before loading.</span>
+          )}
         </div>
       </section>
 
@@ -497,13 +554,13 @@ export function SearchContent() {
             <h2 className="section-title">{currentState.reportType === "aggregate" ? "Results" : "Forensic reports"}</h2>
             <p className="section-intro">{resultsSummary}</p>
           </div>
-          {hasAppliedFilters ? (
+          {appliedChips.length ? (
             <button className="button-secondary" onClick={resetSearch} type="button">
               Clear all
             </button>
           ) : null}
         </div>
-        {hasAppliedFilters ? (
+        {appliedChips.length ? (
           <div className="filter-chip-row">
             {currentState.reportType === "forensic" ? <span className="filter-chip">Mode: Forensic</span> : null}
             {appliedChips.map((chip) => (
@@ -516,14 +573,19 @@ export function SearchContent() {
             ))}
           </div>
         ) : null}
-        {isLoading ? <p className="status-text">Loading results...</p> : null}
-        {error ? <p className="error-text">{error instanceof Error ? error.message : "Failed to load results"}</p> : null}
+        {!hasAppliedSearch ? (
+          <p className="status-text">
+            Nothing is loaded yet. Add a query, domain, date range, or advanced filter and run a search.
+          </p>
+        ) : null}
+        {hasAppliedSearch && isLoading ? <p className="status-text">Loading results...</p> : null}
+        {hasAppliedSearch && error ? <p className="error-text">{error instanceof Error ? error.message : "Failed to load results"}</p> : null}
         {domainsQuery.error ? (
           <p className="error-text">
             {domainsQuery.error instanceof Error ? domainsQuery.error.message : "Failed to load visible domains"}
           </p>
         ) : null}
-        {aggregateResult && currentState.reportType === "aggregate" ? (
+        {hasAppliedSearch && aggregateResult && currentState.reportType === "aggregate" ? (
           <AggregateSearchResultsTable
             emptyMessage="No aggregate results found."
             onQuickFilter={handleQuickFilter}
@@ -531,7 +593,7 @@ export function SearchContent() {
             result={aggregateResult}
           />
         ) : null}
-        {forensicResult && currentState.reportType === "forensic" ? (
+        {hasAppliedSearch && forensicResult && currentState.reportType === "forensic" ? (
           <ForensicResultsTable
             emptyMessage="No forensic reports found."
             onQuickFilter={handleQuickFilter}
@@ -539,7 +601,7 @@ export function SearchContent() {
             result={forensicResult}
           />
         ) : null}
-        {activeResult ? (
+        {hasAppliedSearch && activeResult ? (
           <div className="pagination-row">
             <span className="status-text">
               Page {activeResult.page} of {totalPages}
@@ -567,7 +629,7 @@ export function SearchContent() {
       </section>
 
       <SlideOverPanel
-        description="Pick domains and, for aggregate searches, refine the pass/fail and disposition filters."
+        description="Refine aggregate searches with pass/fail and disposition filters."
         onClose={() => setIsFiltersOpen(false)}
         open={isFiltersOpen}
         title="More filters"
@@ -579,31 +641,6 @@ export function SearchContent() {
             applySearch();
           }}
         >
-          <div className="stack" style={{ gap: 10 }}>
-            <span className="field-label">Domains</span>
-            {domainsQuery.isLoading ? <p className="status-text">Loading domains...</p> : null}
-            {!domainsQuery.isLoading && !domains.length ? (
-              <p className="status-text">No visible domains are available for this account yet.</p>
-            ) : null}
-            <div className="checkbox-grid">
-              {domains.map((domain: DomainSummary) => (
-                <label className="checkbox-card" key={domain.id}>
-                  <input
-                    checked={draftState.domains.includes(domain.name)}
-                    onChange={() =>
-                      setDraftState((current) => ({
-                        ...current,
-                        domains: toggleValue(current.domains, domain.name),
-                      }))
-                    }
-                    type="checkbox"
-                  />
-                  <span>{domain.name}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
           {draftState.reportType === "aggregate" ? (
             <div className="search-state-grid">
               <label className="field-label">
@@ -692,31 +729,22 @@ export function SearchContent() {
               </label>
             </div>
           ) : null}
-
-          <div className="dialog-actions">
-            <button className="button-secondary" onClick={() => setIsFiltersOpen(false)} type="button">
-              Close
-            </button>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <button className="button-primary" type="submit">
               Apply filters
+            </button>
+            <button className="button-secondary" onClick={() => setIsFiltersOpen(false)} type="button">
+              Close
             </button>
           </div>
         </form>
       </SlideOverPanel>
 
       {selectedAggregateReportId ? (
-        <ReportDetailModal
-          kind="aggregate"
-          onClose={() => setSelectedAggregateReportId(null)}
-          reportId={selectedAggregateReportId}
-        />
+        <ReportDetailModal kind="aggregate" onClose={() => setSelectedAggregateReportId(null)} reportId={selectedAggregateReportId} />
       ) : null}
       {selectedForensicReportId ? (
-        <ReportDetailModal
-          kind="forensic"
-          onClose={() => setSelectedForensicReportId(null)}
-          reportId={selectedForensicReportId}
-        />
+        <ReportDetailModal kind="forensic" onClose={() => setSelectedForensicReportId(null)} reportId={selectedForensicReportId} />
       ) : null}
     </AppShell>
   );

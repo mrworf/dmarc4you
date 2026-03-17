@@ -53,9 +53,9 @@ Returns current authenticated user and effective domain visibility.
 
 List audit log entries. **Super-admin only**; 403 for other roles. Session required; 401 if not authenticated.
 
-Query params: `limit` (default 50, max 100), `offset` (default 0).
+Query params: `limit` (default 50, max 100), `offset` (default 0), `action_type` (legacy single value), `action_types` (optional comma-separated list), `from`, `to`, `actor`.
 
-Response (200): `{ "events": [ { "id", "timestamp", "actor_type", "actor_user_id", "action_type", "outcome", "source_ip", "user_agent", "summary" }, ... ] }`. Events are ordered by timestamp descending.
+Response (200): `{ "events": [ { "id", "timestamp", "actor_type", "actor_user_id", "action_type", "outcome", "source_ip", "user_agent", "summary" }, ... ], "available_action_types": ["login_success", "user_created", ...] }`. Events are ordered by timestamp descending. `available_action_types` is the distinct sorted set currently present in `audit_log`.
 
 ## Ingest endpoints
 
@@ -139,7 +139,9 @@ Example:
       "item_id": "item_1",
       "report_type": "aggregate",
       "domain": "example.com",
-      "status": "accepted"
+      "status": "accepted",
+      "normalized_report_id": "agg_abc123",
+      "normalized_report_kind": "aggregate"
     },
     {
       "item_id": "item_2",
@@ -150,6 +152,8 @@ Example:
   ]
 }
 ```
+
+For accepted items backed by normalized reports, `normalized_report_id` and `normalized_report_kind` are included so the UI can deep-link into report detail.
 
 ### Rejection semantics for ingest
 

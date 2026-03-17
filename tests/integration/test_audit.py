@@ -37,7 +37,9 @@ def test_get_audit_super_admin_200(audit_app_client) -> None:
     assert r.status_code == 200
     data = r.json()
     assert "events" in data
+    assert "available_action_types" in data
     assert isinstance(data["events"], list)
+    assert isinstance(data["available_action_types"], list)
     # Login above wrote at least one audit event
     assert len(data["events"]) >= 1
     event = data["events"][0]
@@ -85,6 +87,33 @@ def test_get_audit_filter_by_action_type(audit_app_client) -> None:
     assert len(events) >= 2
     for e in events:
         assert e["action_type"] == "login_success"
+
+
+def test_get_audit_filter_by_multiple_action_types(audit_app_client, temp_db_path: str) -> None:
+    """Filter by action_types returns matching events from multiple action groups."""
+    client, password, _config = audit_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    conn = get_connection(temp_db_path)
+    try:
+        cur = conn.execute("SELECT id FROM users WHERE username = 'admin' LIMIT 1")
+        admin_id = cur.fetchone()[0]
+        conn.execute(
+            """INSERT INTO audit_log (id, timestamp, actor_type, actor_user_id, actor_api_key_id, action_type, outcome, source_ip, user_agent, summary, metadata_json)
+               VALUES (?, ?, 'user', ?, NULL, 'user_created', 'success', NULL, NULL, 'created user demo', NULL)""",
+            ("aud_manual", "2026-01-02T00:00:00Z", admin_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    r = client.get("/api/v1/audit?action_types=login_success,user_created")
+    assert r.status_code == 200
+    data = r.json()
+    assert "login_success" in data["available_action_types"]
+    assert "user_created" in data["available_action_types"]
+    assert len(data["events"]) >= 2
+    for event in data["events"]:
+        assert event["action_type"] in {"login_success", "user_created"}
 
 
 def test_get_audit_filter_by_actor(audit_app_client, temp_db_path: str) -> None:

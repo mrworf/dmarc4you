@@ -5,6 +5,7 @@ import type {
   GroupedSearchResult,
   SearchRecordsResponse,
 } from "@/lib/api/types";
+import { getAggregateFieldLabel } from "@/lib/aggregate-field-metadata";
 
 export type SearchQuickFilterOption = {
   label: string;
@@ -89,7 +90,7 @@ export function AggregateSearchResultsTable({
           <thead>
             <tr>
               <th>Group</th>
-              <th>Total count</th>
+              <th>Messages</th>
               <th>Rows</th>
               <th>Reports</th>
               <th>First record date</th>
@@ -117,8 +118,8 @@ export function AggregateSearchResultsTable({
   }
 
   const columns = visibleColumns?.length
-    ? visibleColumns
-    : ["record_date", "source_ip", "resolved_name", "resolved_name_domain", "count", "disposition", "dkim_result", "spf_result", "domain", "org_name"];
+    ? visibleColumns.filter((column) => column !== "resolved_name_domain")
+    : ["record_date", "source_ip", "resolved_name", "count", "disposition", "dkim_result", "spf_result", "domain", "org_name"];
 
   return (
     <div className="table-wrap">
@@ -126,7 +127,7 @@ export function AggregateSearchResultsTable({
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={column}>{columnLabel(column)}</th>
+              <th key={column}>{getAggregateFieldLabel(column)}</th>
             ))}
             <th>Detail</th>
           </tr>
@@ -159,28 +160,6 @@ export function AggregateSearchResultsTable({
   );
 }
 
-function columnLabel(column: string): string {
-  const labels: Record<string, string> = {
-    record_date: "Record date",
-    source_ip: "Source IP",
-    resolved_name: "Resolved name",
-    resolved_name_domain: "Resolved domain",
-    country_code: "Country code",
-    country_name: "Country name",
-    count: "Count",
-    disposition: "Disposition",
-    dkim_result: "DKIM",
-    spf_result: "SPF",
-    domain: "Domain",
-    org_name: "Org",
-    header_from: "Header from",
-    envelope_from: "Envelope from",
-    envelope_to: "Envelope to",
-    report_id: "Report ID",
-  };
-  return labels[column] ?? column;
-}
-
 function renderAggregateCell(
   column: string,
   item: AggregateSearchResult,
@@ -206,6 +185,9 @@ function renderAggregateCell(
         />
       );
     case "resolved_name_domain":
+      if (!item.resolved_name_domain || item.resolved_name_domain === item.resolved_name) {
+        return "n/a";
+      }
       return (
         <CellValueWithActions
           actions={

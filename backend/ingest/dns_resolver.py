@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import socket
 from functools import lru_cache
 
 from backend.config.schema import Config
@@ -20,15 +21,12 @@ def _normalize_hostname(hostname: str | None) -> str | None:
     return value or None
 
 
-def _make_resolver(config: Config):
-    if dns is None:
+def _resolve_with_socket(ip_text: str) -> str | None:
+    try:
+        host, _aliases, _addresses = socket.gethostbyaddr(ip_text)
+    except (socket.herror, socket.gaierror, OSError):
         return None
-    resolver = dns.resolver.Resolver(configure=not bool(config.dns_nameservers))
-    if config.dns_nameservers:
-        resolver.nameservers = list(config.dns_nameservers)
-    resolver.timeout = config.dns_timeout_seconds
-    resolver.lifetime = config.dns_timeout_seconds
-    return resolver
+    return _normalize_hostname(host)
 
 
 @lru_cache(maxsize=4096)
@@ -45,18 +43,20 @@ def resolve_ip_cached(
     except ValueError:
         return (None, None)
     try:
-        if dns is None:
-            return (None, None)
-        resolver = dns.resolver.Resolver(configure=not bool(nameservers))
-        if nameservers:
-            resolver.nameservers = list(nameservers)
-        resolver.timeout = timeout_seconds
-        resolver.lifetime = timeout_seconds
-        reverse_name = dns.reversename.from_address(value)
-        answers = resolver.resolve(reverse_name, "PTR")
-        hostname = _normalize_hostname(str(answers[0])) if answers else None
+        hostname = None
+        if dns is not None:
+            resolver = dns.resolver.Resolver(configure=not bool(nameservers))
+            if nameservers:
+                resolver.nameservers = list(nameservers)
+            resolver.timeout = timeout_seconds
+            resolver.lifetime = timeout_seconds
+            reverse_name = dns.reversename.from_address(value)
+            answers = resolver.resolve(reverse_name, "PTR")
+            hostname = _normalize_hostname(str(answers[0])) if answers else None
     except Exception:
-        return (None, None)
+        hostname = None
+    if not hostname:
+        hostname = _resolve_with_socket(value)
     return (hostname, hostname_to_domain(hostname))
 
 

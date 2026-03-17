@@ -108,6 +108,8 @@ def test_runner_accepts_valid_aggregate_and_persists(ingest_app_client) -> None:
     assert len(data["items"]) == 1
     assert data["items"][0]["status"] == "accepted"
     assert data["items"][0]["domain_detected"] == "example.com"
+    assert data["items"][0]["normalized_report_kind"] == "aggregate"
+    assert data["items"][0]["normalized_report_id"].startswith("agg_")
     conn = get_connection(config.database_path)
     try:
         cur = conn.execute("SELECT report_id, domain FROM aggregate_reports")
@@ -116,6 +118,24 @@ def test_runner_accepts_valid_aggregate_and_persists(ingest_app_client) -> None:
         assert row[1] == "example.com"
     finally:
         conn.close()
+
+
+def test_runner_accepts_valid_forensic_and_links_normalized_report(ingest_app_client) -> None:
+    client, password, config = ingest_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    r = client.post(
+        "/api/v1/reports/ingest",
+        json={"source": "test", "reports": [{"content_type": "application/xml", "content": MINIMAL_FORENSIC_XML}]},
+    )
+    assert r.status_code in (200, 202)
+    job_id = r.json()["job_id"]
+    run_one_job(config)
+    detail = client.get(f"/api/v1/ingest-jobs/{job_id}")
+    assert detail.status_code == 200
+    data = detail.json()
+    assert data["items"][0]["status"] == "accepted"
+    assert data["items"][0]["normalized_report_kind"] == "forensic"
+    assert data["items"][0]["normalized_report_id"].startswith("for_")
 
 
 def test_runner_stores_reverse_dns_for_aggregate_records(ingest_app_client, monkeypatch) -> None:
