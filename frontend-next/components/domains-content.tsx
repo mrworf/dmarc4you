@@ -226,6 +226,11 @@ export function DomainsContent() {
                         <span>Retention until {new Date(domain.retention_delete_at).toLocaleDateString()}</span>
                       ) : null}
                       {domain.retention_paused ? <span>Retention paused</span> : null}
+                      <span>Monitoring {domain.monitoring_enabled ? "enabled" : "disabled"}</span>
+                      {domain.monitoring_last_checked_at ? (
+                        <span>Last DNS check {new Date(domain.monitoring_last_checked_at).toLocaleString()}</span>
+                      ) : null}
+                      {domain.monitoring_failure_active ? <span>Monitoring failure active</span> : null}
                     </div>
                     {domain.latest_maintenance_job ? (
                       <div className="domain-meta">
@@ -244,6 +249,9 @@ export function DomainsContent() {
                   </div>
                   <div className="section-actions">
                     <span className="pill">{domain.status}</span>
+                    <Link className="button-secondary" href={`/domains/${domain.id}`}>
+                      View details
+                    </Link>
                     {canRecomputeReports ? (
                       <button
                         className="button-secondary"

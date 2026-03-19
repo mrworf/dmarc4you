@@ -8,6 +8,7 @@ from typing import Any
 
 from backend.config.schema import Config
 from backend.services.dmarc_alignment import compute_aggregate_alignment, load_record_auth_results
+from backend.services import domain_monitoring_service
 from backend.storage.sqlite import get_connection
 
 JOB_ID_PREFIX = "dmjob_"
@@ -26,7 +27,7 @@ def _write_audit_event(
     *,
     action_type: str,
     outcome: str,
-    actor_user_id: str,
+    actor_user_id: str | None,
     summary: str,
 ) -> None:
     event_id = f"aud_{uuid.uuid4().hex[:16]}"
@@ -51,15 +52,16 @@ def _serialize_job(row: Any) -> dict[str, Any]:
         "domain_name": row[2],
         "action": row[3],
         "actor_user_id": row[4],
-        "submitted_at": row[5],
-        "started_at": row[6],
-        "completed_at": row[7],
-        "state": row[8],
-        "reports_scanned": row[9],
-        "reports_skipped": row[10],
-        "records_updated": row[11],
-        "last_error": row[12],
-        "summary": row[13],
+        "actor_api_key_id": row[5],
+        "submitted_at": row[6],
+        "started_at": row[7],
+        "completed_at": row[8],
+        "state": row[9],
+        "reports_scanned": row[10],
+        "reports_skipped": row[11],
+        "records_updated": row[12],
+        "last_error": row[13],
+        "summary": row[14],
     }
 
 
@@ -114,7 +116,7 @@ def _get_job_for_actor(
     conn = get_connection(config.database_path)
     try:
         row = conn.execute(
-            """SELECT id, domain_id, domain_name, action, actor_user_id, submitted_at, started_at, completed_at,
+            """SELECT id, domain_id, domain_name, action, actor_user_id, actor_api_key_id, submitted_at, started_at, completed_at,
                       state, reports_scanned, reports_skipped, records_updated, last_error, summary
                FROM domain_maintenance_jobs
                WHERE id = ?""",
@@ -145,7 +147,7 @@ def enqueue_recompute_job(
     conn = get_connection(config.database_path)
     try:
         existing = conn.execute(
-            """SELECT id, domain_id, domain_name, action, actor_user_id, submitted_at, started_at, completed_at,
+            """SELECT id, domain_id, domain_name, action, actor_user_id, actor_api_key_id, submitted_at, started_at, completed_at,
                       state, reports_scanned, reports_skipped, records_updated, last_error, summary
                FROM domain_maintenance_jobs
                WHERE domain_id = ? AND action = ? AND state IN (?, ?)
@@ -165,14 +167,15 @@ def enqueue_recompute_job(
         submitted_at = datetime.now(timezone.utc).isoformat()
         conn.execute(
             """INSERT INTO domain_maintenance_jobs
-               (id, domain_id, domain_name, action, actor_user_id, submitted_at, state, reports_scanned, reports_skipped, records_updated)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0)""",
+               (id, domain_id, domain_name, action, actor_user_id, actor_api_key_id, submitted_at, state, reports_scanned, reports_skipped, records_updated)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0)""",
             (
                 job_id,
                 domain["id"],
                 domain["name"],
                 ACTION_RECOMPUTE_AGGREGATE_REPORTS,
                 actor["id"],
+                None,
                 submitted_at,
                 STATE_QUEUED,
             ),
@@ -184,6 +187,7 @@ def enqueue_recompute_job(
             "domain_name": domain["name"],
             "action": ACTION_RECOMPUTE_AGGREGATE_REPORTS,
             "actor_user_id": actor["id"],
+            "actor_api_key_id": None,
             "submitted_at": submitted_at,
             "started_at": None,
             "completed_at": None,
@@ -222,7 +226,7 @@ def list_domain_jobs(
     conn = get_connection(config.database_path)
     try:
         rows = conn.execute(
-            """SELECT id, domain_id, domain_name, action, actor_user_id, submitted_at, started_at, completed_at,
+            """SELECT id, domain_id, domain_name, action, actor_user_id, actor_api_key_id, submitted_at, started_at, completed_at,
                       state, reports_scanned, reports_skipped, records_updated, last_error, summary
                FROM domain_maintenance_jobs
                WHERE domain_id = ?
@@ -248,7 +252,7 @@ def get_latest_job_for_domain(config: Config, *, domain_id: str) -> dict[str, An
     conn = get_connection(config.database_path)
     try:
         row = conn.execute(
-            """SELECT id, domain_id, domain_name, action, actor_user_id, submitted_at, started_at, completed_at,
+            """SELECT id, domain_id, domain_name, action, actor_user_id, actor_api_key_id, submitted_at, started_at, completed_at,
                       state, reports_scanned, reports_skipped, records_updated, last_error, summary
                FROM domain_maintenance_jobs
                WHERE domain_id = ?
@@ -265,7 +269,7 @@ def claim_next_job(config: Config) -> dict[str, Any] | None:
     conn = get_connection(config.database_path)
     try:
         row = conn.execute(
-            """SELECT id, domain_id, domain_name, action, actor_user_id, submitted_at, started_at, completed_at,
+            """SELECT id, domain_id, domain_name, action, actor_user_id, actor_api_key_id, submitted_at, started_at, completed_at,
                       state, reports_scanned, reports_skipped, records_updated, last_error, summary
                FROM domain_maintenance_jobs
                WHERE state IN (?, ?)
@@ -285,7 +289,7 @@ def claim_next_job(config: Config) -> dict[str, Any] | None:
         )
         conn.commit()
         refreshed = conn.execute(
-            """SELECT id, domain_id, domain_name, action, actor_user_id, submitted_at, started_at, completed_at,
+            """SELECT id, domain_id, domain_name, action, actor_user_id, actor_api_key_id, submitted_at, started_at, completed_at,
                       state, reports_scanned, reports_skipped, records_updated, last_error, summary
                FROM domain_maintenance_jobs
                WHERE id = ?""",
@@ -300,7 +304,7 @@ def process_job(config: Config, *, job_id: str) -> None:
     conn = get_connection(config.database_path)
     try:
         job_row = conn.execute(
-            """SELECT id, domain_id, domain_name, action, actor_user_id
+            """SELECT id, domain_id, domain_name, action, actor_user_id, actor_api_key_id
                FROM domain_maintenance_jobs
                WHERE id = ?""",
             (job_id,),
@@ -326,8 +330,10 @@ def process_job(config: Config, *, job_id: str) -> None:
             )
             conn.commit()
             actor_user_id = job_row[4]
+            actor_api_key_id = job_row[5]
         else:
             actor_user_id = job_row[4]
+            actor_api_key_id = job_row[5]
     finally:
         conn.close()
 
@@ -342,14 +348,22 @@ def process_job(config: Config, *, job_id: str) -> None:
         return
 
     try:
-        counts = _recompute_domain_aggregate_alignment(config, domain_id=domain_row[0], domain_name=domain_row[1], job_id=job_id)
+        if job_row[3] == ACTION_RECOMPUTE_AGGREGATE_REPORTS:
+            counts = _recompute_domain_aggregate_alignment(config, domain_id=domain_row[0], domain_name=domain_row[1], job_id=job_id)
+        elif job_row[3] == domain_monitoring_service.ACTION_CHECK_DNS_MONITORING:
+            counts = domain_monitoring_service.run_monitoring_job(config, job_id=job_id)
+        else:
+            raise ValueError(f"unsupported_action:{job_row[3]}")
         completed_at = datetime.now(timezone.utc).isoformat()
         state = STATE_COMPLETED if counts["reports_scanned"] else STATE_COMPLETED_WITH_WARNINGS
-        summary = (
-            f"Recomputed aggregate alignment for {counts['records_updated']} records across {counts['reports_scanned']} reports."
-            if counts["reports_scanned"]
-            else "No aggregate reports were available to recompute for this domain."
-        )
+        if job_row[3] == ACTION_RECOMPUTE_AGGREGATE_REPORTS:
+            summary = (
+                f"Recomputed aggregate alignment for {counts['records_updated']} records across {counts['reports_scanned']} reports."
+                if counts["reports_scanned"]
+                else "No aggregate reports were available to recompute for this domain."
+            )
+        else:
+            summary = "Completed DNS monitoring check." if counts["reports_scanned"] else "DNS monitoring check skipped."
         conn = get_connection(config.database_path)
         try:
             conn.execute(

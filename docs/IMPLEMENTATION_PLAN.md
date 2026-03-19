@@ -206,6 +206,17 @@ Deliver:
    - search_service.get_forensic_report_detail() returns report dict
    - UI: clickable "View" link in forensic search results opens modal with report metadata
    - Integration tests for 200, 403, 404, 401 cases
+44. **Domain DNS monitoring** ✓ (done)
+   - Opt-in DMARC/SPF/configured-DKIM monitoring with TTL-aware scheduling and per-domain change history
+   - `GET/PUT /api/v1/domains/{id}/monitoring`, `POST /api/v1/domains/{id}/monitoring/check`
+   - API key scope `domains:monitor` for programmatic trigger
+   - Failure logging is edge-triggered: first failure in a streak only, reset on success
+   - Next.js domain detail view shows current state, explanations, failure banner, and history
+45. **DNS change timeline** ✓ (done)
+   - Dedicated `GET /api/v1/domains/{id}/monitoring/timeline` endpoint with diff-classified history entries
+   - Unchanged polls update freshness only; timeline remains change-only
+   - Timeline entries are marked improved/degraded/neutral from DMARC/SPF/DKIM diff rules
+   - Next.js timeline page shows a scrollable node-based history plus a separate last-polled freshness card
 
 ## Working rules for each slice
 

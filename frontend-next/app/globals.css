@@ -140,6 +140,122 @@ button {
   box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
 }
 
+.textarea-input,
+.code-block {
+  width: 100%;
+  border: 1px solid rgba(16, 35, 61, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 14px 16px;
+}
+
+.textarea-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+}
+
+.code-block {
+  overflow: auto;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+
+.timeline-list {
+  display: grid;
+  gap: 18px;
+}
+
+.timeline-entry {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.timeline-entry-card {
+  display: grid;
+  gap: 14px;
+}
+
+.timeline-node {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  margin-top: 18px;
+  border: 3px solid rgba(16, 35, 61, 0.12);
+  box-shadow: 0 0 0 8px rgba(16, 35, 61, 0.04);
+}
+
+.timeline-node-degraded {
+  background: #c0392b;
+}
+
+.timeline-node-improved {
+  background: #1f7a45;
+}
+
+.timeline-node-neutral {
+  background: #2c6db2;
+}
+
+.timeline-change-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.timeline-change-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(16, 35, 61, 0.04);
+  border: 1px solid rgba(16, 35, 61, 0.08);
+}
+
+.timeline-change-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.timeline-change-degraded {
+  background: rgba(192, 57, 43, 0.12);
+  color: #8e2c22;
+}
+
+.timeline-change-improved {
+  background: rgba(31, 122, 69, 0.12);
+  color: #165632;
+}
+
+.timeline-change-neutral {
+  background: rgba(44, 109, 178, 0.12);
+  color: #1f4d7d;
+}
+
+.timeline-before-after {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.timeline-before-after-label {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .button-primary,
 .button-secondary {
   border: 0;

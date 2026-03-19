@@ -27,5 +27,6 @@ class Config:
     archive_storage_path: str | None = None
     dns_nameservers: tuple[str, ...] = ()
     dns_timeout_seconds: float = 1.0
+    dns_monitor_default_interval_seconds: int = 300
     geoip_provider: GeoIpProvider = "none"
     geoip_database_path: str | None = None

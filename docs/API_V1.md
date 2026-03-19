@@ -231,6 +231,85 @@ Response:
 
 Returns 409 if a recompute job for the same domain/action is already queued or processing.
 
+### `GET /api/v1/domains/{domain_id}/monitoring`
+
+Return DNS monitoring settings, current normalized state, and a short recent-changes preview.
+
+Auth and visibility:
+
+- session auth: `super-admin` can view any domain, assigned users can view active assigned domains
+- API key auth: requires scope `domains:monitor` and the domain must be bound to the key
+- archived domains remain visible only to `super-admin`
+- history preview includes only saved DNS value changes; unchanged polls update freshness but do not create history entries
+
+### `GET /api/v1/domains/{domain_id}/monitoring/timeline`
+
+Return the full saved DNS change timeline for the domain.
+
+Response includes:
+
+- `domain`
+- `last_checked_at`
+- `history`
+
+Each history entry includes:
+
+- `id`
+- `changed_at`
+- `summary`
+- `overall_direction` (`improved`, `degraded`, `neutral`)
+- `changes` with per-record reasons and before/after values
+- `previous_state`
+- `current_state`
+
+### `PUT /api/v1/domains/{domain_id}/monitoring`
+
+Update monitoring settings for one domain.
+
+Request:
+
+```json
+{
+  "enabled": true,
+  "dkim_selectors": ["selector1", "selector2"]
+}
+```
+
+Auth and RBAC:
+
+- session auth only
+- `super-admin` may update any domain
+- assigned `admin` may update active domains in scope
+- `manager` and `viewer` receive 403
+
+### `POST /api/v1/domains/{domain_id}/monitoring/check`
+
+Enqueue a DNS monitoring check. This endpoint is asynchronous and does not return the lookup result.
+
+Responses:
+
+```json
+{ "state": "queued" }
+```
+
+or
+
+```json
+{ "state": "suppressed_recently" }
+```
+
+Rules:
+
+- session auth: `super-admin` or assigned `admin` for active in-scope domains
+- API key auth: requires scope `domains:monitor` and a domain binding
+- repeated triggers are rate-limited per domain to no more than once per minute
+- the default DNS lookup timeout is 5 seconds unless overridden in config
+- DNS lookup failures are logged only on the first failure in a streak; later failures stay silent until a successful check clears the failure state
+- `monitoring_last_checked_at` means the last successful DNS poll, not the last attempted one
+- failed polls do not update `monitoring_last_checked_at`, do not overwrite the last known DNS snapshot, and do not create history/timeline entries
+- unchanged successful polls update `monitoring_last_checked_at` but do not add history/timeline entries
+- missing records are treated as successful observations and can appear as change events such as “record missing” or “record restored”
+
 ### `GET /api/v1/domains/{domain_id}/maintenance-jobs`
 
 List domain maintenance jobs visible for the target domain, newest first. Visibility follows the same RBAC rules as enqueue for that domain.

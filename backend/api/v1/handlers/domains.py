@@ -9,6 +9,10 @@ from backend.api.v1.schemas.domains import (
     ArchiveDomainBody,
     ArtifactListResponse,
     CreateDomainBody,
+    DomainMonitoringCheckResponse,
+    DomainMonitoringResponse,
+    DomainMonitoringSettingsBody,
+    DomainMonitoringTimelineResponse,
     DomainMaintenanceJobListResponse,
     DomainMaintenanceJobMutationResponse,
     DomainMutationResponse,
@@ -18,8 +22,8 @@ from backend.api.v1.schemas.domains import (
     SetRetentionBody,
 )
 from backend.config.schema import Config
-from backend.api.v1.deps import get_config, get_current_user
-from backend.services import domain_maintenance_service, domain_service
+from backend.api.v1.deps import get_config, get_current_user, get_monitoring_actor
+from backend.services import domain_maintenance_service, domain_monitoring_service, domain_service
 
 router = APIRouter(prefix="/domains", tags=["domains"])
 
@@ -209,6 +213,20 @@ def get_domain_stats(
     return stats
 
 
+@router.get("/{domain_id}", response_model=DomainMutationResponse, responses=ERROR_RESPONSES)
+def get_domain_detail(
+    domain_id: str,
+    current_user: dict = Depends(get_current_user),
+    config: Config = Depends(get_config),
+) -> dict:
+    status_code, domain = domain_service.get_domain_detail(config, domain_id, current_user)
+    if status_code == "forbidden":
+        raise api_http_exception(status.HTTP_403_FORBIDDEN, "forbidden", "Forbidden")
+    if status_code == "not_found":
+        raise api_http_exception(status.HTTP_404_NOT_FOUND, "domain_not_found", "Not found")
+    return {"domain": domain}
+
+
 @router.get("/{domain_id}/artifacts", response_model=ArtifactListResponse, responses=ERROR_RESPONSES)
 def list_artifacts(
     domain_id: str,
@@ -294,3 +312,98 @@ def list_domain_maintenance_jobs(
     if status_code == "not_found":
         raise api_http_exception(status.HTTP_404_NOT_FOUND, "domain_not_found", "Not found")
     return {"jobs": jobs or []}
+
+
+@router.get(
+    "/{domain_id}/monitoring",
+    response_model=DomainMonitoringResponse,
+    responses=ERROR_RESPONSES,
+)
+def get_domain_monitoring(
+    domain_id: str,
+    actor: dict = Depends(get_monitoring_actor),
+    config: Config = Depends(get_config),
+) -> dict:
+    status_code, result = domain_monitoring_service.get_monitoring_status(
+        config,
+        domain_id=domain_id,
+        actor=actor,
+    )
+    if status_code == "forbidden":
+        raise api_http_exception(status.HTTP_403_FORBIDDEN, "forbidden", "Forbidden")
+    if status_code == "not_found":
+        raise api_http_exception(status.HTTP_404_NOT_FOUND, "domain_not_found", "Not found")
+    return result or {"domain": domain_service.get_domain_detail(config, domain_id, actor)[1], "dkim_selectors": [], "current_state": None, "history": []}
+
+
+@router.get(
+    "/{domain_id}/monitoring/timeline",
+    response_model=DomainMonitoringTimelineResponse,
+    responses=ERROR_RESPONSES,
+)
+def get_domain_monitoring_timeline(
+    domain_id: str,
+    actor: dict = Depends(get_monitoring_actor),
+    config: Config = Depends(get_config),
+) -> dict:
+    status_code, result = domain_monitoring_service.get_monitoring_timeline(
+        config,
+        domain_id=domain_id,
+        actor=actor,
+    )
+    if status_code == "forbidden":
+        raise api_http_exception(status.HTTP_403_FORBIDDEN, "forbidden", "Forbidden")
+    if status_code == "not_found":
+        raise api_http_exception(status.HTTP_404_NOT_FOUND, "domain_not_found", "Not found")
+    return result or {"domain": domain_service.get_domain_detail(config, domain_id, actor)[1], "last_checked_at": None, "history": []}
+
+
+@router.put(
+    "/{domain_id}/monitoring",
+    response_model=DomainMonitoringResponse,
+    responses=ERROR_RESPONSES,
+)
+def update_domain_monitoring(
+    domain_id: str,
+    body: DomainMonitoringSettingsBody,
+    current_user: dict = Depends(get_current_user),
+    config: Config = Depends(get_config),
+) -> dict:
+    actor = dict(current_user)
+    actor["type"] = "user"
+    status_code, result = domain_monitoring_service.update_monitoring_settings(
+        config,
+        domain_id=domain_id,
+        actor=actor,
+        enabled=body.enabled,
+        dkim_selectors=body.dkim_selectors,
+    )
+    if status_code == "forbidden":
+        raise api_http_exception(status.HTTP_403_FORBIDDEN, "forbidden", "Forbidden")
+    if status_code == "not_found":
+        raise api_http_exception(status.HTTP_404_NOT_FOUND, "domain_not_found", "Not found")
+    return result or {"domain": domain_service.get_domain_detail(config, domain_id, current_user)[1], "dkim_selectors": [], "current_state": None, "history": []}
+
+
+@router.post(
+    "/{domain_id}/monitoring/check",
+    response_model=DomainMonitoringCheckResponse,
+    responses=ERROR_RESPONSES,
+    status_code=202,
+)
+def trigger_domain_monitoring_check(
+    domain_id: str,
+    actor: dict = Depends(get_monitoring_actor),
+    config: Config = Depends(get_config),
+) -> dict:
+    status_code, result = domain_monitoring_service.enqueue_monitoring_check(
+        config,
+        domain_id=domain_id,
+        actor=actor,
+        source="api",
+    )
+    if status_code == "forbidden":
+        raise api_http_exception(status.HTTP_403_FORBIDDEN, "forbidden", "Forbidden")
+    if status_code == "not_found":
+        raise api_http_exception(status.HTTP_404_NOT_FOUND, "domain_not_found", "Not found")
+    return result or {"state": "queued"}

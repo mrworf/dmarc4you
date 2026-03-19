@@ -69,7 +69,12 @@ dns:
 
   # Best-effort PTR timeout in seconds.
   # Env: DMARC_DNS_TIMEOUT_SECONDS
-  timeout_seconds: 1.0
+  timeout_seconds: 5.0
+
+  # Default DNS monitoring interval in seconds when TTL-based scheduling is unavailable.
+  # Effective scheduling is clamped to 60..3600 seconds.
+  # Env: DMARC_DNS_MONITOR_DEFAULT_INTERVAL_SECONDS
+  monitor_default_interval_seconds: 300
 
 geoip:
   # Offline GeoIP provider: none | dbip-lite-country | maxmind-geolite2-country

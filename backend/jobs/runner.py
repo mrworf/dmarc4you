@@ -18,7 +18,7 @@ from backend.ingest.dedupe import is_duplicate, is_forensic_duplicate
 from backend.ingest.dns_resolver import resolve_ip
 from backend.ingest.geoip import build_geoip_provider
 from backend.ingest.mime_parser import is_mime_message, extract_attachments
-from backend.services import domain_maintenance_service, domain_service
+from backend.services import domain_maintenance_service, domain_monitoring_service, domain_service
 from backend.services.dmarc_alignment import compute_aggregate_alignment
 from backend.storage.sqlite import get_connection
 
@@ -530,6 +530,10 @@ def run_loop(config: Config, stop_event: object | None = None, interval_seconds:
             run_one_job(config)
         except Exception as e:
             logger.exception("job runner: %s", e)
+        try:
+            domain_monitoring_service.enqueue_due_monitoring_jobs(config)
+        except Exception as e:
+            logger.exception("domain monitoring scheduler: %s", e)
         try:
             domain_maintenance_service.run_one_job(config)
         except Exception as e:

@@ -35,6 +35,14 @@ Fields:
 - `retention_paused_at`
 - `retention_pause_reason`
 - `retention_remaining_seconds` or equivalent resumable counter field
+- `monitoring_enabled`
+- `monitoring_last_checked_at` (last successful DNS poll)
+- `monitoring_next_check_at`
+- `monitoring_last_change_at`
+- `monitoring_last_triggered_at`
+- `monitoring_failure_active`
+- `monitoring_last_failure_at`
+- `monitoring_last_failure_summary`
 
 ### User-domain assignments
 
@@ -143,7 +151,8 @@ Fields:
 - `domain_id`
 - `domain_name`
 - `action` (`recompute_aggregate_reports` in the first slice)
-- `actor_user_id`
+- `actor_user_id` (nullable when system/API-key triggered)
+- `actor_api_key_id` (nullable)
 - `submitted_at`
 - `started_at`
 - `completed_at`
@@ -155,6 +164,43 @@ Fields:
 - `summary`
 
 These jobs are separate from ingest jobs. They exist so admins can refresh derived aggregate fields for one domain without re-submitting source payloads.
+
+DNS monitoring reuses this same job table with action `check_dns_monitoring`.
+
+### Domain DNS monitoring
+
+Per-domain DKIM selectors:
+
+- `domain_id`
+- `selector`
+- `added_at`
+
+Current state snapshot:
+
+- `domain_id`
+- `checked_at`
+- `observed_state_json`
+- `dmarc_record_raw`
+- `spf_record_raw`
+- `dkim_records_json`
+- `ttl_seconds`
+- `error_summary`
+
+This row represents the latest known DNS state plus freshness metadata from successful polling. Successful polls that do not change the normalized DNS values update freshness without creating a new history row. Failed polls do not overwrite this snapshot.
+
+History rows:
+
+- `id`
+- `domain_id`
+- `changed_at`
+- `summary`
+- `previous_state_json`
+- `current_state_json`
+- `dmarc_record_raw`
+- `spf_record_raw`
+- `dkim_records_json`
+
+Only real DNS state transitions are stored in history. Unchanged polls are not written, and missing/restored observations are stored as explicit state transitions.
 
 ### Source files / archived artifacts
 

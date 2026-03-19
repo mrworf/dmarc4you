@@ -19,6 +19,7 @@ from backend.auth.password import hash_password, verify_password
 
 API_KEY_ID_PREFIX = "key_"
 SCOPE_REPORTS_INGEST = "reports:ingest"
+SCOPE_DOMAINS_MONITOR = "domains:monitor"
 API_KEY_SECRET_PREFIX = "dmarc_"
 
 
@@ -203,6 +204,27 @@ def validate_api_key_for_ingest(config: Config, raw_token: str) -> tuple[str, li
                 (key_id,),
             )
             domain_ids = [r[0] for r in cur3.fetchall()]
+            return (key_id, domain_ids)
+        return None
+    finally:
+        conn.close()
+
+
+def validate_api_key_for_scope(config: Config, raw_token: str, required_scope: str) -> tuple[str, list[str]] | None:
+    """Validate Bearer token for a specific scope. Returns (key_id, domain_ids) or None."""
+    if not (raw_token or raw_token.strip()):
+        return None
+    raw_token = raw_token.strip()
+    conn = get_connection(config.database_path)
+    try:
+        cur = conn.execute("SELECT id, key_hash FROM api_keys WHERE enabled = 1")
+        for key_id, key_hash in cur.fetchall():
+            if not verify_password(raw_token, key_hash):
+                continue
+            scopes = [r[0] for r in conn.execute("SELECT scope FROM api_key_scopes WHERE api_key_id = ?", (key_id,)).fetchall()]
+            if required_scope not in scopes:
+                return None
+            domain_ids = [r[0] for r in conn.execute("SELECT domain_id FROM api_key_domains WHERE api_key_id = ? ORDER BY domain_id", (key_id,)).fetchall()]
             return (key_id, domain_ids)
         return None
     finally:

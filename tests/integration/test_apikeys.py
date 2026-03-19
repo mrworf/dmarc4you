@@ -233,3 +233,35 @@ def test_update_apikey_non_creator_admin_forbidden(apikeys_app_client, temp_db_p
         json={"nickname": "after", "description": "new", "scopes": ["reports:ingest"]},
     )
     assert updated.status_code == 403
+
+
+def test_apikey_with_monitor_scope_can_trigger_domain_monitoring(apikeys_app_client) -> None:
+    client, password, config = apikeys_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    conn = get_connection(config.database_path)
+    domain_id = conn.execute("SELECT id FROM domains WHERE name = 'example.com' LIMIT 1").fetchone()[0]
+    conn.execute(
+        "UPDATE domains SET monitoring_enabled = 1, monitoring_next_check_at = ? WHERE id = ?",
+        ("2026-01-01T00:00:00Z", domain_id),
+    )
+    conn.commit()
+    conn.close()
+
+    created = client.post(
+        "/api/v1/apikeys",
+        json={
+            "nickname": "monitor-key",
+            "description": "dns monitor trigger",
+            "domain_ids": [domain_id],
+            "scopes": ["domains:monitor"],
+        },
+    )
+    assert created.status_code == 201
+    raw_key = created.json()["key"]
+
+    trigger = client.post(
+        f"/api/v1/domains/{domain_id}/monitoring/check",
+        headers={"Authorization": f"Bearer {raw_key}"},
+    )
+    assert trigger.status_code == 202
+    assert trigger.json()["state"] == "queued"

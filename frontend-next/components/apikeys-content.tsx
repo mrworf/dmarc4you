@@ -22,7 +22,7 @@ import type {
   UpdateApiKeyResponse,
 } from "@/lib/api/types";
 
-const availableScopes = ["reports:ingest"] as const;
+const availableScopes = ["reports:ingest", "domains:monitor"] as const;
 
 const createApiKeySchema = z.object({
   nickname: z.string().trim().min(1, "Nickname is required"),
@@ -164,6 +164,7 @@ export function ApiKeysContent() {
   const deleteError = deleteApiKeyMutation.error instanceof ApiError ? deleteApiKeyMutation.error.message : null;
   const keyCountByScope = {
     ingest: apiKeys.filter((key) => key.scopes.includes("reports:ingest")).length,
+    monitor: apiKeys.filter((key) => key.scopes.includes("domains:monitor")).length,
   };
 
   return (
@@ -196,6 +197,10 @@ export function ApiKeysContent() {
         <article className="stat-card">
           <p className="stat-label">Ingest scope</p>
           <p className="stat-value">{keyCountByScope.ingest}</p>
+        </article>
+        <article className="stat-card">
+          <p className="stat-label">Monitor scope</p>
+          <p className="stat-value">{keyCountByScope.monitor}</p>
         </article>
         <article className="stat-card">
           <p className="stat-label">Visible domains</p>

@@ -44,6 +44,15 @@ def _parse_float(value: object, default: float) -> float:
         return default
 
 
+def _parse_int(value: object, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _resolve_config_path(config_path: str | Path | None) -> Path | None:
     if config_path is not None:
         return Path(config_path)
@@ -112,8 +121,14 @@ def load_config(config_path: str | Path | None = None) -> Config:
     )
     dns_timeout_seconds = _parse_float(
         data.get("dns", {}).get("timeout_seconds") or os.environ.get("DMARC_DNS_TIMEOUT_SECONDS"),
-        1.0,
+        5.0,
     )
+    dns_monitor_default_interval_seconds = _parse_int(
+        data.get("dns", {}).get("monitor_default_interval_seconds")
+        or os.environ.get("DMARC_DNS_MONITOR_DEFAULT_INTERVAL_SECONDS"),
+        300,
+    )
+    dns_monitor_default_interval_seconds = min(max(60, dns_monitor_default_interval_seconds), 3600)
     geoip_provider_raw = (
         data.get("geoip", {}).get("provider")
         or os.environ.get("DMARC_GEOIP_PROVIDER")
@@ -145,6 +160,7 @@ def load_config(config_path: str | Path | None = None) -> Config:
         archive_storage_path=archive_storage_path,
         dns_nameservers=dns_nameservers,
         dns_timeout_seconds=dns_timeout_seconds,
+        dns_monitor_default_interval_seconds=dns_monitor_default_interval_seconds,
         geoip_provider=geoip_provider,  # type: ignore[arg-type]
         geoip_database_path=str(geoip_database_path) if geoip_database_path else None,
     )

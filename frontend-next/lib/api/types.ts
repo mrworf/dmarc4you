@@ -33,6 +33,13 @@ export type DomainSummary = {
   retention_delete_at?: string | null;
   retention_paused?: number | boolean | null;
   retention_remaining_seconds?: number | null;
+  monitoring_enabled?: number | boolean | null;
+  monitoring_last_checked_at?: string | null;
+  monitoring_next_check_at?: string | null;
+  monitoring_last_change_at?: string | null;
+  monitoring_failure_active?: number | boolean | null;
+  monitoring_last_failure_at?: string | null;
+  monitoring_last_failure_summary?: string | null;
   latest_maintenance_job?: DomainMaintenanceJobSummary | null;
 };
 
@@ -65,7 +72,8 @@ export type DomainMaintenanceJobSummary = {
   domain_id: string;
   domain_name: string;
   action: string;
-  actor_user_id: string;
+  actor_user_id?: string | null;
+  actor_api_key_id?: string | null;
   state: string;
   submitted_at: string;
   started_at?: string | null;
@@ -83,6 +91,57 @@ export type DomainMaintenanceJobMutationResponse = {
 
 export type DomainMaintenanceJobListResponse = {
   jobs: DomainMaintenanceJobSummary[];
+};
+
+export type DomainMonitoringRecordState = {
+  status: string;
+  host: string;
+  raw_value?: string | null;
+  parsed?: Record<string, unknown> | null;
+  explanation?: string | null;
+  summary?: string | null;
+  ttl_seconds?: number | null;
+};
+
+export type DomainMonitoringCurrentState = {
+  checked_at: string;
+  ttl_seconds?: number | null;
+  error_summary?: string | null;
+  dmarc: DomainMonitoringRecordState;
+  spf: DomainMonitoringRecordState;
+  dkim: DomainMonitoringRecordState[];
+};
+
+export type DomainMonitoringHistoryEntry = {
+  id: string;
+  changed_at: string;
+  summary: string;
+  overall_direction: "improved" | "degraded" | "neutral";
+  changes: Array<Record<string, unknown>>;
+  previous_state?: Record<string, unknown> | null;
+  current_state: Record<string, unknown>;
+};
+
+export type DomainMonitoringResponse = {
+  domain: DomainSummary;
+  dkim_selectors: string[];
+  current_state?: DomainMonitoringCurrentState | null;
+  history: DomainMonitoringHistoryEntry[];
+};
+
+export type DomainMonitoringTimelineResponse = {
+  domain: DomainSummary;
+  last_checked_at?: string | null;
+  history: DomainMonitoringHistoryEntry[];
+};
+
+export type UpdateDomainMonitoringBody = {
+  enabled: boolean;
+  dkim_selectors: string[];
+};
+
+export type TriggerDomainMonitoringCheckResponse = {
+  state: "queued" | "suppressed_recently";
 };
 
 export type DashboardSummary = {

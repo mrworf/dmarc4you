@@ -9,7 +9,7 @@ from backend.storage.sqlite import run_migrations, get_connection
 from backend.auth.bootstrap import ensure_bootstrap_admin
 from backend.auth.password import hash_password
 from backend.policies.domain_policy import can_create_domain
-from backend.services import domain_service
+from backend.services import domain_maintenance_service, domain_monitoring_service, domain_service
 from tests.conftest import wrap_client_with_csrf
 
 
@@ -741,3 +741,114 @@ def test_delete_domain_purges_api_key_domains(domain_app_client, temp_db_path: s
         assert cur2.fetchone() is not None, "API key itself should remain"
     finally:
         conn.close()
+
+
+def test_domain_monitoring_settings_and_detail_flow(domain_app_client, monkeypatch) -> None:
+    client, password = domain_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    create_response = client.post("/api/v1/domains", json={"name": "monitoring-example.com"})
+    assert create_response.status_code in (200, 201)
+    domain_id = create_response.json()["domain"]["id"]
+
+    update_response = client.put(
+        f"/api/v1/domains/{domain_id}/monitoring",
+        json={"enabled": True, "dkim_selectors": ["selector1", "selector2"]},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["domain"]["monitoring_enabled"] == 1
+    assert update_response.json()["dkim_selectors"] == ["selector1", "selector2"]
+
+    def fake_resolve(_config: Config, host: str):
+        if host == "_dmarc.monitoring-example.com":
+            return (
+                ["v=DMARC1; p=reject; rua=mailto:dmarc@monitoring-example.com"],
+                600,
+                domain_monitoring_service.DNS_RESULT_OK,
+                None,
+            )
+        if host == "monitoring-example.com":
+            return (
+                ["v=spf1 include:_spf.monitoring-example.com -all"],
+                300,
+                domain_monitoring_service.DNS_RESULT_OK,
+                None,
+            )
+        return (["v=DKIM1; k=rsa; p=abc123"], 180, domain_monitoring_service.DNS_RESULT_OK, None)
+
+    monkeypatch.setattr(domain_monitoring_service, "_resolve_txt_records", fake_resolve)
+
+    trigger_response = client.post(f"/api/v1/domains/{domain_id}/monitoring/check")
+    assert trigger_response.status_code == 202
+    assert trigger_response.json()["state"] == "queued"
+
+    assert domain_maintenance_service.run_one_job(app.state.config) is True
+
+    detail_response = client.get(f"/api/v1/domains/{domain_id}/monitoring")
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["current_state"]["dmarc"]["status"] == "ok"
+    assert detail["current_state"]["spf"]["status"] == "ok"
+    assert len(detail["current_state"]["dkim"]) == 2
+    assert len(detail["history"]) == 1
+
+
+def test_domain_monitoring_timeline_returns_only_saved_changes(domain_app_client, monkeypatch) -> None:
+    client, password = domain_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    create_response = client.post("/api/v1/domains", json={"name": "timeline-example.com"})
+    assert create_response.status_code in (200, 201)
+    domain_id = create_response.json()["domain"]["id"]
+    client.put(
+        f"/api/v1/domains/{domain_id}/monitoring",
+        json={"enabled": True, "dkim_selectors": ["selector1"]},
+    )
+
+    resolvers = [
+        lambda _config, host: (
+            ["v=DMARC1; p=none"] if host == "_dmarc.timeline-example.com"
+            else ["v=spf1 ~all"] if host == "timeline-example.com"
+            else ["v=DKIM1; k=rsa; p=abc123"],
+            300,
+            domain_monitoring_service.DNS_RESULT_OK,
+            None,
+        ),
+        lambda _config, host: (
+            ["v=DMARC1; p=none"] if host == "_dmarc.timeline-example.com"
+            else ["v=spf1 ~all"] if host == "timeline-example.com"
+            else ["v=DKIM1; k=rsa; p=abc123"],
+            300,
+            domain_monitoring_service.DNS_RESULT_OK,
+            None,
+        ),
+        lambda _config, host: (
+            ["v=DMARC1; p=reject"] if host == "_dmarc.timeline-example.com"
+            else ["v=spf1 -all"] if host == "timeline-example.com"
+            else ["v=DKIM1; k=rsa; p=abc123"],
+            300,
+            domain_monitoring_service.DNS_RESULT_OK,
+            None,
+        ),
+    ]
+
+    for resolver in resolvers:
+        monkeypatch.setattr(domain_monitoring_service, "_resolve_txt_records", resolver)
+        trigger_response = client.post(f"/api/v1/domains/{domain_id}/monitoring/check")
+        assert trigger_response.status_code == 202
+        conn = get_connection(app.state.config.database_path)
+        try:
+            conn.execute(
+                "UPDATE domains SET monitoring_last_triggered_at = NULL WHERE id = ?",
+                (domain_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        assert domain_maintenance_service.run_one_job(app.state.config) is True
+
+    timeline_response = client.get(f"/api/v1/domains/{domain_id}/monitoring/timeline")
+    assert timeline_response.status_code == 200
+    timeline = timeline_response.json()
+    assert timeline["last_checked_at"] is not None
+    assert len(timeline["history"]) == 2
+    assert timeline["history"][0]["overall_direction"] in {"improved", "degraded", "neutral"}
+    assert timeline["history"][0]["changes"]

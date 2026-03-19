@@ -48,6 +48,28 @@ def get_ingest_actor(request: Request) -> dict:
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
 
+def get_monitoring_actor(request: Request) -> dict:
+    """Return actor for monitoring endpoints: session user or API key with domains:monitor scope."""
+    config = get_config(request)
+    session_id = request.cookies.get(config.session_cookie_name)
+    user = get_current_user_impl(config, session_id)
+    if user:
+        actor = dict(user)
+        actor["type"] = "user"
+        return actor
+    auth = request.headers.get("Authorization")
+    if auth and auth.startswith("Bearer "):
+        token = auth[7:].strip()
+        if not token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        result = api_key_service.validate_api_key_for_scope(config, token, api_key_service.SCOPE_DOMAINS_MONITOR)
+        if result:
+            key_id, domain_ids = result
+            return {"type": "api_key", "key_id": key_id, "domain_ids": domain_ids}
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API key or missing scope")
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+
 CSRF_EXEMPT_PATHS = {"/api/v1/auth/login"}
 
 

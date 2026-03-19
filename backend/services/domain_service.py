@@ -6,7 +6,7 @@ from typing import Any
 
 from backend.config.schema import Config
 from backend.policies.domain_policy import can_create_domain, can_archive_domain, can_restore_domain, can_delete_domain
-from backend.services import domain_maintenance_service
+from backend.services import domain_maintenance_service, domain_monitoring_service
 from backend.storage.sqlite import get_connection
 from backend.archive.filesystem import FilesystemArchiveStorage
 
@@ -48,12 +48,20 @@ def list_domains(config: Config, current_user: dict[str, Any]) -> list[dict[str,
     try:
         if current_user.get("role") == ROLE_SUPER_ADMIN:
             cur = conn.execute(
-                "SELECT id, name, status, created_at, retention_days, retention_delete_at, retention_paused FROM domains ORDER BY name",
+                """SELECT id, name, status, created_at, archived_at, retention_days, retention_delete_at, retention_paused,
+                          retention_remaining_seconds, monitoring_enabled, monitoring_last_checked_at,
+                          monitoring_next_check_at, monitoring_last_change_at, monitoring_failure_active,
+                          monitoring_last_failure_at, monitoring_last_failure_summary
+                   FROM domains
+                   ORDER BY name""",
                 (),
             )
         else:
             cur = conn.execute(
-                """SELECT d.id, d.name, d.status, d.created_at, d.retention_days, d.retention_delete_at, d.retention_paused
+                """SELECT d.id, d.name, d.status, d.created_at, d.archived_at, d.retention_days, d.retention_delete_at, d.retention_paused,
+                          d.retention_remaining_seconds, d.monitoring_enabled, d.monitoring_last_checked_at,
+                          d.monitoring_next_check_at, d.monitoring_last_change_at, d.monitoring_failure_active,
+                          d.monitoring_last_failure_at, d.monitoring_last_failure_summary
                    FROM domains d
                    INNER JOIN user_domain_assignments a ON a.domain_id = d.id
                    WHERE a.user_id = ? AND d.status = ? ORDER BY d.name""",
@@ -67,9 +75,18 @@ def list_domains(config: Config, current_user: dict[str, Any]) -> list[dict[str,
                 "name": r[1],
                 "status": r[2],
                 "created_at": r[3],
-                "retention_days": r[4],
-                "retention_delete_at": r[5],
-                "retention_paused": r[6] if r[6] is not None else 0,
+                "archived_at": r[4],
+                "retention_days": r[5],
+                "retention_delete_at": r[6],
+                "retention_paused": r[7] if r[7] is not None else 0,
+                "retention_remaining_seconds": r[8],
+                "monitoring_enabled": r[9] if r[9] is not None else 0,
+                "monitoring_last_checked_at": r[10],
+                "monitoring_next_check_at": r[11],
+                "monitoring_last_change_at": r[12],
+                "monitoring_failure_active": r[13] if r[13] is not None else 0,
+                "monitoring_last_failure_at": r[14],
+                "monitoring_last_failure_summary": r[15],
             }
             latest_job = domain_maintenance_service.get_latest_job_for_domain(config, domain_id=r[0])
             if latest_job:
@@ -154,6 +171,9 @@ def _purge_domain_data(config: Config, domain_id: str, domain_name: str) -> None
         conn.execute("DELETE FROM dashboard_domain_scope WHERE domain_id = ?", (domain_id,))
         conn.execute("DELETE FROM api_key_domains WHERE domain_id = ?", (domain_id,))
         conn.execute("DELETE FROM domain_maintenance_jobs WHERE domain_id = ?", (domain_id,))
+        conn.execute("DELETE FROM domain_monitoring_dkim_selectors WHERE domain_id = ?", (domain_id,))
+        conn.execute("DELETE FROM domain_monitoring_current_state WHERE domain_id = ?", (domain_id,))
+        conn.execute("DELETE FROM domain_monitoring_history WHERE domain_id = ?", (domain_id,))
         conn.execute("DELETE FROM aggregate_reports WHERE domain = ?", (domain_name,))
         conn.execute("DELETE FROM forensic_reports WHERE domain = ?", (domain_name,))
         conn.execute("DELETE FROM domains WHERE id = ?", (domain_id,))
@@ -414,6 +434,15 @@ def get_domain_stats(
         return "ok", result
     finally:
         conn.close()
+
+
+def get_domain_detail(
+    config: Config, domain_id: str, current_user: dict[str, Any]
+) -> tuple[str, dict[str, Any] | None]:
+    status, _domain_name = _check_domain_access(config, domain_id, current_user)
+    if status != "ok":
+        return status, None
+    return "ok", domain_monitoring_service.fetch_domain_summary(config, domain_id=domain_id)
 
 
 def _check_domain_access(
