@@ -12,167 +12,194 @@ import { DashboardOwnershipPanel } from "@/components/dashboard-ownership-panel"
 import { DashboardSharingPanel } from "@/components/dashboard-sharing-panel";
 import { ReportDetailModal } from "@/components/report-detail-modal";
 import { SlideOverPanel } from "@/components/slide-over-panel";
-import { AggregateSearchResultsTable } from "@/components/search-results-table";
+import {
+  AggregateSearchResultsTable,
+  GroupedAggregateResultsTable,
+  type SearchQuickFilterOption,
+} from "@/components/search-results-table";
 import { apiClient, ApiError } from "@/lib/api/client";
+import {
+  addUniqueValue,
+  appendQueryValue,
+  aggregateGroupingOptions,
+  buildAggregateExplorerParams,
+  buildAggregateSearchBody,
+  buildGroupedSearchBody,
+  defaultAggregateExplorerState,
+  formatOptionLabel,
+  getAvailableAggregateGroupingOptions,
+  getSelectedAggregateGroupingValue,
+  parseAggregateExplorerState,
+  removeValue,
+  toggleValue,
+  type AggregateExplorerState,
+} from "@/lib/aggregate-explorer-state";
 import { useAuth } from "@/lib/auth/context";
+import { useAggregateExplorerState } from "@/lib/use-aggregate-explorer-state";
 import type {
   DashboardDetailResponse,
   DomainsResponse,
   DashboardValidateUpdateResponse,
-  SearchRecordsBody,
+  GroupPathPart,
+  GroupedSearchResponse,
   SearchRecordsResponse,
   UpdateDashboardBody,
 } from "@/lib/api/types";
-import { buildSearchParams, parseIntegerParam, parseStringParam } from "@/lib/url-state";
-
-type DashboardFilterState = {
-  from: string;
-  to: string;
-  groupBy: string;
-  includeDmarcAlignment: string;
-  includeDkimAlignment: string;
-  includeSpfAlignment: string;
-  includeSpf: string;
-  includeDkim: string;
-  includeDisposition: string;
-  excludeDmarcAlignment: string;
-  excludeDkimAlignment: string;
-  excludeSpfAlignment: string;
-  excludeSpf: string;
-  excludeDkim: string;
-  excludeDisposition: string;
-  page: number;
+type AppliedFilterChip = {
+  id: string;
+  label: string;
+  tone?: "default" | "exclude";
+  onRemove: () => void;
 };
 
-const groupingOptions = [
-  { value: "", label: "No grouping" },
-  { value: "record_date", label: "Record date" },
-  { value: "source_ip", label: "Source IP" },
-  { value: "resolved_name", label: "Resolved hostname" },
-  { value: "resolved_name_domain", label: "Resolved hostname domain" },
-];
+const resultOptions = ["pass", "fail"];
+const dispositionOptions = ["none", "quarantine", "reject"];
+const dmarcAlignmentOptions = ["pass", "fail", "unknown"];
+const alignmentModeOptions = ["strict", "relaxed", "none", "unknown"];
 
-const resultOptions = [
-  { value: "", label: "Any result" },
-  { value: "pass", label: "Pass" },
-  { value: "fail", label: "Fail" },
-];
-
-const dispositionOptions = [
-  { value: "", label: "Any disposition" },
-  { value: "none", label: "None" },
-  { value: "quarantine", label: "Quarantine" },
-  { value: "reject", label: "Reject" },
-];
-
-const dmarcAlignmentOptions = [
-  { value: "", label: "Any alignment" },
-  { value: "pass", label: "Pass" },
-  { value: "fail", label: "Fail" },
-  { value: "unknown", label: "Unknown" },
-];
-
-const alignmentModeOptions = [
-  { value: "", label: "Any alignment" },
-  { value: "strict", label: "Strict" },
-  { value: "relaxed", label: "Relaxed" },
-  { value: "none", label: "None" },
-  { value: "unknown", label: "Unknown" },
-];
-
-function parseDashboardState(searchParams: URLSearchParams): DashboardFilterState {
-  return {
-    from: parseStringParam(searchParams.get("from")),
-    to: parseStringParam(searchParams.get("to")),
-    groupBy: parseStringParam(searchParams.get("group_by")),
-    includeDmarcAlignment: parseStringParam(searchParams.get("include_dmarc_alignment")),
-    includeDkimAlignment: parseStringParam(searchParams.get("include_dkim_alignment")),
-    includeSpfAlignment: parseStringParam(searchParams.get("include_spf_alignment")),
-    includeSpf: parseStringParam(searchParams.get("include_spf")),
-    includeDkim: parseStringParam(searchParams.get("include_dkim")),
-    includeDisposition: parseStringParam(searchParams.get("include_disposition")),
-    excludeDmarcAlignment: parseStringParam(searchParams.get("exclude_dmarc_alignment")),
-    excludeDkimAlignment: parseStringParam(searchParams.get("exclude_dkim_alignment")),
-    excludeSpfAlignment: parseStringParam(searchParams.get("exclude_spf_alignment")),
-    excludeSpf: parseStringParam(searchParams.get("exclude_spf")),
-    excludeDkim: parseStringParam(searchParams.get("exclude_dkim")),
-    excludeDisposition: parseStringParam(searchParams.get("exclude_disposition")),
-    page: parseIntegerParam(searchParams.get("page"), 1),
-  };
+function parseDashboardState(searchParams: URLSearchParams): AggregateExplorerState {
+  return parseAggregateExplorerState(searchParams, { includeDomains: false });
 }
 
-function buildDashboardParams(state: DashboardFilterState): string {
-  return buildSearchParams({
-    from: state.from,
-    to: state.to,
-    group_by: state.groupBy,
-    include_dmarc_alignment: state.includeDmarcAlignment,
-    include_dkim_alignment: state.includeDkimAlignment,
-    include_spf_alignment: state.includeSpfAlignment,
-    include_spf: state.includeSpf,
-    include_dkim: state.includeDkim,
-    include_disposition: state.includeDisposition,
-    exclude_dmarc_alignment: state.excludeDmarcAlignment,
-    exclude_dkim_alignment: state.excludeDkimAlignment,
-    exclude_spf_alignment: state.excludeSpfAlignment,
-    exclude_spf: state.excludeSpf,
-    exclude_dkim: state.excludeDkim,
-    exclude_disposition: state.excludeDisposition,
-    page: state.page > 1 ? String(state.page) : "",
+function appendFacetChips(
+  chips: AppliedFilterChip[],
+  label: string,
+  keyPrefix: string,
+  values: string[],
+  onRemoveValue: (value: string) => void,
+  tone: "default" | "exclude" = "default",
+) {
+  values.forEach((value) => {
+    chips.push({
+      id: `${keyPrefix}:${value}`,
+      label: `${label}: ${formatOptionLabel(value)}`,
+      tone,
+      onRemove: () => onRemoveValue(value),
+    });
   });
 }
 
-function buildSearchBody(domainNames: string[], state: DashboardFilterState): SearchRecordsBody {
-  const include: Record<string, string[]> = {};
-  const exclude: Record<string, string[]> = {};
-
-  if (state.includeDmarcAlignment) {
-    include.dmarc_alignment = [state.includeDmarcAlignment];
+function buildAppliedChips(
+  state: AggregateExplorerState,
+  onRemove: (updater: (current: AggregateExplorerState) => AggregateExplorerState) => void,
+): AppliedFilterChip[] {
+  const chips: AppliedFilterChip[] = [];
+  if (state.query) {
+    chips.push({
+      id: "query",
+      label: `Search: ${state.query}`,
+      onRemove: () => onRemove((current) => ({ ...current, query: "" })),
+    });
   }
-  if (state.includeDkimAlignment) {
-    include.dkim_alignment = [state.includeDkimAlignment];
+  if (state.from) {
+    chips.push({
+      id: "from",
+      label: `From: ${state.from}`,
+      onRemove: () => onRemove((current) => ({ ...current, from: "" })),
+    });
   }
-  if (state.includeSpfAlignment) {
-    include.spf_alignment = [state.includeSpfAlignment];
-  }
-  if (state.includeSpf) {
-    include.spf_result = [state.includeSpf];
-  }
-  if (state.includeDkim) {
-    include.dkim_result = [state.includeDkim];
-  }
-  if (state.includeDisposition) {
-    include.disposition = [state.includeDisposition];
-  }
-  if (state.excludeSpf) {
-    exclude.spf_result = [state.excludeSpf];
-  }
-  if (state.excludeDmarcAlignment) {
-    exclude.dmarc_alignment = [state.excludeDmarcAlignment];
-  }
-  if (state.excludeDkimAlignment) {
-    exclude.dkim_alignment = [state.excludeDkimAlignment];
-  }
-  if (state.excludeSpfAlignment) {
-    exclude.spf_alignment = [state.excludeSpfAlignment];
-  }
-  if (state.excludeDkim) {
-    exclude.dkim_result = [state.excludeDkim];
-  }
-  if (state.excludeDisposition) {
-    exclude.disposition = [state.excludeDisposition];
+  if (state.to) {
+    chips.push({
+      id: "to",
+      label: `To: ${state.to}`,
+      onRemove: () => onRemove((current) => ({ ...current, to: "" })),
+    });
   }
 
-  return {
-    domains: domainNames,
-    from: state.from || undefined,
-    to: state.to || undefined,
-    group_by: state.groupBy || undefined,
-    include: Object.keys(include).length ? include : undefined,
-    exclude: Object.keys(exclude).length ? exclude : undefined,
-    page: state.page,
-    page_size: 10,
-  };
+  appendFacetChips(chips, "SPF", "include-spf", state.includeSpf, (value) =>
+    onRemove((current) => ({ ...current, includeSpf: removeValue(current.includeSpf, value) })),
+  );
+  appendFacetChips(chips, "DKIM", "include-dkim", state.includeDkim, (value) =>
+    onRemove((current) => ({ ...current, includeDkim: removeValue(current.includeDkim, value) })),
+  );
+  appendFacetChips(chips, "Disposition", "include-disposition", state.includeDisposition, (value) =>
+    onRemove((current) => ({ ...current, includeDisposition: removeValue(current.includeDisposition, value) })),
+  );
+  appendFacetChips(chips, "DMARC alignment", "include-dmarc", state.includeDmarcAlignment, (value) =>
+    onRemove((current) => ({ ...current, includeDmarcAlignment: removeValue(current.includeDmarcAlignment, value) })),
+  );
+  appendFacetChips(chips, "DKIM alignment", "include-dkim-align", state.includeDkimAlignment, (value) =>
+    onRemove((current) => ({ ...current, includeDkimAlignment: removeValue(current.includeDkimAlignment, value) })),
+  );
+  appendFacetChips(chips, "SPF alignment", "include-spf-align", state.includeSpfAlignment, (value) =>
+    onRemove((current) => ({ ...current, includeSpfAlignment: removeValue(current.includeSpfAlignment, value) })),
+  );
+
+  appendFacetChips(
+    chips,
+    "Not SPF",
+    "exclude-spf",
+    state.excludeSpf,
+    (value) => onRemove((current) => ({ ...current, excludeSpf: removeValue(current.excludeSpf, value) })),
+    "exclude",
+  );
+  appendFacetChips(
+    chips,
+    "Not DKIM",
+    "exclude-dkim",
+    state.excludeDkim,
+    (value) => onRemove((current) => ({ ...current, excludeDkim: removeValue(current.excludeDkim, value) })),
+    "exclude",
+  );
+  appendFacetChips(
+    chips,
+    "Not disposition",
+    "exclude-disposition",
+    state.excludeDisposition,
+    (value) => onRemove((current) => ({ ...current, excludeDisposition: removeValue(current.excludeDisposition, value) })),
+    "exclude",
+  );
+  appendFacetChips(
+    chips,
+    "Not DMARC alignment",
+    "exclude-dmarc",
+    state.excludeDmarcAlignment,
+    (value) => onRemove((current) => ({ ...current, excludeDmarcAlignment: removeValue(current.excludeDmarcAlignment, value) })),
+    "exclude",
+  );
+  appendFacetChips(
+    chips,
+    "Not DKIM alignment",
+    "exclude-dkim-align",
+    state.excludeDkimAlignment,
+    (value) => onRemove((current) => ({ ...current, excludeDkimAlignment: removeValue(current.excludeDkimAlignment, value) })),
+    "exclude",
+  );
+  appendFacetChips(
+    chips,
+    "Not SPF alignment",
+    "exclude-spf-align",
+    state.excludeSpfAlignment,
+    (value) => onRemove((current) => ({ ...current, excludeSpfAlignment: removeValue(current.excludeSpfAlignment, value) })),
+    "exclude",
+  );
+
+  state.grouping.forEach((field, index) => {
+    const label = aggregateGroupingOptions.find((option) => option.value === field)?.label ?? field;
+    chips.push({
+      id: `group:${field}`,
+      label: `Group ${index + 1}: ${label}`,
+      onRemove: () =>
+        onRemove((current) => ({
+          ...current,
+          grouping: current.grouping.filter((item) => item !== field),
+        })),
+    });
+  });
+  return chips;
+}
+
+function renderMultiValueToggles(values: string[], selectedValues: string[], onToggle: (value: string) => void) {
+  return (
+    <div className="checkbox-grid">
+      {values.map((value) => (
+        <label className="checkbox-card" key={value}>
+          <input checked={selectedValues.includes(value)} onChange={() => onToggle(value)} type="checkbox" />
+          <span>{formatOptionLabel(value)}</span>
+        </label>
+      ))}
+    </div>
+  );
 }
 
 export function DashboardDetailContent({ dashboardId }: { dashboardId: string }) {
@@ -181,20 +208,44 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user } = useAuth();
-  const currentState = useMemo(() => parseDashboardState(searchParams), [searchParams]);
-  const [draftState, setDraftState] = useState<DashboardFilterState>(currentState);
+  const initialState = useMemo(() => parseDashboardState(searchParams), [searchParams]);
+  const {
+    appliedState: currentState,
+    commitState,
+    draftState,
+    resetState: replaceExplorerState,
+    updateDraftState,
+  } = useAggregateExplorerState<AggregateExplorerState>({
+    buildParams: (state) => buildAggregateExplorerParams(state, { includeDomains: false }),
+    initialState,
+    parseState: parseDashboardState,
+    pathname,
+    resetKey: dashboardId,
+  });
   const [selectedAggregateReportId, setSelectedAggregateReportId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isSharingOpen, setIsSharingOpen] = useState(false);
   const [isOwnershipOpen, setIsOwnershipOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isScopeConfirmOpen, setIsScopeConfirmOpen] = useState(false);
+  const [groupToAdd, setGroupToAdd] = useState(aggregateGroupingOptions[0]?.value ?? "domain");
   const [validateMessage, setValidateMessage] = useState<DashboardValidateUpdateResponse | null>(null);
   const [pendingUpdateValues, setPendingUpdateValues] = useState<UpdateDashboardBody | null>(null);
+  const availableGroupingOptions = useMemo(
+    () => getAvailableAggregateGroupingOptions(draftState.grouping),
+    [draftState.grouping],
+  );
+  const selectedGroupingValue = useMemo(
+    () => getSelectedAggregateGroupingValue(draftState.grouping, groupToAdd),
+    [draftState.grouping, groupToAdd],
+  );
 
   useEffect(() => {
-    setDraftState(currentState);
-  }, [currentState]);
+    if (groupToAdd !== selectedGroupingValue) {
+      setGroupToAdd(selectedGroupingValue);
+    }
+  }, [groupToAdd, selectedGroupingValue]);
 
   const dashboardQuery = useQuery({
     queryKey: ["dashboard", dashboardId],
@@ -207,17 +258,29 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
   });
 
   const domainNames = dashboardQuery.data?.domain_names ?? [];
-  const searchBody = useMemo(() => buildSearchBody(domainNames, currentState), [currentState, domainNames]);
+  const searchBody = useMemo(() => buildAggregateSearchBody(currentState, domainNames), [currentState, domainNames]);
+  const groupedRootRequest = useMemo(
+    () => buildGroupedSearchBody(currentState, domainNames, { page: currentState.page, pageSize: 20 }),
+    [currentState, domainNames],
+  );
 
-  const searchQuery = useQuery({
+  const flatSearchQuery = useQuery({
     queryKey: ["dashboard-search", dashboardId, searchBody],
     queryFn: () => apiClient.post<SearchRecordsResponse>("/api/v1/search", searchBody),
-    enabled: domainNames.length > 0,
+    enabled: domainNames.length > 0 && currentState.grouping.length === 0,
+  });
+  const groupedSearchQuery = useQuery({
+    queryKey: ["dashboard-search-grouped", dashboardId, groupedRootRequest],
+    queryFn: () => apiClient.post<GroupedSearchResponse>("/api/v1/search/grouped", groupedRootRequest),
+    enabled: domainNames.length > 0 && currentState.grouping.length > 0,
   });
 
   const dashboard = dashboardQuery.data;
-  const result = searchQuery.data;
+  const result = currentState.grouping.length ? groupedSearchQuery.data : flatSearchQuery.data;
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.page_size)) : 1;
+  const appliedChips = buildAppliedChips(currentState, (updater) => {
+    updateDraftState((current) => ({ ...updater(current), page: 1 }));
+  });
   const canManageDashboard =
     !!user &&
     !!dashboard &&
@@ -254,40 +317,72 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
     mutationFn: () => apiClient.getText(`/api/v1/dashboards/${dashboardId}/export`),
   });
 
-  function updateUrl(state: DashboardFilterState) {
-    const nextParams = buildDashboardParams(state);
-    router.replace(nextParams ? `${pathname}?${nextParams}` : pathname);
-  }
-
   function applyFilters() {
-    updateUrl({ ...draftState, page: 1 });
+    commitState((current) => ({ ...current, page: 1 }));
+    setIsFiltersOpen(false);
   }
 
   function resetFilters() {
-    const resetState: DashboardFilterState = {
-      from: "",
-      to: "",
-      groupBy: "",
-      includeDmarcAlignment: "",
-      includeDkimAlignment: "",
-      includeSpfAlignment: "",
-      includeSpf: "",
-      includeDkim: "",
-      includeDisposition: "",
-      excludeDmarcAlignment: "",
-      excludeDkimAlignment: "",
-      excludeSpfAlignment: "",
-      excludeSpf: "",
-      excludeDkim: "",
-      excludeDisposition: "",
-      page: 1,
-    };
-    setDraftState(resetState);
-    updateUrl(resetState);
+    const resetState: AggregateExplorerState = { ...defaultAggregateExplorerState };
+    replaceExplorerState(resetState);
+    setIsFiltersOpen(false);
   }
 
   function goToPage(page: number) {
-    updateUrl({ ...currentState, page });
+    updateDraftState((current) => ({ ...current, page }));
+  }
+
+  function handleQuickFilter(option: SearchQuickFilterOption) {
+    updateDraftState((current) => {
+      const nextState: AggregateExplorerState = { ...current, page: 1 };
+      if (option.target === "query") {
+        nextState.query = appendQueryValue(current.query, option.value);
+      } else if (option.target === "include_spf") {
+        nextState.includeSpf = addUniqueValue(current.includeSpf, option.value);
+        nextState.excludeSpf = removeValue(current.excludeSpf, option.value);
+      } else if (option.target === "exclude_spf") {
+        nextState.excludeSpf = addUniqueValue(current.excludeSpf, option.value);
+        nextState.includeSpf = removeValue(current.includeSpf, option.value);
+      } else if (option.target === "include_dkim") {
+        nextState.includeDkim = addUniqueValue(current.includeDkim, option.value);
+        nextState.excludeDkim = removeValue(current.excludeDkim, option.value);
+      } else if (option.target === "exclude_dkim") {
+        nextState.excludeDkim = addUniqueValue(current.excludeDkim, option.value);
+        nextState.includeDkim = removeValue(current.includeDkim, option.value);
+      } else if (option.target === "include_disposition") {
+        nextState.includeDisposition = addUniqueValue(current.includeDisposition, option.value);
+        nextState.excludeDisposition = removeValue(current.excludeDisposition, option.value);
+      } else if (option.target === "exclude_disposition") {
+        nextState.excludeDisposition = addUniqueValue(current.excludeDisposition, option.value);
+        nextState.includeDisposition = removeValue(current.includeDisposition, option.value);
+      } else if (option.target === "include_dmarc_alignment") {
+        nextState.includeDmarcAlignment = addUniqueValue(current.includeDmarcAlignment, option.value);
+        nextState.excludeDmarcAlignment = removeValue(current.excludeDmarcAlignment, option.value);
+      } else if (option.target === "exclude_dmarc_alignment") {
+        nextState.excludeDmarcAlignment = addUniqueValue(current.excludeDmarcAlignment, option.value);
+        nextState.includeDmarcAlignment = removeValue(current.includeDmarcAlignment, option.value);
+      } else if (option.target === "include_dkim_alignment") {
+        nextState.includeDkimAlignment = addUniqueValue(current.includeDkimAlignment, option.value);
+        nextState.excludeDkimAlignment = removeValue(current.excludeDkimAlignment, option.value);
+      } else if (option.target === "exclude_dkim_alignment") {
+        nextState.excludeDkimAlignment = addUniqueValue(current.excludeDkimAlignment, option.value);
+        nextState.includeDkimAlignment = removeValue(current.includeDkimAlignment, option.value);
+      } else if (option.target === "include_spf_alignment") {
+        nextState.includeSpfAlignment = addUniqueValue(current.includeSpfAlignment, option.value);
+        nextState.excludeSpfAlignment = removeValue(current.excludeSpfAlignment, option.value);
+      } else if (option.target === "exclude_spf_alignment") {
+        nextState.excludeSpfAlignment = addUniqueValue(current.excludeSpfAlignment, option.value);
+        nextState.includeSpfAlignment = removeValue(current.includeSpfAlignment, option.value);
+      }
+      return nextState;
+    });
+  }
+
+  async function loadGroupedBranch(path: GroupPathPart[]) {
+    return apiClient.post<GroupedSearchResponse>(
+      "/api/v1/search/grouped",
+      buildGroupedSearchBody(currentState, domainNames, { path, page: 1, pageSize: 50 }),
+    );
   }
 
   async function handleUpdateDashboard(values: EditDashboardValues) {
@@ -377,7 +472,8 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
             className="button-secondary"
             onClick={() => {
               dashboardQuery.refetch();
-              searchQuery.refetch();
+              flatSearchQuery.refetch();
+              groupedSearchQuery.refetch();
             }}
             type="button"
           >
@@ -501,16 +597,27 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
       ) : null}
 
       <section className="surface-card stack">
-        <div>
-          <h2 className="section-title">Filters</h2>
-          <p className="section-intro">Refine the saved dashboard view and keep the current state in the URL.</p>
-        </div>
-        <div className="search-state-grid">
+        <form
+          className="search-toolbar"
+          onSubmit={(event) => {
+            event.preventDefault();
+            applyFilters();
+          }}
+        >
+          <label className="field-label">
+            Search
+            <input
+              className="field-input"
+              onChange={(event) => updateDraftState((current) => ({ ...current, page: 1, query: event.target.value }), "debounced")}
+              placeholder="IP, org, host, or address"
+              value={draftState.query}
+            />
+          </label>
           <label className="field-label">
             From
             <input
               className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, from: event.target.value }))}
+              onChange={(event) => updateDraftState((current) => ({ ...current, from: event.target.value, page: 1 }), "debounced")}
               type="date"
               value={draftState.from}
             />
@@ -519,221 +626,176 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
             To
             <input
               className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, to: event.target.value }))}
+              onChange={(event) => updateDraftState((current) => ({ ...current, page: 1, to: event.target.value }), "debounced")}
               type="date"
               value={draftState.to}
             />
           </label>
-          <label className="field-label">
-            Group by
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, groupBy: event.target.value }))}
-              value={draftState.groupBy}
+          <div className="search-toolbar-actions">
+            <button className="button-secondary" onClick={() => setIsFiltersOpen(true)} type="button">
+              More filters
+            </button>
+            <button className="button-secondary" onClick={resetFilters} type="button">
+              Reset
+            </button>
+          </div>
+        </form>
+
+        <div className="stack" style={{ gap: 12 }}>
+            <div className="section-heading">
+              <div className="stack" style={{ gap: 6 }}>
+                <h2 className="section-title">Grouping</h2>
+                <p className="section-intro">Build up to four grouping levels. Group changes update the results and URL immediately.</p>
+              </div>
+            </div>
+            <div className="filter-chip-row">
+              {draftState.grouping.length ? (
+                draftState.grouping.map((field, index) => {
+                  const label = aggregateGroupingOptions.find((option) => option.value === field)?.label ?? field;
+                  return (
+                    <span className="filter-chip" key={field}>
+                      <span>{`${index + 1}. ${label}`}</span>
+                    <button
+                      aria-label={`Move ${label} earlier`}
+                      className="filter-chip-remove"
+                      disabled={index === 0}
+                      onClick={() =>
+                        updateDraftState((current) => {
+                          const next = [...current.grouping];
+                          [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                          return { ...current, grouping: next, page: 1 };
+                        })
+                      }
+                      type="button"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      aria-label={`Move ${label} later`}
+                      className="filter-chip-remove"
+                      disabled={index === draftState.grouping.length - 1}
+                      onClick={() =>
+                        updateDraftState((current) => {
+                          const next = [...current.grouping];
+                          [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                          return { ...current, grouping: next, page: 1 };
+                        })
+                      }
+                      type="button"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      aria-label={`Remove ${label}`}
+                      className="filter-chip-remove"
+                      onClick={() =>
+                        updateDraftState((current) => ({
+                          ...current,
+                          grouping: current.grouping.filter((item) => item !== field),
+                          page: 1,
+                        }))
+                      }
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })
+            ) : (
+              <span className="status-text">No grouping selected.</span>
+            )}
+          </div>
+          <div className="search-toolbar-actions">
+            <label className="field-label">
+              Add grouping
+              <select
+                className="field-input"
+                disabled={!availableGroupingOptions.length}
+                onChange={(event) => setGroupToAdd(event.target.value)}
+                value={selectedGroupingValue}
+              >
+                {availableGroupingOptions.length ? (
+                  availableGroupingOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No levels available</option>
+                )}
+              </select>
+            </label>
+            <button
+              className="button-secondary"
+              disabled={!selectedGroupingValue || draftState.grouping.length >= 4}
+              onClick={() =>
+                updateDraftState((current) => ({
+                  ...current,
+                  grouping: current.grouping.length >= 4 || !selectedGroupingValue ? current.grouping : [...current.grouping, selectedGroupingValue],
+                  page: 1,
+                }))
+              }
+              type="button"
             >
-              {groupingOptions.map((option) => (
-                <option key={option.value || "none"} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Include DMARC alignment
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, includeDmarcAlignment: event.target.value }))}
-              value={draftState.includeDmarcAlignment}
-            >
-              {dmarcAlignmentOptions.map((option) => (
-                <option key={`include-dmarc-alignment-${option.value || "any"}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Include DKIM alignment
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, includeDkimAlignment: event.target.value }))}
-              value={draftState.includeDkimAlignment}
-            >
-              {alignmentModeOptions.map((option) => (
-                <option key={`include-dkim-alignment-${option.value || "any"}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Include SPF alignment
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, includeSpfAlignment: event.target.value }))}
-              value={draftState.includeSpfAlignment}
-            >
-              {alignmentModeOptions.map((option) => (
-                <option key={`include-spf-alignment-${option.value || "any"}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Include SPF
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, includeSpf: event.target.value }))}
-              value={draftState.includeSpf}
-            >
-              {resultOptions.map((option) => (
-                <option key={`include-spf-${option.value || "any"}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Include DKIM
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, includeDkim: event.target.value }))}
-              value={draftState.includeDkim}
-            >
-              {resultOptions.map((option) => (
-                <option key={`include-dkim-${option.value || "any"}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Include disposition
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, includeDisposition: event.target.value }))}
-              value={draftState.includeDisposition}
-            >
-              {dispositionOptions.map((option) => (
-                <option key={`include-disposition-${option.value || "any"}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Exclude DMARC alignment
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, excludeDmarcAlignment: event.target.value }))}
-              value={draftState.excludeDmarcAlignment}
-            >
-              {dmarcAlignmentOptions.map((option) => (
-                <option key={`exclude-dmarc-alignment-${option.value || "any"}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Exclude DKIM alignment
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, excludeDkimAlignment: event.target.value }))}
-              value={draftState.excludeDkimAlignment}
-            >
-              {alignmentModeOptions.map((option) => (
-                <option key={`exclude-dkim-alignment-${option.value || "any"}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Exclude SPF alignment
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, excludeSpfAlignment: event.target.value }))}
-              value={draftState.excludeSpfAlignment}
-            >
-              {alignmentModeOptions.map((option) => (
-                <option key={`exclude-spf-alignment-${option.value || "any"}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Exclude SPF
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, excludeSpf: event.target.value }))}
-              value={draftState.excludeSpf}
-            >
-              {resultOptions.map((option) => (
-                <option key={`exclude-spf-${option.value || "any"}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Exclude DKIM
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, excludeDkim: event.target.value }))}
-              value={draftState.excludeDkim}
-            >
-              {resultOptions.map((option) => (
-                <option key={`exclude-dkim-${option.value || "any"}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Exclude disposition
-            <select
-              className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, excludeDisposition: event.target.value }))}
-              value={draftState.excludeDisposition}
-            >
-              {dispositionOptions.map((option) => (
-                <option key={`exclude-disposition-${option.value || "any"}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button className="button-primary" onClick={applyFilters} type="button">
-            Apply filters
-          </button>
-          <button className="button-secondary" onClick={resetFilters} type="button">
-            Reset
-          </button>
+              Add level
+            </button>
+          </div>
         </div>
       </section>
 
       <section className="surface-card stack">
-        <div>
-          <h2 className="section-title">Live results</h2>
-          <p className="section-intro">Review the current aggregate records for the domains in this dashboard.</p>
+        <div className="section-heading">
+          <div className="stack" style={{ gap: 8 }}>
+            <h2 className="section-title">Live results</h2>
+            <p className="section-intro">Review the current aggregate records for the domains in this dashboard.</p>
+          </div>
+          {appliedChips.length ? (
+            <button className="button-secondary" onClick={resetFilters} type="button">
+              Clear all
+            </button>
+          ) : null}
         </div>
-        {dashboard && !domainNames.length ? <p className="status-text">This dashboard has no domains in scope.</p> : null}
-        {searchQuery.isLoading ? <p className="status-text">Loading live dashboard results...</p> : null}
-        {searchQuery.error ? (
-          <p className="error-text">
-            {searchQuery.error instanceof Error ? searchQuery.error.message : "Failed to load dashboard results"}
-          </p>
+        {appliedChips.length ? (
+          <div className="filter-chip-row">
+            {appliedChips.map((chip) => (
+              <span className={`filter-chip${chip.tone === "exclude" ? " filter-chip-exclude" : ""}`} key={chip.id}>
+                <span>{chip.label}</span>
+                <button aria-label={`Remove ${chip.label}`} className="filter-chip-remove" onClick={chip.onRemove} type="button">
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
         ) : null}
-        {result ? (
+        {dashboard && !domainNames.length ? <p className="status-text">This dashboard has no domains in scope.</p> : null}
+        {currentState.grouping.length ? (
+          groupedSearchQuery.isLoading ? <p className="status-text">Loading live dashboard results...</p> : null
+        ) : flatSearchQuery.isLoading ? (
+          <p className="status-text">Loading live dashboard results...</p>
+        ) : null}
+        {currentState.grouping.length ? (
+          groupedSearchQuery.error ? <p className="error-text">{groupedSearchQuery.error instanceof Error ? groupedSearchQuery.error.message : "Failed to load dashboard results"}</p> : null
+        ) : flatSearchQuery.error ? (
+          <p className="error-text">{flatSearchQuery.error instanceof Error ? flatSearchQuery.error.message : "Failed to load dashboard results"}</p>
+        ) : null}
+        {result && !currentState.grouping.length ? (
           <AggregateSearchResultsTable
             emptyMessage="No matching records yet for this dashboard scope."
+            onQuickFilter={handleQuickFilter}
             onViewReport={setSelectedAggregateReportId}
-            result={result}
+            result={result as SearchRecordsResponse}
+            visibleColumns={dashboard?.visible_columns}
+          />
+        ) : null}
+        {result && currentState.grouping.length ? (
+          <GroupedAggregateResultsTable
+            emptyMessage="No grouped dashboard results yet for this scope."
+            grouping={currentState.grouping}
+            initialResult={result as GroupedSearchResponse}
+            loadBranch={loadGroupedBranch}
+            onQuickFilter={handleQuickFilter}
+            onViewReport={setSelectedAggregateReportId}
             visibleColumns={dashboard?.visible_columns}
           />
         ) : null}
@@ -743,26 +805,168 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
               Page {result.page} of {totalPages}
             </span>
             <div style={{ display: "flex", gap: 12 }}>
-              <button
-                className="button-secondary"
-                disabled={currentState.page <= 1}
-                onClick={() => goToPage(Math.max(1, currentState.page - 1))}
-                type="button"
-              >
+              <button className="button-secondary" disabled={currentState.page <= 1} onClick={() => goToPage(Math.max(1, currentState.page - 1))} type="button">
                 Previous
               </button>
-              <button
-                className="button-secondary"
-                disabled={currentState.page >= totalPages}
-                onClick={() => goToPage(currentState.page + 1)}
-                type="button"
-              >
+              <button className="button-secondary" disabled={currentState.page >= totalPages} onClick={() => goToPage(currentState.page + 1)} type="button">
                 Next
               </button>
             </div>
           </div>
         ) : null}
       </section>
+      <SlideOverPanel
+        description="Refine the dashboard with include/exclude facets. Changes apply instantly and stay in the URL."
+        onClose={() => setIsFiltersOpen(false)}
+        open={isFiltersOpen}
+        title="More filters"
+      >
+        <form
+          className="stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            applyFilters();
+          }}
+        >
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Include SPF</p>
+            {renderMultiValueToggles(resultOptions, draftState.includeSpf, (value) =>
+              updateDraftState((current) => ({
+                ...current,
+                includeSpf: toggleValue(current.includeSpf, value),
+                excludeSpf: removeValue(current.excludeSpf, value),
+                page: 1,
+              })),
+            )}
+          </div>
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Exclude SPF</p>
+            {renderMultiValueToggles(resultOptions, draftState.excludeSpf, (value) =>
+              updateDraftState((current) => ({
+                ...current,
+                excludeSpf: toggleValue(current.excludeSpf, value),
+                includeSpf: removeValue(current.includeSpf, value),
+                page: 1,
+              })),
+            )}
+          </div>
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Include DKIM</p>
+            {renderMultiValueToggles(resultOptions, draftState.includeDkim, (value) =>
+              updateDraftState((current) => ({
+                ...current,
+                includeDkim: toggleValue(current.includeDkim, value),
+                excludeDkim: removeValue(current.excludeDkim, value),
+                page: 1,
+              })),
+            )}
+          </div>
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Exclude DKIM</p>
+            {renderMultiValueToggles(resultOptions, draftState.excludeDkim, (value) =>
+              updateDraftState((current) => ({
+                ...current,
+                excludeDkim: toggleValue(current.excludeDkim, value),
+                includeDkim: removeValue(current.includeDkim, value),
+                page: 1,
+              })),
+            )}
+          </div>
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Include disposition</p>
+            {renderMultiValueToggles(dispositionOptions, draftState.includeDisposition, (value) =>
+              updateDraftState((current) => ({
+                ...current,
+                includeDisposition: toggleValue(current.includeDisposition, value),
+                excludeDisposition: removeValue(current.excludeDisposition, value),
+                page: 1,
+              })),
+            )}
+          </div>
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Exclude disposition</p>
+            {renderMultiValueToggles(dispositionOptions, draftState.excludeDisposition, (value) =>
+              updateDraftState((current) => ({
+                ...current,
+                excludeDisposition: toggleValue(current.excludeDisposition, value),
+                includeDisposition: removeValue(current.includeDisposition, value),
+                page: 1,
+              })),
+            )}
+          </div>
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Include DMARC alignment</p>
+            {renderMultiValueToggles(dmarcAlignmentOptions, draftState.includeDmarcAlignment, (value) =>
+              updateDraftState((current) => ({
+                ...current,
+                includeDmarcAlignment: toggleValue(current.includeDmarcAlignment, value),
+                excludeDmarcAlignment: removeValue(current.excludeDmarcAlignment, value),
+                page: 1,
+              })),
+            )}
+          </div>
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Exclude DMARC alignment</p>
+            {renderMultiValueToggles(dmarcAlignmentOptions, draftState.excludeDmarcAlignment, (value) =>
+              updateDraftState((current) => ({
+                ...current,
+                excludeDmarcAlignment: toggleValue(current.excludeDmarcAlignment, value),
+                includeDmarcAlignment: removeValue(current.includeDmarcAlignment, value),
+                page: 1,
+              })),
+            )}
+          </div>
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Include DKIM alignment</p>
+            {renderMultiValueToggles(alignmentModeOptions, draftState.includeDkimAlignment, (value) =>
+              updateDraftState((current) => ({
+                ...current,
+                includeDkimAlignment: toggleValue(current.includeDkimAlignment, value),
+                excludeDkimAlignment: removeValue(current.excludeDkimAlignment, value),
+                page: 1,
+              })),
+            )}
+          </div>
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Exclude DKIM alignment</p>
+            {renderMultiValueToggles(alignmentModeOptions, draftState.excludeDkimAlignment, (value) =>
+              updateDraftState((current) => ({
+                ...current,
+                excludeDkimAlignment: toggleValue(current.excludeDkimAlignment, value),
+                includeDkimAlignment: removeValue(current.includeDkimAlignment, value),
+                page: 1,
+              })),
+            )}
+          </div>
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Include SPF alignment</p>
+            {renderMultiValueToggles(alignmentModeOptions, draftState.includeSpfAlignment, (value) =>
+              updateDraftState((current) => ({
+                ...current,
+                includeSpfAlignment: toggleValue(current.includeSpfAlignment, value),
+                excludeSpfAlignment: removeValue(current.excludeSpfAlignment, value),
+                page: 1,
+              })),
+            )}
+          </div>
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Exclude SPF alignment</p>
+            {renderMultiValueToggles(alignmentModeOptions, draftState.excludeSpfAlignment, (value) =>
+              updateDraftState((current) => ({
+                ...current,
+                excludeSpfAlignment: toggleValue(current.excludeSpfAlignment, value),
+                includeSpfAlignment: removeValue(current.includeSpfAlignment, value),
+                page: 1,
+              })),
+            )}
+          </div>
+          <div className="search-toolbar-actions">
+            <button className="button-secondary" onClick={() => setIsFiltersOpen(false)} type="button">
+              Done
+            </button>
+          </div>
+        </form>
+      </SlideOverPanel>
       {selectedAggregateReportId ? (
         <ReportDetailModal
           kind="aggregate"

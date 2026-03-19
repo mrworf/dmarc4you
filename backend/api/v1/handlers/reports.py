@@ -39,6 +39,26 @@ class SearchRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class GroupPathPart(BaseModel):
+    field: str
+    value: str = ""
+
+
+class GroupedSearchRequest(BaseModel):
+    domains: list[str] | None = None
+    from_ts: str | int | None = Field(default=None, alias="from")
+    to_ts: str | int | None = Field(default=None, alias="to")
+    include: dict[str, list[str]] | None = None
+    exclude: dict[str, list[str]] | None = None
+    query: str = ""
+    grouping: list[str] = []
+    path: list[GroupPathPart] = []
+    page: int = 1
+    page_size: int = 50
+
+    model_config = {"populate_by_name": True}
+
+
 @reports_router.get("/aggregate")
 def get_reports_aggregate(
     current_user: dict = Depends(get_current_user),
@@ -188,3 +208,29 @@ def post_search(
         page=body.page,
         page_size=body.page_size,
     )
+
+
+@search_router.post("/grouped")
+def post_grouped_search(
+    body: GroupedSearchRequest,
+    current_user: dict = Depends(get_current_user),
+    config: Config = Depends(get_config),
+) -> dict:
+    """POST /api/v1/search/grouped: hierarchical aggregate search for explorer views."""
+    try:
+        return search_service.search_grouped_records(
+            config,
+            current_user,
+            domains_param=body.domains,
+            from_ts=body.from_ts,
+            to_ts=body.to_ts,
+            include=body.include,
+            exclude=body.exclude,
+            query=body.query or None,
+            grouping=body.grouping,
+            path=[part.model_dump() for part in body.path],
+            page=body.page,
+            page_size=body.page_size,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

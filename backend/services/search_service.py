@@ -24,11 +24,38 @@ ALLOWED_FILTER_FIELDS = frozenset(
     ]
 )
 ALLOWED_GROUP_FIELDS = {
-    "record_date": "date(ar.date_begin, 'unixepoch')",
-    "source_ip": "COALESCE(rec.source_ip, '')",
-    "resolved_name": "COALESCE(rec.resolved_name, '')",
-    "resolved_name_domain": "COALESCE(rec.resolved_name_domain, '')",
+    "domain": {
+        "expr": "COALESCE(ar.domain, '')",
+    },
+    "org_name": {
+        "expr": "COALESCE(ar.org_name, '')",
+    },
+    "record_date": {
+        "expr": "COALESCE(date(ar.date_begin, 'unixepoch'), '')",
+    },
+    "source_ip": {
+        "expr": "COALESCE(rec.source_ip, '')",
+    },
+    "resolved_name": {
+        "expr": "COALESCE(rec.resolved_name, '')",
+    },
+    "resolved_name_domain": {
+        "expr": "COALESCE(rec.resolved_name_domain, '')",
+    },
+    "disposition": {
+        "expr": "COALESCE(rec.disposition, '')",
+    },
+    "dmarc_alignment": {
+        "expr": "COALESCE(rec.dmarc_alignment, '')",
+    },
+    "dkim_alignment": {
+        "expr": "COALESCE(rec.dkim_alignment, '')",
+    },
+    "spf_alignment": {
+        "expr": "COALESCE(rec.spf_alignment, '')",
+    },
 }
+MAX_GROUPING_DEPTH = 4
 
 
 def _record_date_from_ts(timestamp: int | None) -> str | None:
@@ -40,6 +67,18 @@ def _record_date_from_ts(timestamp: int | None) -> str | None:
 def _normalize_group_by(group_by: str | None) -> str | None:
     value = (group_by or "").strip()
     return value if value in ALLOWED_GROUP_FIELDS else None
+
+
+def _normalize_grouping(grouping: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    for field in grouping or []:
+        value = str(field or "").strip()
+        if not value or value not in ALLOWED_GROUP_FIELDS or value in normalized:
+            continue
+        normalized.append(value)
+        if len(normalized) >= MAX_GROUPING_DEPTH:
+            break
+    return normalized
 
 
 def _parse_ts(value: str | int | None) -> int | None:
@@ -143,6 +182,79 @@ def _cap_page_size(size: int) -> int:
     if size < 1:
         return DEFAULT_PAGE_SIZE
     return min(size, MAX_PAGE_SIZE)
+
+
+def _allowed_domain_names(config: Config, current_user: dict[str, Any]) -> list[str]:
+    return [d["name"] for d in list_domains(config, current_user)]
+
+
+def _resolve_domain_filter(allowed_domains: list[str], domains_param: list[str] | None) -> list[str]:
+    if not domains_param:
+        return allowed_domains
+    return [domain for domain in domains_param if domain in allowed_domains]
+
+
+def _build_record_where_clause(
+    domain_filter: list[str],
+    *,
+    from_ts: str | int | None,
+    to_ts: str | int | None,
+    include: dict[str, list[str]] | None,
+    exclude: dict[str, list[str]] | None,
+    query: str | None,
+    path: list[dict[str, str]] | None = None,
+) -> tuple[str, list[Any], str]:
+    if not domain_filter:
+        return "1 = 0", [], ""
+
+    from_val = _parse_ts(from_ts)
+    to_val = _parse_ts(to_ts)
+    placeholders = ",".join("?" * len(domain_filter))
+    where_parts = [f"ar.domain IN ({placeholders})"]
+    params: list[Any] = list(domain_filter)
+
+    if from_val is not None:
+        where_parts.append("ar.date_end >= ?")
+        params.append(from_val)
+    if to_val is not None:
+        where_parts.append("ar.date_begin <= ?")
+        params.append(to_val)
+
+    if include:
+        for field, values in include.items():
+            filtered_values = [value for value in values if value]
+            if field not in ALLOWED_FILTER_FIELDS or not filtered_values:
+                continue
+            ph = ",".join("?" * len(filtered_values))
+            where_parts.append(f"rec.{field} IN ({ph})")
+            params.extend(filtered_values)
+
+    if exclude:
+        for field, values in exclude.items():
+            filtered_values = [value for value in values if value]
+            if field not in ALLOWED_FILTER_FIELDS or not filtered_values:
+                continue
+            ph = ",".join("?" * len(filtered_values))
+            where_parts.append(f"(rec.{field} IS NULL OR rec.{field} NOT IN ({ph}))")
+            params.extend(filtered_values)
+
+    if path:
+        for part in path:
+            field = str(part.get("field") or "").strip()
+            value = str(part.get("value") or "")
+            if field not in ALLOWED_GROUP_FIELDS:
+                raise ValueError(f"Unsupported grouping field: {field}")
+            where_parts.append(f"{ALLOWED_GROUP_FIELDS[field]['expr']} = ?")
+            params.append(value)
+
+    fts_query = _escape_fts_query(query or "")
+    fts_join = ""
+    if fts_query:
+        fts_join = "JOIN aggregate_records_fts fts ON rec.rowid = fts.rowid"
+        where_parts.append("aggregate_records_fts MATCH ?")
+        params.append(fts_query)
+
+    return " AND ".join(where_parts), params, fts_join
 
 
 def get_aggregate_report_detail(
@@ -394,6 +506,218 @@ def _escape_fts_query(query: str) -> str:
     return " ".join(f'"{t}"*' for t in terms if t)
 
 
+def _build_record_item(row: tuple[Any, ...]) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "type": "row",
+        "aggregate_report_id": row[1],
+        "source_ip": row[2],
+        "resolved_name": row[3],
+        "resolved_name_domain": row[4],
+        "country_code": row[5],
+        "country_name": row[6],
+        "geo_provider": row[7],
+        "count": row[8],
+        "disposition": row[9],
+        "dkim_result": row[10],
+        "spf_result": row[11],
+        "dkim_alignment": row[12],
+        "spf_alignment": row[13],
+        "dmarc_alignment": row[14],
+        "header_from": row[15],
+        "envelope_from": row[16],
+        "envelope_to": row[17],
+        "domain": row[18],
+        "report_id": row[19],
+        "org_name": row[20],
+        "date_begin": row[21],
+        "date_end": row[22],
+        "record_date": _record_date_from_ts(row[21]),
+    }
+
+
+def _search_record_rows(
+    conn,
+    *,
+    where_sql: str,
+    params: list[Any],
+    fts_join: str,
+    page: int,
+    page_size: int,
+) -> dict[str, Any]:
+    offset = (page - 1) * page_size
+    total = conn.execute(
+        f"""SELECT COUNT(*) FROM aggregate_report_records rec
+            JOIN aggregate_reports ar ON rec.aggregate_report_id = ar.id
+            {fts_join}
+            WHERE {where_sql}""",
+        params,
+    ).fetchone()[0]
+    cur = conn.execute(
+        f"""SELECT rec.id, rec.aggregate_report_id, rec.source_ip, rec.resolved_name, rec.resolved_name_domain, rec.country_code, rec.country_name, rec.geo_provider, rec.count,
+                   rec.disposition, rec.dkim_result, rec.spf_result, rec.dkim_alignment, rec.spf_alignment, rec.dmarc_alignment,
+                   rec.header_from, rec.envelope_from, rec.envelope_to,
+                   ar.domain, ar.report_id, ar.org_name, ar.date_begin, ar.date_end
+            FROM aggregate_report_records rec
+            JOIN aggregate_reports ar ON rec.aggregate_report_id = ar.id
+            {fts_join}
+            WHERE {where_sql}
+            ORDER BY ar.date_begin DESC, rec.count DESC
+            LIMIT ? OFFSET ?""",
+        params + [page_size, offset],
+    )
+    items = [_build_record_item(row) for row in cur.fetchall()]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+def search_grouped_records(
+    config: Config,
+    current_user: dict[str, Any],
+    *,
+    domains_param: list[str] | None = None,
+    from_ts: str | int | None = None,
+    to_ts: str | int | None = None,
+    include: dict[str, list[str]] | None = None,
+    exclude: dict[str, list[str]] | None = None,
+    query: str | None = None,
+    grouping: list[str] | None = None,
+    path: list[dict[str, str]] | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> dict[str, Any]:
+    backfill_missing_aggregate_alignment(config.database_path)
+    allowed_domains = _allowed_domain_names(config, current_user)
+    if not allowed_domains:
+        return {
+            "items": [],
+            "total": 0,
+            "page": max(1, page),
+            "page_size": _cap_page_size(page_size),
+            "grouping": [],
+            "path": path or [],
+            "level_kind": "group",
+        }
+
+    normalized_grouping = _normalize_grouping(grouping)
+    if not normalized_grouping:
+        raise ValueError("At least one grouping field is required")
+
+    current_path = path or []
+    if len(current_path) > len(normalized_grouping):
+        raise ValueError("Grouping path is deeper than the configured grouping")
+    for index, item in enumerate(current_path):
+        expected_field = normalized_grouping[index]
+        field = str(item.get("field") or "").strip()
+        if field != expected_field:
+            raise ValueError("Grouping path must match the configured grouping order")
+
+    domain_filter = _resolve_domain_filter(allowed_domains, domains_param)
+    page = max(1, page)
+    page_size = _cap_page_size(page_size)
+    where_sql, params, fts_join = _build_record_where_clause(
+        domain_filter,
+        from_ts=from_ts,
+        to_ts=to_ts,
+        include=include,
+        exclude=exclude,
+        query=query,
+        path=current_path,
+    )
+
+    conn = get_connection(config.database_path)
+    try:
+        if len(current_path) >= len(normalized_grouping):
+            rows = _search_record_rows(
+                conn,
+                where_sql=where_sql,
+                params=params,
+                fts_join=fts_join,
+                page=page,
+                page_size=page_size,
+            )
+            rows["grouping"] = normalized_grouping
+            rows["path"] = current_path
+            rows["level_kind"] = "row"
+            return rows
+
+        group_field = normalized_grouping[len(current_path)]
+        group_expr = ALLOWED_GROUP_FIELDS[group_field]["expr"]
+        offset = (page - 1) * page_size
+        total = conn.execute(
+            f"""SELECT COUNT(*) FROM (
+                    SELECT 1
+                    FROM aggregate_report_records rec
+                    JOIN aggregate_reports ar ON rec.aggregate_report_id = ar.id
+                    {fts_join}
+                    WHERE {where_sql}
+                    GROUP BY {group_expr}
+                ) grouped""",
+            params,
+        ).fetchone()[0]
+        cur = conn.execute(
+            f"""SELECT {group_expr} AS group_value,
+                       COUNT(*) AS row_count,
+                       COUNT(DISTINCT ar.id) AS report_count,
+                       COALESCE(SUM(rec.count), 0) AS message_count,
+                       MIN(ar.date_begin) AS min_date_begin,
+                       MAX(ar.date_end) AS max_date_end,
+                       COALESCE(SUM(CASE WHEN rec.dmarc_alignment = 'pass' THEN rec.count ELSE 0 END), 0) AS dmarc_pass_count,
+                       COALESCE(SUM(CASE WHEN rec.dmarc_alignment = 'fail' THEN rec.count ELSE 0 END), 0) AS dmarc_fail_count,
+                       COALESCE(SUM(CASE WHEN rec.dmarc_alignment IS NULL OR rec.dmarc_alignment = 'unknown' THEN rec.count ELSE 0 END), 0) AS dmarc_unknown_count,
+                       COALESCE(SUM(CASE WHEN rec.disposition = 'none' THEN rec.count ELSE 0 END), 0) AS disposition_none_count,
+                       COALESCE(SUM(CASE WHEN rec.disposition = 'quarantine' THEN rec.count ELSE 0 END), 0) AS disposition_quarantine_count,
+                       COALESCE(SUM(CASE WHEN rec.disposition = 'reject' THEN rec.count ELSE 0 END), 0) AS disposition_reject_count
+                FROM aggregate_report_records rec
+                JOIN aggregate_reports ar ON rec.aggregate_report_id = ar.id
+                {fts_join}
+                WHERE {where_sql}
+                GROUP BY {group_expr}
+                ORDER BY message_count DESC, group_value ASC
+                LIMIT ? OFFSET ?""",
+            params + [page_size, offset],
+        )
+        items: list[dict[str, Any]] = []
+        for row in cur.fetchall():
+            group_value = row[0] or ""
+            group_path = [*current_path, {"field": group_field, "value": group_value}]
+            items.append(
+                {
+                    "type": "group",
+                    "field": group_field,
+                    "value": group_value,
+                    "label": group_value or "(empty)",
+                    "path": group_path,
+                    "row_count": row[1],
+                    "report_count": row[2],
+                    "message_count": row[3],
+                    "first_record_date": _record_date_from_ts(row[4]),
+                    "last_record_date": _record_date_from_ts(row[5]),
+                    "dmarc_alignment_summary": {
+                        "pass": row[6],
+                        "fail": row[7],
+                        "unknown": row[8],
+                    },
+                    "disposition_summary": {
+                        "none": row[9],
+                        "quarantine": row[10],
+                        "reject": row[11],
+                    },
+                    "has_children": row[1] > 0,
+                }
+            )
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "grouping": normalized_grouping,
+            "path": current_path,
+            "level_kind": "group",
+        }
+    finally:
+        conn.close()
+
+
 def search_records(
     config: Config,
     current_user: dict[str, Any],
@@ -415,74 +739,30 @@ def search_records(
     query: free-text search over source_ip, header_from, envelope_from, envelope_to, org_name
     """
     backfill_missing_aggregate_alignment(config.database_path)
-    allowed_domains = [d["name"] for d in list_domains(config, current_user)]
+    allowed_domains = _allowed_domain_names(config, current_user)
     if not allowed_domains:
         return {"items": [], "total": 0, "page": max(1, page), "page_size": _cap_page_size(page_size)}
 
-    domain_filter = allowed_domains
-    if domains_param:
-        domain_filter = [d for d in domains_param if d in allowed_domains]
-
-    from_val = _parse_ts(from_ts)
-    to_val = _parse_ts(to_ts)
+    domain_filter = _resolve_domain_filter(allowed_domains, domains_param)
     page = max(1, page)
     page_size = _cap_page_size(page_size)
     offset = (page - 1) * page_size
     normalized_group_by = _normalize_group_by(group_by)
 
-    fts_query = _escape_fts_query(query or "")
-
     conn = get_connection(config.database_path)
     try:
-        placeholders = ",".join("?" * len(domain_filter))
-        where_parts = [f"ar.domain IN ({placeholders})"]
-        params: list[Any] = list(domain_filter)
-
-        if from_val is not None:
-            where_parts.append("ar.date_end >= ?")
-            params.append(from_val)
-        if to_val is not None:
-            where_parts.append("ar.date_begin <= ?")
-            params.append(to_val)
-
-        # Include filters
-        if include:
-            for field, values in include.items():
-                if field not in ALLOWED_FILTER_FIELDS or not values:
-                    continue
-                ph = ",".join("?" * len(values))
-                where_parts.append(f"rec.{field} IN ({ph})")
-                params.extend(values)
-
-        # Exclude filters
-        if exclude:
-            for field, values in exclude.items():
-                if field not in ALLOWED_FILTER_FIELDS or not values:
-                    continue
-                ph = ",".join("?" * len(values))
-                where_parts.append(f"(rec.{field} IS NULL OR rec.{field} NOT IN ({ph}))")
-                params.extend(values)
-
-        # FTS query
-        fts_join = ""
-        if fts_query:
-            fts_join = "JOIN aggregate_records_fts fts ON rec.rowid = fts.rowid"
-            where_parts.append("aggregate_records_fts MATCH ?")
-            params.append(fts_query)
-
-        where_sql = " AND ".join(where_parts)
-
-        cur = conn.execute(
-            f"""SELECT COUNT(*) FROM aggregate_report_records rec
-                JOIN aggregate_reports ar ON rec.aggregate_report_id = ar.id
-                {fts_join}
-                WHERE {where_sql}""",
-            params,
-        ) if not normalized_group_by else None
+        where_sql, params, fts_join = _build_record_where_clause(
+            domain_filter,
+            from_ts=from_ts,
+            to_ts=to_ts,
+            include=include,
+            exclude=exclude,
+            query=query,
+        )
 
         if normalized_group_by:
-            group_expr = ALLOWED_GROUP_FIELDS[normalized_group_by]
-            cur = conn.execute(
+            group_expr = ALLOWED_GROUP_FIELDS[normalized_group_by]["expr"]
+            total = conn.execute(
                 f"""SELECT COUNT(*) FROM (
                         SELECT 1
                         FROM aggregate_report_records rec
@@ -492,8 +772,7 @@ def search_records(
                         GROUP BY {group_expr}
                     ) grouped""",
                 params,
-            )
-            total = cur.fetchone()[0]
+            ).fetchone()[0]
             cur = conn.execute(
                 f"""SELECT {group_expr} AS group_value,
                            COUNT(*) AS row_count,
@@ -531,50 +810,21 @@ def search_records(
                 "page_size": page_size,
                 "group_by": normalized_group_by,
             }
-
-        total = cur.fetchone()[0]
-        cur = conn.execute(
-            f"""SELECT rec.id, rec.aggregate_report_id, rec.source_ip, rec.resolved_name, rec.resolved_name_domain, rec.country_code, rec.country_name, rec.geo_provider, rec.count,
-                       rec.disposition, rec.dkim_result, rec.spf_result, rec.dkim_alignment, rec.spf_alignment, rec.dmarc_alignment,
-                       rec.header_from, rec.envelope_from, rec.envelope_to,
-                       ar.domain, ar.report_id, ar.org_name, ar.date_begin, ar.date_end
-                FROM aggregate_report_records rec
-                JOIN aggregate_reports ar ON rec.aggregate_report_id = ar.id
-                {fts_join}
-                WHERE {where_sql}
-                ORDER BY ar.date_begin DESC, rec.count DESC
-                LIMIT ? OFFSET ?""",
-            params + [page_size, offset],
+        rows = _search_record_rows(
+            conn,
+            where_sql=where_sql,
+            params=params,
+            fts_join=fts_join,
+            page=page,
+            page_size=page_size,
         )
-        items = []
-        for row in cur.fetchall():
-            items.append({
-                "id": row[0],
-                "aggregate_report_id": row[1],
-                "source_ip": row[2],
-                "resolved_name": row[3],
-                "resolved_name_domain": row[4],
-                "country_code": row[5],
-                "country_name": row[6],
-                "geo_provider": row[7],
-                "count": row[8],
-                "disposition": row[9],
-                "dkim_result": row[10],
-                "spf_result": row[11],
-                "dkim_alignment": row[12],
-                "spf_alignment": row[13],
-                "dmarc_alignment": row[14],
-                "header_from": row[15],
-                "envelope_from": row[16],
-                "envelope_to": row[17],
-                "domain": row[18],
-                "report_id": row[19],
-                "org_name": row[20],
-                "date_begin": row[21],
-                "date_end": row[22],
-                "record_date": _record_date_from_ts(row[21]),
-            })
-        return {"items": items, "total": total, "page": page, "page_size": page_size, "group_by": None}
+        return {
+            "items": [{key: value for key, value in item.items() if key != "type"} for item in rows["items"]],
+            "total": rows["total"],
+            "page": rows["page"],
+            "page_size": rows["page_size"],
+            "group_by": None,
+        }
     finally:
         conn.close()
 

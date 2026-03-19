@@ -52,6 +52,22 @@ async function expectJobLink(page: Page): Promise<Locator> {
   return jobLink;
 }
 
+async function installNoReloadMarker(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const marker = `marker-${Math.random().toString(36).slice(2, 12)}`;
+    (window as Window & { __pwNoReloadMarker?: string }).__pwNoReloadMarker = marker;
+    return marker;
+  });
+}
+
+async function expectNoReload(page: Page, marker: string): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { __pwNoReloadMarker?: string }).__pwNoReloadMarker ?? ""),
+    )
+    .toBe(marker);
+}
+
 test.describe("frontend-next critical happy paths", () => {
   test("dashboards route creates a dashboard and exposes detail actions", async ({ page }) => {
     const dashboardName = `pw-dashboard-${uniqueSuffix()}`;
@@ -76,18 +92,46 @@ test.describe("frontend-next critical happy paths", () => {
     await expect(page.getByRole("button", { name: "Export YAML" })).toBeVisible();
   });
 
-  test("dashboard detail keeps filter state in the URL", async ({ page }) => {
+  test("dashboard detail updates filters without reloading and keeps state in the URL", async ({ page }) => {
     await loginAsSuperAdmin(page);
     await openAnyDashboardDetail(page);
 
     await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
-    await page.getByLabel("Include SPF").selectOption("pass");
-    await page.getByRole("button", { name: "Apply filters" }).click();
+    const marker = await installNoReloadMarker(page);
+    await page.getByLabel("Search", { exact: true }).fill("192.0.2.21");
+    await expect(page).toHaveURL(/query=192\.0\.2\.21/);
+    await expectNoReload(page, marker);
+    await expect(page.getByText("Search: 192.0.2.21")).toBeVisible();
 
-    await expect(page).toHaveURL(/include_spf=pass/);
     await page.reload();
 
-    await expect(page.getByLabel("Include SPF")).toHaveValue("pass");
+    await expect(page.getByLabel("Search", { exact: true })).toHaveValue("192.0.2.21");
+    await expect(page.getByText("Search: 192.0.2.21")).toBeVisible();
+  });
+
+  test("dashboard detail grouping updates immediately across multiple levels", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await openAnyDashboardDetail(page);
+
+    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    const marker = await installNoReloadMarker(page);
+
+    await page.getByRole("button", { name: "Add level" }).click();
+    await expect(page).toHaveURL(/grouping=domain/);
+    await expectNoReload(page, marker);
+
+    await page.getByLabel("Add grouping").selectOption("disposition");
+    await page.getByRole("button", { name: "Add level" }).click();
+    await expect(page).toHaveURL(/grouping=domain(?:%2C|,)disposition/);
+    await expectNoReload(page, marker);
+
+    await page.getByRole("button", { name: "Move Domain later" }).click();
+    await expect(page).toHaveURL(/grouping=disposition(?:%2C|,)domain/);
+    await expectNoReload(page, marker);
+
+    await page.getByRole("button", { name: "Remove Disposition" }).click();
+    await expect(page).toHaveURL(/grouping=domain/);
+    await expectNoReload(page, marker);
   });
 
   test("dashboard detail edit supports live drag reordering and persists visible columns", async ({ page }) => {

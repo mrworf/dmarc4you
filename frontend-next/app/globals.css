@@ -451,6 +451,68 @@ button {
   position: relative;
 }
 
+.cell-primary-action {
+  text-align: left;
+}
+
+.cell-exclude-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(166, 27, 27, 0.2);
+  background: rgba(166, 27, 27, 0.08);
+  color: var(--danger);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 68px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.status-pill-disposition-none,
+.status-pill-dmarc-unknown,
+.status-pill-alignment-none {
+  background: rgba(31, 97, 154, 0.12);
+  color: #1f619a;
+}
+
+.status-pill-disposition-quarantine {
+  background: rgba(186, 126, 0, 0.14);
+  color: #9a6500;
+}
+
+.status-pill-disposition-reject,
+.status-pill-result-fail,
+.status-pill-dmarc-fail {
+  background: rgba(166, 27, 27, 0.12);
+  color: var(--danger);
+}
+
+.status-pill-result-pass,
+.status-pill-dmarc-pass,
+.status-pill-alignment-strict,
+.status-pill-alignment-relaxed {
+  background: rgba(25, 122, 77, 0.12);
+  color: var(--success);
+}
+
+.status-pill-alignment-unknown {
+  background: rgba(76, 103, 141, 0.12);
+  color: var(--accent-strong);
+}
+
 .cell-action-menu {
   position: relative;
 }
@@ -569,6 +631,88 @@ button {
   font-size: 1rem;
   line-height: 1;
   padding: 0;
+}
+
+.grouped-data-table {
+  min-width: 920px;
+}
+
+.group-row td {
+  background: rgba(16, 35, 61, 0.03);
+}
+
+.group-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.group-toggle {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--accent-strong);
+  font-size: 0.95rem;
+}
+
+.group-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.group-kicker {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.group-leaf-wrap {
+  padding-top: 8px;
+  padding-bottom: 4px;
+}
+
+.summary-bar-wrap {
+  display: grid;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.summary-bar {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(16, 35, 61, 0.08);
+}
+
+.summary-bar-segment {
+  height: 100%;
+}
+
+.summary-green {
+  background: #197a4d;
+}
+
+.summary-red {
+  background: #a61b1b;
+}
+
+.summary-blue {
+  background: #1f619a;
+}
+
+.summary-amber {
+  background: #ba7e00;
+}
+
+.summary-bar-label,
+.summary-bar-count {
+  color: var(--muted);
+  font-size: 0.76rem;
 }
 
 .pagination-row {

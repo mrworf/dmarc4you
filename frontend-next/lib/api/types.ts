@@ -376,6 +376,24 @@ export type SearchRecordsBody = {
   page_size?: number;
 };
 
+export type GroupPathPart = {
+  field: string;
+  value: string;
+};
+
+export type GroupedSearchBody = {
+  domains?: string[];
+  from?: string | number;
+  to?: string | number;
+  include?: Record<string, string[]>;
+  exclude?: Record<string, string[]>;
+  query?: string;
+  grouping: string[];
+  path?: GroupPathPart[];
+  page?: number;
+  page_size?: number;
+};
+
 export type AggregateSearchResult = {
   id: string;
   aggregate_report_id: string;
@@ -413,6 +431,44 @@ export type GroupedSearchResult = {
   date_begin: number | null;
   date_end: number | null;
   record_date: string | null;
+};
+
+export type GroupedSearchNode = {
+  type: "group";
+  field: string;
+  value: string;
+  label: string;
+  path: GroupPathPart[];
+  row_count: number;
+  report_count: number;
+  message_count: number;
+  first_record_date: string | null;
+  last_record_date: string | null;
+  dmarc_alignment_summary: {
+    pass: number;
+    fail: number;
+    unknown: number;
+  };
+  disposition_summary: {
+    none: number;
+    quarantine: number;
+    reject: number;
+  };
+  has_children: boolean;
+};
+
+export type GroupedSearchLeafRow = AggregateSearchResult & {
+  type: "row";
+};
+
+export type GroupedSearchResponse = {
+  items: Array<GroupedSearchNode | GroupedSearchLeafRow>;
+  total: number;
+  page: number;
+  page_size: number;
+  grouping: string[];
+  path: GroupPathPart[];
+  level_kind: "group" | "row";
 };
 
 export type SearchRecordsResponse = {

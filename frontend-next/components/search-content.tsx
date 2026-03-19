@@ -2,47 +2,49 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { ReportDetailModal } from "@/components/report-detail-modal";
 import {
   AggregateSearchResultsTable,
   ForensicResultsTable,
+  GroupedAggregateResultsTable,
   type SearchQuickFilterOption,
 } from "@/components/search-results-table";
 import { SlideOverPanel } from "@/components/slide-over-panel";
 import { apiClient } from "@/lib/api/client";
+import {
+  addUniqueValue,
+  aggregateGroupingOptions,
+  appendQueryValue,
+  buildAggregateExplorerParams,
+  buildAggregateSearchBody,
+  buildGroupedSearchBody,
+  defaultAggregateExplorerState,
+  formatOptionLabel,
+  getAvailableAggregateGroupingOptions,
+  getSelectedAggregateGroupingValue,
+  parseAggregateExplorerState,
+  removeValue,
+  toggleValue,
+  type AggregateExplorerState,
+} from "@/lib/aggregate-explorer-state";
+import { useAggregateExplorerState } from "@/lib/use-aggregate-explorer-state";
 import type {
   DomainSummary,
   DomainsResponse,
   ForensicReportsResponse,
-  SearchRecordsBody,
+  GroupPathPart,
+  GroupedSearchResponse,
   SearchRecordsResponse,
 } from "@/lib/api/types";
-import { buildSearchParams, parseIntegerParam, parseStringParam } from "@/lib/url-state";
+import { buildSearchParams } from "@/lib/url-state";
 
 type SearchReportType = "aggregate" | "forensic";
 
-type SearchState = {
+type SearchState = AggregateExplorerState & {
   reportType: SearchReportType;
-  domains: string[];
-  query: string;
-  from: string;
-  to: string;
-  includeDmarcAlignment: string;
-  includeDkimAlignment: string;
-  includeSpfAlignment: string;
-  includeSpf: string;
-  includeDkim: string;
-  includeDisposition: string;
-  excludeDmarcAlignment: string;
-  excludeDkimAlignment: string;
-  excludeSpfAlignment: string;
-  excludeSpf: string;
-  excludeDkim: string;
-  excludeDisposition: string;
-  page: number;
 };
 
 type AppliedFilterChip = {
@@ -52,163 +54,24 @@ type AppliedFilterChip = {
   onRemove: () => void;
 };
 
-const defaultSearchState: SearchState = {
-  reportType: "aggregate",
-  domains: [],
-  query: "",
-  from: "",
-  to: "",
-  includeDmarcAlignment: "",
-  includeDkimAlignment: "",
-  includeSpfAlignment: "",
-  includeSpf: "",
-  includeDkim: "",
-  includeDisposition: "",
-  excludeDmarcAlignment: "",
-  excludeDkimAlignment: "",
-  excludeSpfAlignment: "",
-  excludeSpf: "",
-  excludeDkim: "",
-  excludeDisposition: "",
-  page: 1,
-};
-
-const resultOptions = [
-  { value: "", label: "Any result" },
-  { value: "pass", label: "Pass" },
-  { value: "fail", label: "Fail" },
-];
-
-const dispositionOptions = [
-  { value: "", label: "Any disposition" },
-  { value: "none", label: "None" },
-  { value: "quarantine", label: "Quarantine" },
-  { value: "reject", label: "Reject" },
-];
-
-const dmarcAlignmentOptions = [
-  { value: "", label: "Any alignment" },
-  { value: "pass", label: "Pass" },
-  { value: "fail", label: "Fail" },
-  { value: "unknown", label: "Unknown" },
-];
-
-const alignmentModeOptions = [
-  { value: "", label: "Any alignment" },
-  { value: "strict", label: "Strict" },
-  { value: "relaxed", label: "Relaxed" },
-  { value: "none", label: "None" },
-  { value: "unknown", label: "Unknown" },
-];
-
-function parseDomainsParam(value: string | null): string[] {
-  if (!value) {
-    return [];
-  }
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
+const resultOptions = ["pass", "fail"];
+const dispositionOptions = ["none", "quarantine", "reject"];
+const dmarcAlignmentOptions = ["pass", "fail", "unknown"];
+const alignmentModeOptions = ["strict", "relaxed", "none", "unknown"];
 function parseSearchState(searchParams: URLSearchParams): SearchState {
-  const reportType = searchParams.get("report_type") === "forensic" ? "forensic" : "aggregate";
   return {
-    reportType,
-    domains: parseDomainsParam(searchParams.get("domains")),
-    query: parseStringParam(searchParams.get("query")),
-    from: parseStringParam(searchParams.get("from")),
-    to: parseStringParam(searchParams.get("to")),
-    includeDmarcAlignment: parseStringParam(searchParams.get("include_dmarc_alignment")),
-    includeDkimAlignment: parseStringParam(searchParams.get("include_dkim_alignment")),
-    includeSpfAlignment: parseStringParam(searchParams.get("include_spf_alignment")),
-    includeSpf: parseStringParam(searchParams.get("include_spf")),
-    includeDkim: parseStringParam(searchParams.get("include_dkim")),
-    includeDisposition: parseStringParam(searchParams.get("include_disposition")),
-    excludeDmarcAlignment: parseStringParam(searchParams.get("exclude_dmarc_alignment")),
-    excludeDkimAlignment: parseStringParam(searchParams.get("exclude_dkim_alignment")),
-    excludeSpfAlignment: parseStringParam(searchParams.get("exclude_spf_alignment")),
-    excludeSpf: parseStringParam(searchParams.get("exclude_spf")),
-    excludeDkim: parseStringParam(searchParams.get("exclude_dkim")),
-    excludeDisposition: parseStringParam(searchParams.get("exclude_disposition")),
-    page: parseIntegerParam(searchParams.get("page"), 1),
+    reportType: searchParams.get("report_type") === "forensic" ? "forensic" : "aggregate",
+    ...parseAggregateExplorerState(searchParams, { includeDomains: true }),
   };
 }
 
 function buildSearchRouteParams(state: SearchState): string {
-  return buildSearchParams({
-    report_type: state.reportType !== "aggregate" ? state.reportType : "",
-    domains: state.domains.length ? state.domains.join(",") : "",
-    query: state.query,
-    from: state.from,
-    to: state.to,
-    include_dmarc_alignment: state.reportType === "aggregate" ? state.includeDmarcAlignment : "",
-    include_dkim_alignment: state.reportType === "aggregate" ? state.includeDkimAlignment : "",
-    include_spf_alignment: state.reportType === "aggregate" ? state.includeSpfAlignment : "",
-    include_spf: state.reportType === "aggregate" ? state.includeSpf : "",
-    include_dkim: state.reportType === "aggregate" ? state.includeDkim : "",
-    include_disposition: state.reportType === "aggregate" ? state.includeDisposition : "",
-    exclude_dmarc_alignment: state.reportType === "aggregate" ? state.excludeDmarcAlignment : "",
-    exclude_dkim_alignment: state.reportType === "aggregate" ? state.excludeDkimAlignment : "",
-    exclude_spf_alignment: state.reportType === "aggregate" ? state.excludeSpfAlignment : "",
-    exclude_spf: state.reportType === "aggregate" ? state.excludeSpf : "",
-    exclude_dkim: state.reportType === "aggregate" ? state.excludeDkim : "",
-    exclude_disposition: state.reportType === "aggregate" ? state.excludeDisposition : "",
-    page: state.page > 1 ? String(state.page) : "",
+  return buildAggregateExplorerParams(state, {
+    includeDomains: true,
+    extraParams: {
+      report_type: state.reportType !== "aggregate" ? state.reportType : "",
+    },
   });
-}
-
-function buildAggregateRequest(state: SearchState): SearchRecordsBody {
-  const include: Record<string, string[]> = {};
-  const exclude: Record<string, string[]> = {};
-
-  if (state.includeDmarcAlignment) {
-    include.dmarc_alignment = [state.includeDmarcAlignment];
-  }
-  if (state.includeDkimAlignment) {
-    include.dkim_alignment = [state.includeDkimAlignment];
-  }
-  if (state.includeSpfAlignment) {
-    include.spf_alignment = [state.includeSpfAlignment];
-  }
-  if (state.includeSpf) {
-    include.spf_result = [state.includeSpf];
-  }
-  if (state.includeDkim) {
-    include.dkim_result = [state.includeDkim];
-  }
-  if (state.includeDisposition) {
-    include.disposition = [state.includeDisposition];
-  }
-  if (state.excludeSpf) {
-    exclude.spf_result = [state.excludeSpf];
-  }
-  if (state.excludeDmarcAlignment) {
-    exclude.dmarc_alignment = [state.excludeDmarcAlignment];
-  }
-  if (state.excludeDkimAlignment) {
-    exclude.dkim_alignment = [state.excludeDkimAlignment];
-  }
-  if (state.excludeSpfAlignment) {
-    exclude.spf_alignment = [state.excludeSpfAlignment];
-  }
-  if (state.excludeDkim) {
-    exclude.dkim_result = [state.excludeDkim];
-  }
-  if (state.excludeDisposition) {
-    exclude.disposition = [state.excludeDisposition];
-  }
-
-  return {
-    domains: state.domains.length ? state.domains : undefined,
-    query: state.query || undefined,
-    from: state.from || undefined,
-    to: state.to || undefined,
-    include: Object.keys(include).length ? include : undefined,
-    exclude: Object.keys(exclude).length ? exclude : undefined,
-    page: state.page,
-    page_size: 10,
-  };
 }
 
 function buildForensicPath(state: SearchState): string {
@@ -220,32 +83,6 @@ function buildForensicPath(state: SearchState): string {
     page_size: "10",
   });
   return params ? `/api/v1/reports/forensic?${params}` : "/api/v1/reports/forensic";
-}
-
-function toggleValue(values: string[], value: string): string[] {
-  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
-}
-
-function appendQueryValue(query: string, value: string): string {
-  const trimmedValue = value.trim();
-  if (!trimmedValue) {
-    return query;
-  }
-  const parts = query
-    .split(/\s+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.includes(trimmedValue)) {
-    return query;
-  }
-  return [...parts, trimmedValue].join(" ");
-}
-
-function formatOptionLabel(value: string): string {
-  if (!value) {
-    return value;
-  }
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function getDomainSummaryLabel(selectedCount: number, totalCount: number): string {
@@ -261,28 +98,25 @@ function getDomainSummaryLabel(selectedCount: number, totalCount: number): strin
   return `${selectedCount} domains selected`;
 }
 
-function hasActiveSearchCriteria(state: SearchState): boolean {
-  if (state.domains.length || state.from || state.to) {
-    return true;
-  }
-  if (state.reportType === "aggregate") {
-    return !!(
-      state.query ||
-      state.includeDmarcAlignment ||
-      state.includeDkimAlignment ||
-      state.includeSpfAlignment ||
-      state.includeSpf ||
-      state.includeDkim ||
-      state.includeDisposition ||
-      state.excludeDmarcAlignment ||
-      state.excludeDkimAlignment ||
-      state.excludeSpfAlignment ||
-      state.excludeSpf ||
-      state.excludeDkim ||
-      state.excludeDisposition
-    );
-  }
-  return false;
+function hasAggregateCriteria(state: AggregateExplorerState): boolean {
+  return !!(
+    state.domains.length ||
+    state.query ||
+    state.from ||
+    state.to ||
+    state.includeDmarcAlignment.length ||
+    state.includeDkimAlignment.length ||
+    state.includeSpfAlignment.length ||
+    state.includeSpf.length ||
+    state.includeDkim.length ||
+    state.includeDisposition.length ||
+    state.excludeDmarcAlignment.length ||
+    state.excludeDkimAlignment.length ||
+    state.excludeSpfAlignment.length ||
+    state.excludeSpf.length ||
+    state.excludeDkim.length ||
+    state.excludeDisposition.length
+  );
 }
 
 function buildAppliedChips(
@@ -295,7 +129,7 @@ function buildAppliedChips(
     chips.push({
       id: `domain:${domain}`,
       label: `Domain: ${domain}`,
-      onRemove: () => onRemove((current) => ({ ...current, domains: current.domains.filter((entry) => entry !== domain) })),
+      onRemove: () => onRemove((current) => ({ ...current, domains: current.domains.filter((item) => item !== domain) })),
     });
   });
 
@@ -320,128 +154,186 @@ function buildAppliedChips(
       onRemove: () => onRemove((current) => ({ ...current, to: "" })),
     });
   }
-  if (state.includeSpf) {
+
+  appendFacetChips(chips, "SPF", "include-spf", state.includeSpf, (value) =>
+    onRemove((current) => ({ ...current, includeSpf: removeValue(current.includeSpf, value) })),
+  );
+  appendFacetChips(chips, "DKIM", "include-dkim", state.includeDkim, (value) =>
+    onRemove((current) => ({ ...current, includeDkim: removeValue(current.includeDkim, value) })),
+  );
+  appendFacetChips(chips, "Disposition", "include-disposition", state.includeDisposition, (value) =>
+    onRemove((current) => ({ ...current, includeDisposition: removeValue(current.includeDisposition, value) })),
+  );
+  appendFacetChips(chips, "DMARC alignment", "include-dmarc-alignment", state.includeDmarcAlignment, (value) =>
+    onRemove((current) => ({ ...current, includeDmarcAlignment: removeValue(current.includeDmarcAlignment, value) })),
+  );
+  appendFacetChips(chips, "DKIM alignment", "include-dkim-alignment", state.includeDkimAlignment, (value) =>
+    onRemove((current) => ({ ...current, includeDkimAlignment: removeValue(current.includeDkimAlignment, value) })),
+  );
+  appendFacetChips(chips, "SPF alignment", "include-spf-alignment", state.includeSpfAlignment, (value) =>
+    onRemove((current) => ({ ...current, includeSpfAlignment: removeValue(current.includeSpfAlignment, value) })),
+  );
+
+  appendFacetChips(
+    chips,
+    "Not SPF",
+    "exclude-spf",
+    state.excludeSpf,
+    (value) => onRemove((current) => ({ ...current, excludeSpf: removeValue(current.excludeSpf, value) })),
+    "exclude",
+  );
+  appendFacetChips(
+    chips,
+    "Not DKIM",
+    "exclude-dkim",
+    state.excludeDkim,
+    (value) => onRemove((current) => ({ ...current, excludeDkim: removeValue(current.excludeDkim, value) })),
+    "exclude",
+  );
+  appendFacetChips(
+    chips,
+    "Not disposition",
+    "exclude-disposition",
+    state.excludeDisposition,
+    (value) => onRemove((current) => ({ ...current, excludeDisposition: removeValue(current.excludeDisposition, value) })),
+    "exclude",
+  );
+  appendFacetChips(
+    chips,
+    "Not DMARC alignment",
+    "exclude-dmarc-alignment",
+    state.excludeDmarcAlignment,
+    (value) => onRemove((current) => ({ ...current, excludeDmarcAlignment: removeValue(current.excludeDmarcAlignment, value) })),
+    "exclude",
+  );
+  appendFacetChips(
+    chips,
+    "Not DKIM alignment",
+    "exclude-dkim-alignment",
+    state.excludeDkimAlignment,
+    (value) => onRemove((current) => ({ ...current, excludeDkimAlignment: removeValue(current.excludeDkimAlignment, value) })),
+    "exclude",
+  );
+  appendFacetChips(
+    chips,
+    "Not SPF alignment",
+    "exclude-spf-alignment",
+    state.excludeSpfAlignment,
+    (value) => onRemove((current) => ({ ...current, excludeSpfAlignment: removeValue(current.excludeSpfAlignment, value) })),
+    "exclude",
+  );
+
+  state.grouping.forEach((field, index) => {
+    const label = aggregateGroupingOptions.find((option) => option.value === field)?.label ?? field;
     chips.push({
-      id: "include-spf",
-      label: `SPF: ${formatOptionLabel(state.includeSpf)}`,
-      onRemove: () => onRemove((current) => ({ ...current, includeSpf: "" })),
+      id: `grouping:${field}`,
+      label: `Group ${index + 1}: ${label}`,
+      onRemove: () =>
+        onRemove((current) => ({
+          ...current,
+          grouping: current.grouping.filter((item) => item !== field),
+        })),
     });
-  }
-  if (state.excludeSpf) {
-    chips.push({
-      id: "exclude-spf",
-      label: `Not SPF: ${formatOptionLabel(state.excludeSpf)}`,
-      tone: "exclude",
-      onRemove: () => onRemove((current) => ({ ...current, excludeSpf: "" })),
-    });
-  }
-  if (state.includeDkim) {
-    chips.push({
-      id: "include-dkim",
-      label: `DKIM: ${formatOptionLabel(state.includeDkim)}`,
-      onRemove: () => onRemove((current) => ({ ...current, includeDkim: "" })),
-    });
-  }
-  if (state.excludeDkim) {
-    chips.push({
-      id: "exclude-dkim",
-      label: `Not DKIM: ${formatOptionLabel(state.excludeDkim)}`,
-      tone: "exclude",
-      onRemove: () => onRemove((current) => ({ ...current, excludeDkim: "" })),
-    });
-  }
-  if (state.includeDisposition) {
-    chips.push({
-      id: "include-disposition",
-      label: `Disposition: ${formatOptionLabel(state.includeDisposition)}`,
-      onRemove: () => onRemove((current) => ({ ...current, includeDisposition: "" })),
-    });
-  }
-  if (state.excludeDisposition) {
-    chips.push({
-      id: "exclude-disposition",
-      label: `Not disposition: ${formatOptionLabel(state.excludeDisposition)}`,
-      tone: "exclude",
-      onRemove: () => onRemove((current) => ({ ...current, excludeDisposition: "" })),
-    });
-  }
-  if (state.includeDmarcAlignment) {
-    chips.push({
-      id: "include-dmarc-alignment",
-      label: `DMARC alignment: ${formatOptionLabel(state.includeDmarcAlignment)}`,
-      onRemove: () => onRemove((current) => ({ ...current, includeDmarcAlignment: "" })),
-    });
-  }
-  if (state.excludeDmarcAlignment) {
-    chips.push({
-      id: "exclude-dmarc-alignment",
-      label: `Not DMARC alignment: ${formatOptionLabel(state.excludeDmarcAlignment)}`,
-      tone: "exclude",
-      onRemove: () => onRemove((current) => ({ ...current, excludeDmarcAlignment: "" })),
-    });
-  }
-  if (state.includeDkimAlignment) {
-    chips.push({
-      id: "include-dkim-alignment",
-      label: `DKIM alignment: ${formatOptionLabel(state.includeDkimAlignment)}`,
-      onRemove: () => onRemove((current) => ({ ...current, includeDkimAlignment: "" })),
-    });
-  }
-  if (state.excludeDkimAlignment) {
-    chips.push({
-      id: "exclude-dkim-alignment",
-      label: `Not DKIM alignment: ${formatOptionLabel(state.excludeDkimAlignment)}`,
-      tone: "exclude",
-      onRemove: () => onRemove((current) => ({ ...current, excludeDkimAlignment: "" })),
-    });
-  }
-  if (state.includeSpfAlignment) {
-    chips.push({
-      id: "include-spf-alignment",
-      label: `SPF alignment: ${formatOptionLabel(state.includeSpfAlignment)}`,
-      onRemove: () => onRemove((current) => ({ ...current, includeSpfAlignment: "" })),
-    });
-  }
-  if (state.excludeSpfAlignment) {
-    chips.push({
-      id: "exclude-spf-alignment",
-      label: `Not SPF alignment: ${formatOptionLabel(state.excludeSpfAlignment)}`,
-      tone: "exclude",
-      onRemove: () => onRemove((current) => ({ ...current, excludeSpfAlignment: "" })),
-    });
-  }
+  });
 
   return chips;
 }
 
+function appendFacetChips(
+  chips: AppliedFilterChip[],
+  label: string,
+  keyPrefix: string,
+  values: string[],
+  onRemoveValue: (value: string) => void,
+  tone: "default" | "exclude" = "default",
+) {
+  values.forEach((value) => {
+    chips.push({
+      id: `${keyPrefix}:${value}`,
+      label: `${label}: ${formatOptionLabel(value)}`,
+      tone,
+      onRemove: () => onRemoveValue(value),
+    });
+  });
+}
+
+function renderMultiValueToggles(
+  values: string[],
+  selectedValues: string[],
+  onToggle: (value: string) => void,
+) {
+  return (
+    <div className="checkbox-grid">
+      {values.map((value) => (
+        <label className="checkbox-card" key={value}>
+          <input checked={selectedValues.includes(value)} onChange={() => onToggle(value)} type="checkbox" />
+          <span>{formatOptionLabel(value)}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export function SearchContent() {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-
-  const currentState = useMemo(() => parseSearchState(searchParams), [searchParams]);
-  const [draftState, setDraftState] = useState<SearchState>(currentState);
+  const initialState = useMemo(() => parseSearchState(searchParams), [searchParams]);
+  const {
+    appliedState: currentState,
+    commitState,
+    draftState,
+    resetState: replaceExplorerState,
+    setDraftOnly,
+    updateDraftState,
+  } = useAggregateExplorerState<SearchState>({
+    buildParams: buildSearchRouteParams,
+    initialState,
+    parseState: parseSearchState,
+    pathname,
+    resetKey: pathname,
+  });
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [selectedAggregateReportId, setSelectedAggregateReportId] = useState<string | null>(null);
   const [selectedForensicReportId, setSelectedForensicReportId] = useState<string | null>(null);
+  const [groupToAdd, setGroupToAdd] = useState(aggregateGroupingOptions[0]?.value ?? "domain");
+  const availableGroupingOptions = useMemo(
+    () => getAvailableAggregateGroupingOptions(draftState.grouping),
+    [draftState.grouping],
+  );
+  const selectedGroupingValue = useMemo(
+    () => getSelectedAggregateGroupingValue(draftState.grouping, groupToAdd),
+    [draftState.grouping, groupToAdd],
+  );
 
   useEffect(() => {
-    setDraftState(currentState);
-  }, [currentState]);
+    if (groupToAdd !== selectedGroupingValue) {
+      setGroupToAdd(selectedGroupingValue);
+    }
+  }, [groupToAdd, selectedGroupingValue]);
 
   const domainsQuery = useQuery({
     queryKey: ["domains"],
     queryFn: () => apiClient.get<DomainsResponse>("/api/v1/domains"),
   });
 
-  const aggregateRequest = useMemo(() => buildAggregateRequest(currentState), [currentState]);
+  const aggregateRequest = useMemo(() => buildAggregateSearchBody(currentState, currentState.domains), [currentState]);
+  const groupedRootRequest = useMemo(
+    () => buildGroupedSearchBody(currentState, currentState.domains, { page: currentState.page, pageSize: 20 }),
+    [currentState],
+  );
   const forensicPath = useMemo(() => buildForensicPath(currentState), [currentState]);
-  const hasAppliedSearch = hasActiveSearchCriteria(currentState);
+  const hasAppliedSearch = currentState.reportType === "aggregate" ? hasAggregateCriteria(currentState) : !!(currentState.domains.length || currentState.from || currentState.to);
 
   const aggregateQuery = useQuery({
     queryKey: ["search", "aggregate", aggregateRequest],
     queryFn: () => apiClient.post<SearchRecordsResponse>("/api/v1/search", aggregateRequest),
-    enabled: currentState.reportType === "aggregate" && hasAppliedSearch,
+    enabled: currentState.reportType === "aggregate" && hasAppliedSearch && currentState.grouping.length === 0,
+  });
+
+  const groupedQuery = useQuery({
+    queryKey: ["search", "aggregate-grouped", groupedRootRequest],
+    queryFn: () => apiClient.post<GroupedSearchResponse>("/api/v1/search/grouped", groupedRootRequest),
+    enabled: currentState.reportType === "aggregate" && hasAppliedSearch && currentState.grouping.length > 0,
   });
 
   const forensicQuery = useQuery({
@@ -451,96 +343,114 @@ export function SearchContent() {
   });
 
   const aggregateResult = aggregateQuery.data;
+  const groupedResult = groupedQuery.data;
   const forensicResult = forensicQuery.data;
-  const activeResult = currentState.reportType === "aggregate" ? aggregateResult : forensicResult;
-  const isLoading = currentState.reportType === "aggregate" ? aggregateQuery.isLoading : forensicQuery.isLoading;
-  const error = currentState.reportType === "aggregate" ? aggregateQuery.error : forensicQuery.error;
+  const activeResult = currentState.reportType === "forensic" ? forensicResult : currentState.grouping.length ? groupedResult : aggregateResult;
+  const isLoading =
+    currentState.reportType === "forensic" ? forensicQuery.isLoading : currentState.grouping.length ? groupedQuery.isLoading : aggregateQuery.isLoading;
+  const error =
+    currentState.reportType === "forensic" ? forensicQuery.error : currentState.grouping.length ? groupedQuery.error : aggregateQuery.error;
   const totalPages = activeResult ? Math.max(1, Math.ceil(activeResult.total / activeResult.page_size)) : 1;
   const domains = domainsQuery.data?.domains ?? [];
   const appliedChips = buildAppliedChips(currentState, (updater) => {
-    const nextState = updater(currentState);
-    updateUrl({ ...nextState, page: 1 });
+    updateDraftState((current) => ({ ...updater(current), page: 1 }));
   });
-  const resultsSummary = !hasAppliedSearch
-    ? currentState.reportType === "aggregate"
-      ? "Start with a query, domain, date, or advanced filter to avoid broad random-looking result lists."
-      : "Pick a domain or date range before loading forensic reports."
-    : activeResult
-      ? `Showing ${activeResult.items.length} of ${activeResult.total} ${currentState.reportType === "aggregate" ? "matching records" : "reports"}.`
-      : currentState.reportType === "aggregate"
-        ? "Search aggregate records across your visible domains."
-        : "Review forensic reports for the domains you can access.";
 
-  function updateUrl(state: SearchState) {
-    const nextParams = buildSearchRouteParams(state);
-    router.replace(nextParams ? `${pathname}?${nextParams}` : pathname);
+  function updateSearchDraft(
+    updater: SearchState | ((current: SearchState) => SearchState),
+    mode: "immediate" | "debounced" = "immediate",
+  ) {
+    if (draftState.reportType === "aggregate") {
+      return updateDraftState(updater, mode);
+    }
+    return setDraftOnly(updater);
   }
 
   function applySearch() {
-    updateUrl({ ...draftState, page: 1 });
+    commitState((current) => ({ ...current, page: 1 }));
     setIsFiltersOpen(false);
   }
 
   function resetSearch() {
-    setDraftState(defaultSearchState);
-    updateUrl(defaultSearchState);
+    const nextState: SearchState = {
+      ...defaultAggregateExplorerState,
+      reportType: draftState.reportType,
+    };
+    replaceExplorerState(nextState);
     setIsFiltersOpen(false);
   }
 
   function goToPage(page: number) {
-    updateUrl({ ...currentState, page });
+    if (currentState.reportType === "aggregate") {
+      updateDraftState((current) => ({ ...current, page }));
+      return;
+    }
+    replaceExplorerState({ ...currentState, page });
   }
 
   function handleQuickFilter(option: SearchQuickFilterOption) {
-    const nextState = { ...currentState, page: 1 };
-
-    if (option.target === "domains") {
-      nextState.domains = currentState.domains.includes(option.value)
-        ? currentState.domains
-        : [...currentState.domains, option.value];
-    } else if (option.target === "query") {
-      nextState.query = appendQueryValue(currentState.query, option.value);
-    } else if (option.target === "include_spf") {
-      nextState.includeSpf = option.value;
-      nextState.excludeSpf = "";
-    } else if (option.target === "exclude_spf") {
-      nextState.excludeSpf = option.value;
-      nextState.includeSpf = "";
-    } else if (option.target === "include_dkim") {
-      nextState.includeDkim = option.value;
-      nextState.excludeDkim = "";
-    } else if (option.target === "exclude_dkim") {
-      nextState.excludeDkim = option.value;
-      nextState.includeDkim = "";
-    } else if (option.target === "include_disposition") {
-      nextState.includeDisposition = option.value;
-      nextState.excludeDisposition = "";
-    } else if (option.target === "exclude_disposition") {
-      nextState.excludeDisposition = option.value;
-      nextState.includeDisposition = "";
-    } else if (option.target === "include_dmarc_alignment") {
-      nextState.includeDmarcAlignment = option.value;
-      nextState.excludeDmarcAlignment = "";
-    } else if (option.target === "exclude_dmarc_alignment") {
-      nextState.excludeDmarcAlignment = option.value;
-      nextState.includeDmarcAlignment = "";
-    } else if (option.target === "include_dkim_alignment") {
-      nextState.includeDkimAlignment = option.value;
-      nextState.excludeDkimAlignment = "";
-    } else if (option.target === "exclude_dkim_alignment") {
-      nextState.excludeDkimAlignment = option.value;
-      nextState.includeDkimAlignment = "";
-    } else if (option.target === "include_spf_alignment") {
-      nextState.includeSpfAlignment = option.value;
-      nextState.excludeSpfAlignment = "";
-    } else if (option.target === "exclude_spf_alignment") {
-      nextState.excludeSpfAlignment = option.value;
-      nextState.includeSpfAlignment = "";
-    }
-
-    setDraftState(nextState);
-    updateUrl(nextState);
+    updateDraftState((current) => {
+      const nextState: SearchState = { ...current, page: 1 };
+      if (option.target === "domains") {
+        nextState.domains = addUniqueValue(current.domains, option.value);
+      } else if (option.target === "query") {
+        nextState.query = appendQueryValue(current.query, option.value);
+      } else if (option.target === "include_spf") {
+        nextState.includeSpf = addUniqueValue(current.includeSpf, option.value);
+        nextState.excludeSpf = removeValue(current.excludeSpf, option.value);
+      } else if (option.target === "exclude_spf") {
+        nextState.excludeSpf = addUniqueValue(current.excludeSpf, option.value);
+        nextState.includeSpf = removeValue(current.includeSpf, option.value);
+      } else if (option.target === "include_dkim") {
+        nextState.includeDkim = addUniqueValue(current.includeDkim, option.value);
+        nextState.excludeDkim = removeValue(current.excludeDkim, option.value);
+      } else if (option.target === "exclude_dkim") {
+        nextState.excludeDkim = addUniqueValue(current.excludeDkim, option.value);
+        nextState.includeDkim = removeValue(current.includeDkim, option.value);
+      } else if (option.target === "include_disposition") {
+        nextState.includeDisposition = addUniqueValue(current.includeDisposition, option.value);
+        nextState.excludeDisposition = removeValue(current.excludeDisposition, option.value);
+      } else if (option.target === "exclude_disposition") {
+        nextState.excludeDisposition = addUniqueValue(current.excludeDisposition, option.value);
+        nextState.includeDisposition = removeValue(current.includeDisposition, option.value);
+      } else if (option.target === "include_dmarc_alignment") {
+        nextState.includeDmarcAlignment = addUniqueValue(current.includeDmarcAlignment, option.value);
+        nextState.excludeDmarcAlignment = removeValue(current.excludeDmarcAlignment, option.value);
+      } else if (option.target === "exclude_dmarc_alignment") {
+        nextState.excludeDmarcAlignment = addUniqueValue(current.excludeDmarcAlignment, option.value);
+        nextState.includeDmarcAlignment = removeValue(current.includeDmarcAlignment, option.value);
+      } else if (option.target === "include_dkim_alignment") {
+        nextState.includeDkimAlignment = addUniqueValue(current.includeDkimAlignment, option.value);
+        nextState.excludeDkimAlignment = removeValue(current.excludeDkimAlignment, option.value);
+      } else if (option.target === "exclude_dkim_alignment") {
+        nextState.excludeDkimAlignment = addUniqueValue(current.excludeDkimAlignment, option.value);
+        nextState.includeDkimAlignment = removeValue(current.includeDkimAlignment, option.value);
+      } else if (option.target === "include_spf_alignment") {
+        nextState.includeSpfAlignment = addUniqueValue(current.includeSpfAlignment, option.value);
+        nextState.excludeSpfAlignment = removeValue(current.excludeSpfAlignment, option.value);
+      } else if (option.target === "exclude_spf_alignment") {
+        nextState.excludeSpfAlignment = addUniqueValue(current.excludeSpfAlignment, option.value);
+        nextState.includeSpfAlignment = removeValue(current.includeSpfAlignment, option.value);
+      }
+      return nextState;
+    });
   }
+
+  async function loadGroupedBranch(path: GroupPathPart[]) {
+    return apiClient.post<GroupedSearchResponse>(
+      "/api/v1/search/grouped",
+      buildGroupedSearchBody(currentState, currentState.domains, { path, page: 1, pageSize: 50 }),
+    );
+  }
+
+  const resultsSummary =
+    !hasAppliedSearch
+      ? currentState.reportType === "aggregate"
+        ? "Start with a query, domain, date, or advanced filter to avoid broad random-looking result lists."
+        : "Pick a domain or date range before loading forensic reports."
+      : activeResult
+        ? `Showing ${activeResult.items.length} of ${activeResult.total} ${currentState.reportType === "aggregate" ? "matching records or groups" : "reports"}.`
+        : "Review the current results for the domains you can access.";
 
   return (
     <AppShell
@@ -553,6 +463,7 @@ export function SearchContent() {
             domainsQuery.refetch();
             if (hasAppliedSearch) {
               aggregateQuery.refetch();
+              groupedQuery.refetch();
               forensicQuery.refetch();
             }
           }}
@@ -574,26 +485,21 @@ export function SearchContent() {
             Report type
             <select
               className="field-input"
-              onChange={(event) =>
-                setDraftState((current) => ({
-                  ...current,
-                  reportType: event.target.value === "forensic" ? "forensic" : "aggregate",
-                  page: 1,
-                  query: event.target.value === "forensic" ? "" : current.query,
-                  includeDmarcAlignment: event.target.value === "forensic" ? "" : current.includeDmarcAlignment,
-                  includeDkimAlignment: event.target.value === "forensic" ? "" : current.includeDkimAlignment,
-                  includeSpfAlignment: event.target.value === "forensic" ? "" : current.includeSpfAlignment,
-                  includeSpf: event.target.value === "forensic" ? "" : current.includeSpf,
-                  includeDkim: event.target.value === "forensic" ? "" : current.includeDkim,
-                  includeDisposition: event.target.value === "forensic" ? "" : current.includeDisposition,
-                  excludeDmarcAlignment: event.target.value === "forensic" ? "" : current.excludeDmarcAlignment,
-                  excludeDkimAlignment: event.target.value === "forensic" ? "" : current.excludeDkimAlignment,
-                  excludeSpfAlignment: event.target.value === "forensic" ? "" : current.excludeSpfAlignment,
-                  excludeSpf: event.target.value === "forensic" ? "" : current.excludeSpf,
-                  excludeDkim: event.target.value === "forensic" ? "" : current.excludeDkim,
-                  excludeDisposition: event.target.value === "forensic" ? "" : current.excludeDisposition,
-                }))
-              }
+              onChange={(event) => {
+                const nextReportType = event.target.value === "forensic" ? "forensic" : "aggregate";
+                const updater = (current: SearchState): SearchState => ({
+                  ...defaultAggregateExplorerState,
+                  reportType: nextReportType,
+                  domains: current.domains,
+                  from: current.from,
+                  to: current.to,
+                });
+                if (nextReportType === "aggregate") {
+                  updateDraftState(updater);
+                  return;
+                }
+                setDraftOnly(updater);
+              }}
               value={draftState.reportType}
             >
               <option value="aggregate">Aggregate</option>
@@ -605,7 +511,9 @@ export function SearchContent() {
             <input
               className="field-input"
               disabled={draftState.reportType === "forensic"}
-              onChange={(event) => setDraftState((current) => ({ ...current, query: event.target.value }))}
+              onChange={(event) =>
+                updateSearchDraft((current) => ({ ...current, page: 1, query: event.target.value }), "debounced")
+              }
               placeholder={draftState.reportType === "forensic" ? "Forensic reports use domain or date filters" : "IP, org, host, or address"}
               value={draftState.query}
             />
@@ -614,7 +522,9 @@ export function SearchContent() {
             From
             <input
               className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, from: event.target.value }))}
+              onChange={(event) =>
+                updateSearchDraft((current) => ({ ...current, from: event.target.value, page: 1 }), "debounced")
+              }
               type="date"
               value={draftState.from}
             />
@@ -623,7 +533,9 @@ export function SearchContent() {
             To
             <input
               className="field-input"
-              onChange={(event) => setDraftState((current) => ({ ...current, to: event.target.value }))}
+              onChange={(event) =>
+                updateSearchDraft((current) => ({ ...current, page: 1, to: event.target.value }), "debounced")
+              }
               type="date"
               value={draftState.to}
             />
@@ -633,23 +545,23 @@ export function SearchContent() {
               <button className="button-secondary" onClick={() => setIsFiltersOpen(true)} type="button">
                 More filters
               </button>
-            ) : null}
-            <button className="button-primary" type="submit">
-              Search
-            </button>
+            ) : (
+              <button className="button-primary" type="submit">
+                Search
+              </button>
+            )}
             <button className="button-secondary" onClick={resetSearch} type="button">
               Reset
             </button>
           </div>
         </form>
+
         <div className="search-domain-picker">
           <span className="field-label" style={{ gap: 0 }}>
             Domains
           </span>
           {domainsQuery.isLoading ? <p className="status-text">Loading visible domains...</p> : null}
-          {!domainsQuery.isLoading && !domains.length ? (
-            <p className="status-text">No visible domains are available for this account yet.</p>
-          ) : null}
+          {!domainsQuery.isLoading && !domains.length ? <p className="status-text">No visible domains are available for this account yet.</p> : null}
           {domains.length ? (
             <div className="search-domain-grid">
               {domains.map((domain: DomainSummary) => (
@@ -657,10 +569,7 @@ export function SearchContent() {
                   <input
                     checked={draftState.domains.includes(domain.name)}
                     onChange={() =>
-                      setDraftState((current) => ({
-                        ...current,
-                        domains: toggleValue(current.domains, domain.name),
-                      }))
+                      updateSearchDraft((current) => ({ ...current, domains: toggleValue(current.domains, domain.name), page: 1 }))
                     }
                     type="checkbox"
                   />
@@ -670,6 +579,111 @@ export function SearchContent() {
             </div>
           ) : null}
         </div>
+
+        {draftState.reportType === "aggregate" ? (
+          <div className="stack" style={{ gap: 12 }}>
+            <div className="section-heading">
+              <div className="stack" style={{ gap: 6 }}>
+                <h2 className="section-title">Grouping</h2>
+                <p className="section-intro">Build up to four grouping levels. Group changes update the results and URL immediately.</p>
+              </div>
+            </div>
+            <div className="filter-chip-row">
+              {draftState.grouping.length ? (
+                draftState.grouping.map((field, index) => {
+                  const label = aggregateGroupingOptions.find((option) => option.value === field)?.label ?? field;
+                  return (
+                    <span className="filter-chip" key={field}>
+                      <span>{`${index + 1}. ${label}`}</span>
+                      <button
+                        aria-label={`Move ${label} earlier`}
+                        className="filter-chip-remove"
+                        disabled={index === 0}
+                        onClick={() =>
+                          updateDraftState((current) => {
+                            const next = [...current.grouping];
+                            [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                            return { ...current, grouping: next, page: 1 };
+                          })
+                        }
+                        type="button"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        aria-label={`Move ${label} later`}
+                        className="filter-chip-remove"
+                        disabled={index === draftState.grouping.length - 1}
+                        onClick={() =>
+                          updateDraftState((current) => {
+                            const next = [...current.grouping];
+                            [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                            return { ...current, grouping: next, page: 1 };
+                          })
+                        }
+                        type="button"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        aria-label={`Remove ${label}`}
+                        className="filter-chip-remove"
+                        onClick={() =>
+                          updateDraftState((current) => ({
+                            ...current,
+                            grouping: current.grouping.filter((item) => item !== field),
+                            page: 1,
+                          }))
+                        }
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })
+              ) : (
+                <span className="status-text">No grouping selected.</span>
+              )}
+            </div>
+            <div className="search-toolbar-actions">
+              <label className="field-label">
+                Add grouping
+                <select
+                  className="field-input"
+                  disabled={!availableGroupingOptions.length}
+                  onChange={(event) => setGroupToAdd(event.target.value)}
+                  value={selectedGroupingValue}
+                >
+                  {availableGroupingOptions.length ? (
+                    availableGroupingOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">No levels available</option>
+                  )}
+                </select>
+              </label>
+              <button
+                className="button-secondary"
+                disabled={!selectedGroupingValue || draftState.grouping.length >= 4}
+                onClick={() =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    grouping: current.grouping.length >= 4 || !selectedGroupingValue ? current.grouping : [...current.grouping, selectedGroupingValue],
+                    page: 1,
+                  }))
+                }
+                type="button"
+              >
+                Add level
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="search-toolbar-meta">
           <span className="status-text">{getDomainSummaryLabel(draftState.domains.length, domains.length)}</span>
           {draftState.reportType === "aggregate" ? (
@@ -705,33 +719,25 @@ export function SearchContent() {
             ))}
           </div>
         ) : null}
-        {!hasAppliedSearch ? (
-          <p className="status-text">
-            Nothing is loaded yet. Add a query, domain, date range, or advanced filter and run a search.
-          </p>
-        ) : null}
+        {!hasAppliedSearch ? <p className="status-text">Nothing is loaded yet. Add a query, domain, date range, or advanced filter and the results will update here.</p> : null}
         {hasAppliedSearch && isLoading ? <p className="status-text">Loading results...</p> : null}
         {hasAppliedSearch && error ? <p className="error-text">{error instanceof Error ? error.message : "Failed to load results"}</p> : null}
-        {domainsQuery.error ? (
-          <p className="error-text">
-            {domainsQuery.error instanceof Error ? domainsQuery.error.message : "Failed to load visible domains"}
-          </p>
+        {domainsQuery.error ? <p className="error-text">{domainsQuery.error instanceof Error ? domainsQuery.error.message : "Failed to load visible domains"}</p> : null}
+        {hasAppliedSearch && aggregateResult && currentState.reportType === "aggregate" && !currentState.grouping.length ? (
+          <AggregateSearchResultsTable emptyMessage="No aggregate results found." onQuickFilter={handleQuickFilter} onViewReport={setSelectedAggregateReportId} result={aggregateResult} />
         ) : null}
-        {hasAppliedSearch && aggregateResult && currentState.reportType === "aggregate" ? (
-          <AggregateSearchResultsTable
-            emptyMessage="No aggregate results found."
+        {hasAppliedSearch && groupedResult && currentState.reportType === "aggregate" && currentState.grouping.length ? (
+          <GroupedAggregateResultsTable
+            emptyMessage="No grouped aggregate results found."
+            grouping={currentState.grouping}
+            initialResult={groupedResult}
+            loadBranch={loadGroupedBranch}
             onQuickFilter={handleQuickFilter}
             onViewReport={setSelectedAggregateReportId}
-            result={aggregateResult}
           />
         ) : null}
         {hasAppliedSearch && forensicResult && currentState.reportType === "forensic" ? (
-          <ForensicResultsTable
-            emptyMessage="No forensic reports found."
-            onQuickFilter={handleQuickFilter}
-            onViewReport={setSelectedForensicReportId}
-            result={forensicResult}
-          />
+          <ForensicResultsTable emptyMessage="No forensic reports found." onQuickFilter={handleQuickFilter} onViewReport={setSelectedForensicReportId} result={forensicResult} />
         ) : null}
         {hasAppliedSearch && activeResult ? (
           <div className="pagination-row">
@@ -739,20 +745,10 @@ export function SearchContent() {
               Page {activeResult.page} of {totalPages}
             </span>
             <div style={{ display: "flex", gap: 12 }}>
-              <button
-                className="button-secondary"
-                disabled={currentState.page <= 1}
-                onClick={() => goToPage(Math.max(1, currentState.page - 1))}
-                type="button"
-              >
+              <button className="button-secondary" disabled={currentState.page <= 1} onClick={() => goToPage(Math.max(1, currentState.page - 1))} type="button">
                 Previous
               </button>
-              <button
-                className="button-secondary"
-                disabled={currentState.page >= totalPages}
-                onClick={() => goToPage(currentState.page + 1)}
-                type="button"
-              >
+              <button className="button-secondary" disabled={currentState.page >= totalPages} onClick={() => goToPage(currentState.page + 1)} type="button">
                 Next
               </button>
             </div>
@@ -761,7 +757,7 @@ export function SearchContent() {
       </section>
 
       <SlideOverPanel
-        description="Refine aggregate searches with pass/fail and disposition filters."
+        description="Refine aggregate searches with include/exclude facets. Changes apply instantly and stay in the URL."
         onClose={() => setIsFiltersOpen(false)}
         open={isFiltersOpen}
         title="More filters"
@@ -774,194 +770,151 @@ export function SearchContent() {
           }}
         >
           {draftState.reportType === "aggregate" ? (
-            <div className="search-state-grid">
-              <label className="field-label">
-                Include DMARC alignment
-                <select
-                  className="field-input"
-                  onChange={(event) => setDraftState((current) => ({ ...current, includeDmarcAlignment: event.target.value }))}
-                  value={draftState.includeDmarcAlignment}
-                >
-                  {dmarcAlignmentOptions.map((option) => (
-                    <option key={`include-dmarc-alignment-${option.value || "any"}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Include DKIM alignment
-                <select
-                  className="field-input"
-                  onChange={(event) => setDraftState((current) => ({ ...current, includeDkimAlignment: event.target.value }))}
-                  value={draftState.includeDkimAlignment}
-                >
-                  {alignmentModeOptions.map((option) => (
-                    <option key={`include-dkim-alignment-${option.value || "any"}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Include SPF alignment
-                <select
-                  className="field-input"
-                  onChange={(event) => setDraftState((current) => ({ ...current, includeSpfAlignment: event.target.value }))}
-                  value={draftState.includeSpfAlignment}
-                >
-                  {alignmentModeOptions.map((option) => (
-                    <option key={`include-spf-alignment-${option.value || "any"}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Include SPF
-                <select
-                  className="field-input"
-                  onChange={(event) => setDraftState((current) => ({ ...current, includeSpf: event.target.value }))}
-                  value={draftState.includeSpf}
-                >
-                  {resultOptions.map((option) => (
-                    <option key={`include-spf-${option.value || "any"}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Include DKIM
-                <select
-                  className="field-input"
-                  onChange={(event) => setDraftState((current) => ({ ...current, includeDkim: event.target.value }))}
-                  value={draftState.includeDkim}
-                >
-                  {resultOptions.map((option) => (
-                    <option key={`include-dkim-${option.value || "any"}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Include disposition
-                <select
-                  className="field-input"
-                  onChange={(event) => setDraftState((current) => ({ ...current, includeDisposition: event.target.value }))}
-                  value={draftState.includeDisposition}
-                >
-                  {dispositionOptions.map((option) => (
-                    <option key={`include-disposition-${option.value || "any"}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Exclude DMARC alignment
-                <select
-                  className="field-input"
-                  onChange={(event) => setDraftState((current) => ({ ...current, excludeDmarcAlignment: event.target.value }))}
-                  value={draftState.excludeDmarcAlignment}
-                >
-                  {dmarcAlignmentOptions.map((option) => (
-                    <option key={`exclude-dmarc-alignment-${option.value || "any"}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Exclude DKIM alignment
-                <select
-                  className="field-input"
-                  onChange={(event) => setDraftState((current) => ({ ...current, excludeDkimAlignment: event.target.value }))}
-                  value={draftState.excludeDkimAlignment}
-                >
-                  {alignmentModeOptions.map((option) => (
-                    <option key={`exclude-dkim-alignment-${option.value || "any"}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Exclude SPF alignment
-                <select
-                  className="field-input"
-                  onChange={(event) => setDraftState((current) => ({ ...current, excludeSpfAlignment: event.target.value }))}
-                  value={draftState.excludeSpfAlignment}
-                >
-                  {alignmentModeOptions.map((option) => (
-                    <option key={`exclude-spf-alignment-${option.value || "any"}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Exclude SPF
-                <select
-                  className="field-input"
-                  onChange={(event) => setDraftState((current) => ({ ...current, excludeSpf: event.target.value }))}
-                  value={draftState.excludeSpf}
-                >
-                  {resultOptions.map((option) => (
-                    <option key={`exclude-spf-${option.value || "any"}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Exclude DKIM
-                <select
-                  className="field-input"
-                  onChange={(event) => setDraftState((current) => ({ ...current, excludeDkim: event.target.value }))}
-                  value={draftState.excludeDkim}
-                >
-                  {resultOptions.map((option) => (
-                    <option key={`exclude-dkim-${option.value || "any"}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Exclude disposition
-                <select
-                  className="field-input"
-                  onChange={(event) => setDraftState((current) => ({ ...current, excludeDisposition: event.target.value }))}
-                  value={draftState.excludeDisposition}
-                >
-                  {dispositionOptions.map((option) => (
-                    <option key={`exclude-disposition-${option.value || "any"}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <>
+              <div className="stack" style={{ gap: 10 }}>
+                <p className="stat-label">Include SPF</p>
+                {renderMultiValueToggles(resultOptions, draftState.includeSpf, (value) =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    includeSpf: toggleValue(current.includeSpf, value),
+                    excludeSpf: removeValue(current.excludeSpf, value),
+                    page: 1,
+                  })),
+                )}
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                <p className="stat-label">Exclude SPF</p>
+                {renderMultiValueToggles(resultOptions, draftState.excludeSpf, (value) =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    excludeSpf: toggleValue(current.excludeSpf, value),
+                    includeSpf: removeValue(current.includeSpf, value),
+                    page: 1,
+                  })),
+                )}
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                <p className="stat-label">Include DKIM</p>
+                {renderMultiValueToggles(resultOptions, draftState.includeDkim, (value) =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    includeDkim: toggleValue(current.includeDkim, value),
+                    excludeDkim: removeValue(current.excludeDkim, value),
+                    page: 1,
+                  })),
+                )}
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                <p className="stat-label">Exclude DKIM</p>
+                {renderMultiValueToggles(resultOptions, draftState.excludeDkim, (value) =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    excludeDkim: toggleValue(current.excludeDkim, value),
+                    includeDkim: removeValue(current.includeDkim, value),
+                    page: 1,
+                  })),
+                )}
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                <p className="stat-label">Include disposition</p>
+                {renderMultiValueToggles(dispositionOptions, draftState.includeDisposition, (value) =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    includeDisposition: toggleValue(current.includeDisposition, value),
+                    excludeDisposition: removeValue(current.excludeDisposition, value),
+                    page: 1,
+                  })),
+                )}
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                <p className="stat-label">Exclude disposition</p>
+                {renderMultiValueToggles(dispositionOptions, draftState.excludeDisposition, (value) =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    excludeDisposition: toggleValue(current.excludeDisposition, value),
+                    includeDisposition: removeValue(current.includeDisposition, value),
+                    page: 1,
+                  })),
+                )}
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                <p className="stat-label">Include DMARC alignment</p>
+                {renderMultiValueToggles(dmarcAlignmentOptions, draftState.includeDmarcAlignment, (value) =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    includeDmarcAlignment: toggleValue(current.includeDmarcAlignment, value),
+                    excludeDmarcAlignment: removeValue(current.excludeDmarcAlignment, value),
+                    page: 1,
+                  })),
+                )}
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                <p className="stat-label">Exclude DMARC alignment</p>
+                {renderMultiValueToggles(dmarcAlignmentOptions, draftState.excludeDmarcAlignment, (value) =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    excludeDmarcAlignment: toggleValue(current.excludeDmarcAlignment, value),
+                    includeDmarcAlignment: removeValue(current.includeDmarcAlignment, value),
+                    page: 1,
+                  })),
+                )}
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                <p className="stat-label">Include DKIM alignment</p>
+                {renderMultiValueToggles(alignmentModeOptions, draftState.includeDkimAlignment, (value) =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    includeDkimAlignment: toggleValue(current.includeDkimAlignment, value),
+                    excludeDkimAlignment: removeValue(current.excludeDkimAlignment, value),
+                    page: 1,
+                  })),
+                )}
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                <p className="stat-label">Exclude DKIM alignment</p>
+                {renderMultiValueToggles(alignmentModeOptions, draftState.excludeDkimAlignment, (value) =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    excludeDkimAlignment: toggleValue(current.excludeDkimAlignment, value),
+                    includeDkimAlignment: removeValue(current.includeDkimAlignment, value),
+                    page: 1,
+                  })),
+                )}
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                <p className="stat-label">Include SPF alignment</p>
+                {renderMultiValueToggles(alignmentModeOptions, draftState.includeSpfAlignment, (value) =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    includeSpfAlignment: toggleValue(current.includeSpfAlignment, value),
+                    excludeSpfAlignment: removeValue(current.excludeSpfAlignment, value),
+                    page: 1,
+                  })),
+                )}
+              </div>
+              <div className="stack" style={{ gap: 10 }}>
+                <p className="stat-label">Exclude SPF alignment</p>
+                {renderMultiValueToggles(alignmentModeOptions, draftState.excludeSpfAlignment, (value) =>
+                  updateDraftState((current) => ({
+                    ...current,
+                    excludeSpfAlignment: toggleValue(current.excludeSpfAlignment, value),
+                    includeSpfAlignment: removeValue(current.includeSpfAlignment, value),
+                    page: 1,
+                  })),
+                )}
+              </div>
+            </>
           ) : null}
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <button className="button-primary" type="submit">
-              Apply filters
-            </button>
+          <div className="search-toolbar-actions">
             <button className="button-secondary" onClick={() => setIsFiltersOpen(false)} type="button">
-              Close
+              Done
             </button>
           </div>
         </form>
       </SlideOverPanel>
 
-      {selectedAggregateReportId ? (
-        <ReportDetailModal kind="aggregate" onClose={() => setSelectedAggregateReportId(null)} reportId={selectedAggregateReportId} />
-      ) : null}
-      {selectedForensicReportId ? (
-        <ReportDetailModal kind="forensic" onClose={() => setSelectedForensicReportId(null)} reportId={selectedForensicReportId} />
-      ) : null}
+      {selectedAggregateReportId ? <ReportDetailModal kind="aggregate" onClose={() => setSelectedAggregateReportId(null)} reportId={selectedAggregateReportId} /> : null}
+      {selectedForensicReportId ? <ReportDetailModal kind="forensic" onClose={() => setSelectedForensicReportId(null)} reportId={selectedForensicReportId} /> : null}
     </AppShell>
   );
 }

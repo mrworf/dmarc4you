@@ -199,6 +199,42 @@ Request example:
 
 Aggregate search filters also support `dkim_alignment`, `spf_alignment`, and `dmarc_alignment`.
 
+### `POST /api/v1/search/grouped`
+
+Hierarchical aggregate search for the dashboard/search explorer.
+
+Request example:
+
+```json
+{
+  "domains": ["example.com"],
+  "from": "2026-03-01T00:00:00Z",
+  "to": "2026-03-08T00:00:00Z",
+  "include": {
+    "spf_result": ["fail", "pass"]
+  },
+  "exclude": {
+    "disposition": ["none"]
+  },
+  "query": "google",
+  "grouping": ["domain", "org_name", "disposition"],
+  "path": [
+    {"field": "domain", "value": "example.com"}
+  ],
+  "page": 1,
+  "page_size": 20
+}
+```
+
+Behavior:
+
+- `grouping` is required and supports `domain`, `org_name`, `record_date`, `source_ip`, `resolved_name_domain`, `disposition`, `dmarc_alignment`, `dkim_alignment`, and `spf_alignment`
+- grouping depth is capped at 4 fields
+- when `path.length < grouping.length`, the response returns grouped nodes for the next grouping level
+- when `path.length === grouping.length`, the response returns aggregate leaf rows for that branch
+- group nodes include `row_count`, `report_count`, `message_count`, `first_record_date`, `last_record_date`, `dmarc_alignment_summary`, and `disposition_summary`
+- `path` must follow the configured grouping order or the endpoint returns 400
+
 ## Domain maintenance endpoints
 
 ### `POST /api/v1/domains/{domain_id}/recompute`

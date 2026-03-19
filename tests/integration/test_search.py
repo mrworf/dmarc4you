@@ -336,6 +336,56 @@ def test_post_search_groups_by_record_date(search_records_client) -> None:
     assert data["items"][0]["group_value"] == "2025-01-01"
 
 
+def test_post_grouped_search_returns_group_nodes(search_records_client) -> None:
+    client, _ = search_records_client
+    r = client.post("/api/v1/search/grouped", json={"grouping": ["domain", "disposition"]})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["level_kind"] == "group"
+    assert data["grouping"] == ["domain", "disposition"]
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+    node = data["items"][0]
+    assert node["type"] == "group"
+    assert node["field"] == "domain"
+    assert node["value"] == "example.com"
+    assert node["message_count"] == 13
+    assert node["dmarc_alignment_summary"]["pass"] == 10
+    assert node["dmarc_alignment_summary"]["fail"] == 3
+
+
+def test_post_grouped_search_returns_leaf_rows_for_branch(search_records_client) -> None:
+    client, _ = search_records_client
+    r = client.post(
+        "/api/v1/search/grouped",
+        json={
+            "grouping": ["domain", "disposition"],
+            "path": [
+                {"field": "domain", "value": "example.com"},
+                {"field": "disposition", "value": "reject"},
+            ],
+        },
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["level_kind"] == "row"
+    assert data["total"] == 1
+    assert data["items"][0]["type"] == "row"
+    assert data["items"][0]["disposition"] == "reject"
+
+
+def test_post_grouped_search_rejects_invalid_path_order(search_records_client) -> None:
+    client, _ = search_records_client
+    r = client.post(
+        "/api/v1/search/grouped",
+        json={
+            "grouping": ["domain", "disposition"],
+            "path": [{"field": "disposition", "value": "reject"}],
+        },
+    )
+    assert r.status_code == 400
+
+
 def test_post_search_domain_scoping(search_records_client, temp_db_path: str) -> None:
     """Viewer without domain assignment sees no records."""
     client, config = search_records_client
