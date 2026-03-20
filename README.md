@@ -1,4 +1,4 @@
-# DMARC Analyzer
+# DMARCWatch
 
 A self-hosted DMARC analysis platform for ingesting, storing, and reviewing DMARC aggregate and forensic reports.
 
@@ -22,13 +22,34 @@ pip install -r requirements.txt
 
 cp config.example.yaml config.yaml
 # Edit config.yaml and set a real auth.session_secret
+```
 
+Install the Next.js frontend in a second step:
+
+```bash
+cd frontend-next
+npm install
+cd ..
+```
+
+Start the backend API:
+
+```bash
 python -m backend.main
+```
+
+Start the frontend in another terminal:
+
+```bash
+cd frontend-next
+npm run dev
 ```
 
 On first startup, the bootstrap admin password is printed to stderr. Save it immediately.
 
-Open `http://localhost:8000` and log in as `admin`.
+Open `http://127.0.0.1:3000` and log in as `admin`.
+
+The backend API runs on `http://127.0.0.1:8000` by default. In production, serve the Next.js frontend and FastAPI behind the same public origin via a reverse proxy.
 
 ## Supported Ingest Formats
 

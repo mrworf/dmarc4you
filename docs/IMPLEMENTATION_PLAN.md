@@ -122,7 +122,7 @@ Deliver:
    - POST /dashboards/{id}/validate-update: dry-run validation before scope changes
    - Target must have access to all dashboard domains; viewer cannot be granted manager
 27. **Search UI** ✓ (done)
-   - /app/search route with domain/time/include/exclude filters calling POST /api/v1/search
+   - /search route with domain/time/include/exclude filters calling POST /api/v1/search
    - URL hash state for bookmarkable searches; pagination controls; results table
 28. **Forensic report support** ✓ (done)
    - forensic_reports table migration; forensic_parser.py for AFRF XML format
@@ -147,7 +147,7 @@ Deliver:
    - URL hash state for bookmarkable filtered audit views; pagination controls
    - Integration tests for filtered audit queries
 32. **Upload UI** ✓ (done)
-   - /app/upload route with textarea paste and file upload for XML or gzip-compressed XML
+   - /upload route with textarea paste and file upload for XML or gzip-compressed XML
    - Client-side base64 encoding; calls POST /api/v1/reports/ingest with session auth
    - Gzip detection by file extension or magic bytes; job_id link to ingest job detail on success
 33. **Dashboard filter UI** ✓ (done)

@@ -6,6 +6,7 @@ This guide covers installation, configuration, first login, and understanding us
 
 - Python 3.12 or later
 - pip (Python package manager)
+- Node.js 22 or later
 
 ## Installation
 
@@ -38,13 +39,30 @@ This guide covers installation, configuration, first login, and understanding us
 
 5. Edit `config.yaml` (see [Configuration](#configuration) below).
 
-6. Start the server:
+6. Install frontend dependencies:
+
+   ```bash
+   cd frontend-next
+   npm install
+   cd ..
+   ```
+
+7. Start the backend API:
 
    ```bash
    python -m backend.main
    ```
 
-   The server runs on `http://localhost:8000` by default.
+   The backend runs on `http://127.0.0.1:8000` by default.
+
+8. Start the frontend in another terminal:
+
+   ```bash
+   cd frontend-next
+   npm run dev
+   ```
+
+   The frontend runs on `http://127.0.0.1:3000` by default.
 
 ## Configuration
 
@@ -98,7 +116,7 @@ INFO:     Uvicorn running on http://0.0.0.0:8000
 
 ### Logging In
 
-1. Open `http://localhost:8000` in your browser.
+1. Open `http://127.0.0.1:3000` in your browser.
 2. Enter username `admin` and the bootstrap password.
 3. You are now logged in as a super-admin.
 
@@ -179,15 +197,16 @@ After first login as the bootstrap admin:
 
 | Path | Description |
 |------|-------------|
-| `/` | Login page (redirects to app if authenticated) |
-| `/app/domains` | Domain management |
-| `/app/dashboards` | Dashboard list |
-| `/app/search` | Search aggregate/forensic reports |
-| `/app/upload` | Upload reports via browser |
-| `/app/ingest-jobs` | View ingest job history |
-| `/app/users` | User management (admin+) |
-| `/app/apikeys` | API key management (admin+) |
-| `/app/audit` | Audit log (super-admin only) |
+| `/` | Redirect to the signed-in landing route |
+| `/login` | Login page |
+| `/domains` | Domain management |
+| `/dashboards` | Dashboard list |
+| `/search` | Search aggregate/forensic reports |
+| `/upload` | Upload reports via browser |
+| `/ingest-jobs` | View ingest job history |
+| `/users` | User management (admin+) |
+| `/apikeys` | API key management (admin+) |
+| `/audit` | Audit log (super-admin only) |
 
 ## Next Steps
 

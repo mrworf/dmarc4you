@@ -1,47 +1,32 @@
 # Frontend Migration
 
-## Summary
+## Status
 
-The repository now carries two frontend entrypoints:
+The migration is complete.
 
-- `frontend/` — the legacy backend-served SPA
-- `frontend-next/` — the new Next.js migration workspace
+- `frontend-next/` is the only supported web frontend.
+- the backend-served legacy SPA has been retired and removed
+- FastAPI remains the source of truth for auth, CSRF, RBAC, domain scoping, ingest behavior, and `/api/v1` business endpoints
 
-The migration is intentionally **frontend-only**. FastAPI remains the source of truth for:
+This document remains as a historical summary plus a reference for how the current frontend is deployed.
 
-- session authentication
-- CSRF enforcement
-- RBAC and domain scoping
-- ingest jobs and archival behavior
-- `/api/v1` business endpoints
+## Final architecture
 
-## What this slice adds
-
-- typed API response schemas for the first UI-facing endpoints (`auth`, `domains`, `health`)
-- standardized API error envelopes with `error.code` and `error.message`
-- split-origin deployment config:
-  - frontend public origin
-  - API public URL
-  - CORS allowlist
-  - cookie `Secure` and `SameSite` policies
-- a standalone Next.js app shell with:
-  - centralized API client
-  - session bootstrap via `/api/v1/auth/me`
-  - CSRF-aware mutations
-  - route guards by role
-  - URL query-state helpers
+- Next.js serves the user-facing web UI
+- FastAPI serves `/api/v1/...` and backend health endpoints
+- the recommended production shape is one public origin behind a reverse proxy:
+  - `/` and frontend routes -> Next.js
+  - `/api/v1/` -> FastAPI
 
 ## Local development
 
-### Legacy SPA
+Backend:
 
 ```bash
 python -m backend.main
 ```
 
-This continues to serve `frontend/` at `http://localhost:8000`.
-
-### Next.js migration workspace
+Frontend:
 
 ```bash
 cd frontend-next
@@ -49,50 +34,7 @@ npm install
 npm run dev
 ```
 
-Recommended local env values:
-
-```bash
-export DMARC_FRONTEND_PUBLIC_ORIGIN=http://localhost:3000
-export DMARC_CORS_ALLOWED_ORIGINS=http://localhost:3000
-```
-
-If the frontend talks to FastAPI directly from another origin, the backend must allow that origin and cookies must remain compatible with the chosen deployment model.
-
-## Deployment guidance
-
-Recommended production shape:
-
-- serve Next.js and FastAPI behind the same public origin via a reverse proxy
-- keep cookie auth and CSRF on the FastAPI side
-- let the frontend call `/api/v1/...` without cross-origin browser complexity
-
-Split-origin deployment is supported, but requires explicit:
-
-- CORS allowlisting
-- cookie policy review
-- HTTPS with `session_cookie_secure: true`
-
-## Deployment Modes
-
-### Local split-origin development
-
-Use this mode when `frontend-next` runs on its own dev server and FastAPI runs separately.
-
-Frontend example:
-
-```bash
-cd frontend-next
-cp .env.example .env.local
-```
-
-`frontend-next/.env.example` defaults to:
-
-```bash
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
-NEXT_PUBLIC_CSRF_COOKIE_NAME=dmarc_csrf
-```
-
-Backend example:
+Recommended split-origin local environment:
 
 ```bash
 export DMARC_FRONTEND_PUBLIC_ORIGIN=http://127.0.0.1:3000
@@ -103,24 +45,18 @@ export DMARC_SESSION_COOKIE_SAME_SITE=lax
 export DMARC_CSRF_COOKIE_SAME_SITE=strict
 ```
 
-Notes:
+By default the browser UI runs on `http://127.0.0.1:3000` and calls FastAPI on `http://127.0.0.1:8000`.
 
-- the browser talks directly to FastAPI from `http://127.0.0.1:3000`
-- FastAPI must explicitly allow the frontend origin in CORS
-- session auth still lives entirely on the FastAPI side
-- CSRF still uses the FastAPI cookie plus `X-CSRF-Token` header pattern
+## Deployment guidance
 
-### Recommended same-origin production shape
+Recommended production shape:
 
-Use a reverse proxy so the browser sees one public origin for both Next.js and FastAPI.
+- terminate HTTPS at a reverse proxy
+- route frontend traffic to Next.js
+- route `/api/v1/` to FastAPI
+- keep cookie auth and CSRF enforcement on the FastAPI side
 
-High-level shape:
-
-- `/` and other frontend routes -> `frontend-next`
-- `/api/v1/` -> FastAPI
-- one HTTPS origin for browser traffic
-
-Minimal nginx example:
+Example nginx shape:
 
 ```nginx
 server {
@@ -143,7 +79,7 @@ server {
 }
 ```
 
-Recommended production config:
+Recommended production cookie settings:
 
 ```bash
 export DMARC_SESSION_COOKIE_SECURE=true
@@ -151,115 +87,27 @@ export DMARC_SESSION_COOKIE_SAME_SITE=lax
 export DMARC_CSRF_COOKIE_SAME_SITE=strict
 ```
 
-In this shape:
+## Observability and readiness
 
-- `NEXT_PUBLIC_API_BASE_URL` can stay unset so the frontend uses same-origin `/api/v1/...`
-- CORS is typically unnecessary because the browser is no longer crossing origins
-- FastAPI remains the authority for cookies, CSRF enforcement, and RBAC
+- `frontend-next/app/api/ready/route.ts` provides the frontend readiness endpoint at `GET /api/ready`
+- FastAPI health and readiness remain authoritative for backend status
+- request ID propagation should stay enabled across the reverse proxy so frontend-side failures can be matched with backend logs
 
-### Cookie, CSRF, and CORS checklist
+## Historical notes
 
-Split-origin:
+The migration delivered:
 
-- set `DMARC_CORS_ALLOWED_ORIGINS` to the exact frontend origin
-- keep `session_cookie_secure=false` for plain local HTTP only
-- keep the frontend sending credentials and CSRF headers to FastAPI
+- typed frontend-facing API contracts
+- shared API client, auth bootstrap, and route guards
+- query-param-based state for search and dashboard views
+- browser-level smoke and seeded end-to-end coverage
+- cutover validation for the required Next.js routes
 
-Same-origin production:
+The old backend-served SPA is no longer part of the supported deployment model.
 
-- terminate HTTPS at the reverse proxy
-- set `DMARC_SESSION_COOKIE_SECURE=true`
-- avoid broad CORS allowlists unless you intentionally expose the API cross-origin
-- keep cookie and CSRF behavior on FastAPI; do not reimplement auth in Next.js
+## Retained migration tooling
 
-## Observability and Readiness
-
-The Next.js workspace now adds a small amount of frontend-owned observability without moving operational authority away from FastAPI.
-
-Frontend/API request correlation:
-
-- `frontend-next/lib/api/client.ts` sends a per-request correlation header on every frontend API call
-- the default header name is `X-Request-ID`
-- you can override the header name with `NEXT_PUBLIC_REQUEST_ID_HEADER_NAME` if an existing proxy or backend convention requires a different name
-- failed browser-side API calls log the request method, route path, frontend request ID, HTTP status, and any echoed backend request ID to the console
-
-Frontend readiness surface:
-
-- `GET /api/ready` is a frontend readiness endpoint owned by `frontend-next`
-- it reports whether the frontend is configured for same-origin or split-origin API calls
-- it exposes the configured backend target and points operators to FastAPI's backend readiness path: `/api/v1/health/ready`
-- it is intentionally minimal and does not attempt to replace backend health or worker health checks
-
-Recommended operational interpretation:
-
-- use `/api/ready` to confirm that the web frontend is up and knows where it expects to find FastAPI
-- use FastAPI health/readiness endpoints as the source of truth for backend API availability
-- keep worker/job observability on the backend side because ingest jobs, retries, and resume-after-restart behavior remain backend responsibilities
-
-For separate web/backend deployment, a practical minimum is:
-
-- monitor the Next.js process with `/api/ready`
-- monitor FastAPI with `/api/v1/health/ready`
-- retain request ID propagation across the reverse proxy so frontend error reports can be matched with backend logs
-- treat web and worker/process supervision as separate concerns even when they are deployed from the same repository
-
-## Rollout approach
-
-1. Keep the legacy SPA live while migrating route-by-route into `frontend-next/`.
-2. Move reusable data/query/form patterns into shared frontend libraries before migrating many screens.
-3. Finalize the core frontend testing approach as soon as the shared app shell, auth bootstrap, route guards, and query-state patterns are stable enough to test without immediate churn.
-4. Add a frontend test harness slice immediately after that approach is finalized, rather than waiting until late migration hardening.
-5. Split frontend quality work into at least two explicit slices:
-   - an early **test harness foundation** slice for browser-level tooling, local/CI execution, seeded auth helpers, and narrow smoke coverage for login, domains, dashboards landing, dashboard detail, and route guards
-   - a later **critical flows expansion** slice for broader end-to-end coverage across migrated search, dashboard management, upload, and admin routes
-6. Preserve existing `/api/v1` shapes whenever possible; prefer additive schema tightening over endpoint redesign.
-7. Remove the backend-served legacy SPA only after the Next.js routes cover all required flows and the critical migrated flows are covered by the frontend harness.
-
-## Frontend quality plan
-
-The migration should not rely on late-stage manual verification alone. Once the shared frontend approach is considered stable, the project should implement frontend test harness work as a near-term priority.
-
-Recommended sequencing:
-
-1. stabilize the shared route/data/auth approach in `frontend-next/`
-2. land the harness foundation slice immediately after that stabilization point
-3. require migrated routes to add or extend smoke coverage as the route surface grows
-4. expand the harness again before legacy cutover so critical role-based flows are exercised end to end
-
-Recommended harness scope:
-
-- browser-level tests against the real Next.js app
-- reusable login/session helpers that respect FastAPI auth and CSRF behavior
-- smoke coverage for route guards and the most-used migrated screens
-- URL-state restoration checks for search- and dashboard-style routes
-- CI-friendly commands and documentation so the harness is runnable before cutover pressure sets in
-
-## UX Refresh
-
-The Next.js workspace now shifts from migration-oriented scaffolding toward a production-style admin UX.
-
-Key frontend patterns now in use:
-
-- a stable operations shell with a fixed desktop sidebar and mobile nav drawer
-- slideover panels for create, edit, import, and assignment workflows
-- confirm dialogs for destructive actions
-- focused copy-once dialogs for one-time passwords and API secrets
-- simpler page copy that explains the task at hand instead of internal migration or backend implementation details
-
-The refresh keeps FastAPI as the authority for auth, RBAC, domain lifecycle, retention, and all mutation behavior. The frontend changes are intentionally presentation- and workflow-oriented only.
-
-## UX Polish
-
-The follow-up polish pass tightens a few cross-route interaction rules so overlays and search behave more like operator tools than scaffolding:
-
-- slideover panels and confirm dialogs now surface mutation errors inside the active overlay instead of only on the parent page
-- non-destructive overlay forms submit with Enter, while destructive confirm dialogs still require an explicit click
-- dashboard scope-change preflight now uses the shared confirm dialog instead of a browser-native confirm prompt
-- search now prioritizes results with a compact top bar, an advanced-filters slideover, removable applied-filter chips, and inline quick-filter actions from result cells where the existing backend contract supports them
-
-## Seeded Browser Harness
-
-The migration workspace now uses a deterministic seeded FastAPI environment as the primary browser-regression path for `frontend-next/e2e/`.
+The repository still keeps the validation and browser-regression tooling that made the cutover safe.
 
 Core commands:
 
@@ -273,114 +121,19 @@ npm run test:e2e:list
 
 # run the full seeded browser suite locally
 npm run test:e2e:seeded
-```
 
-Seeded defaults:
+# verify the required frontend routes still exist
+npm run cutover:routes
 
-- FastAPI config: `config.e2e.yaml`
-- frontend URL: `http://127.0.0.1:3000`
-- backend URL: `http://127.0.0.1:8000`
-- seeded users: `admin`, `e2e-admin`, `e2e-manager`, `e2e-viewer`
-- deterministic credentials and route IDs exported to `.tmp/e2e/e2e.env`
-- debugging summary written to `.tmp/e2e/seed-summary.json`
-
-The seeded wrapper script:
-
-- reseeds the DB and archive storage
-- starts FastAPI from the real backend entrypoint
-- starts the real Next.js dev server
-- waits for both services to become ready
-- runs the full Playwright suite
-- captures logs under `.tmp/e2e/`
-
-This is intentionally the same path CI uses, so local failures and CI failures speak the same language.
-
-## Search Route Coverage
-
-The browser harness now also covers the migrated `/search` route for:
-
-- aggregate filter state round-tripping through the URL
-- aggregate/forensic mode switching
-- pagination state persisting in the query string
-
-The seeded environment now includes deterministic aggregate and forensic data for:
-
-- search filters and chip restoration
-- pagination coverage
-- quick-filter actions from result cells
-- dashboard detail drill-down filters
-- upload and ingest-job linking
-
-## Legacy SPA Cutover
-
-The migration workspace now has a small cutover-readiness layer so route parity and role gating can be checked before traffic is switched.
-
-Route coverage:
-
-- `npm run cutover:routes` verifies that the required migrated routes still exist in `frontend-next/app`
-- the check covers login, domains, dashboards, search, upload, ingest jobs, users, API keys, audit, and frontend readiness
-
-Role-matrix browser coverage:
-
-- `frontend-next/e2e/role-matrix.spec.ts` is now part of the seeded default suite
-- super-admin, admin, manager, and viewer credentials are created automatically by `python -m cli seed-e2e config.e2e.yaml`
-
-Recommended cutover sequence:
-
-1. run `npm run cutover:routes`
-2. run `npm run test:e2e:list` to confirm the full harness matrix is discovered
-3. run `npm run test:e2e:seeded` locally against the deterministic seed environment
-4. require the seeded-browser CI workflow to pass on the same route matrix and critical flows
-5. rerun the seeded suite in the deployment environment after the reverse-proxy switch points `/` and user-facing routes to `frontend-next`
-6. keep the backend-served legacy SPA available only as a rollback path until the seeded suite passes in deployment
-
-Recommended rollback boundary:
-
-- the reverse proxy switch is the cutover point
-- FastAPI remains the source of truth for auth, RBAC, CSRF, and business APIs
-- retire the legacy SPA mount only after the Next.js cutover has been stable and the seeded full browser suite has been re-run in the target environment
-
-## Contract Verification
-
-The migration workspace now includes a frontend-owned contract check that validates the FastAPI OpenAPI contract consumed by migrated routes.
-
-Current coverage focuses on:
-
-- auth login and session bootstrap
-- domains and dashboards
-- search and forensic report listing
-- users, API keys, and audit
-- upload/ingest job creation
-
-Recommended command:
-
-```bash
-cd frontend-next
+# verify the frontend-consumed OpenAPI contract
 npm run contracts:check
 ```
 
-The contract runner uses the repo `.venv` by default, loads the real FastAPI OpenAPI schema, and verifies the request/response models that `frontend-next` currently depends on. If your Python executable lives elsewhere, set `DMARC_CONTRACT_PYTHON`.
+The seeded environment still provides:
 
-## Critical Flow Expansion
+- deterministic frontend and backend URLs
+- seeded super-admin, admin, manager, and viewer accounts
+- reproducible aggregate and forensic data for browser checks
+- `.tmp/e2e/e2e.env` and `.tmp/e2e/seed-summary.json` for debugging
 
-The Playwright harness now also covers a narrow set of critical happy paths across migrated operational routes:
-
-- create dashboard from the dashboards landing route
-- dashboard detail filter state restoring from the URL
-- upload submission linking to the resulting ingest job
-- user creation with one-time password notice
-- API key creation with copy-once secret notice
-
-These flows now run as part of the standard seeded-browser environment instead of relying on manual local seed setup.
-
-## Migration Closeout Checklist
-
-Use this checklist to treat the frontend migration as operationally complete rather than merely code-complete.
-
-1. run `python -m cli seed-e2e config.e2e.yaml` and confirm `.tmp/e2e/seed-summary.json` is produced
-2. run `cd frontend-next && npm run test:e2e:list` and confirm the full suite is discovered
-3. run `cd frontend-next && npm run test:e2e:seeded` locally
-4. confirm the `frontend-seeded-e2e` CI workflow passes on the same branch
-5. rerun the seeded suite in the deployment environment after the reverse proxy points to `frontend-next`
-6. keep the legacy SPA as a rollback path until the deployment-environment seeded run passes
-7. retire the legacy SPA mount only after the seeded suite is green in CI and in deployment
+These checks now exist as regression protection for the production frontend rather than as migration scaffolding for a future cutover.

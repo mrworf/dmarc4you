@@ -4,8 +4,8 @@ import "./globals.css";
 import { Providers } from "@/app/providers";
 
 export const metadata: Metadata = {
-  title: "DMARC Analyzer",
-  description: "Operations console for DMARC domains, dashboards, ingest, and admin workflows.",
+  title: "DMARCWatch",
+  description: "DMARC monitoring for domains, dashboards, ingest, search, and admin workflows.",
 };
 
 export default function RootLayout({

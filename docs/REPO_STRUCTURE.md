@@ -25,17 +25,6 @@
 │   │   ├── interfaces.py
 │   │   └── sqlite/
 │   └── utils/
-├── frontend/
-│   ├── index.html
-│   ├── css/
-│   ├── js/
-│   │   ├── api/
-│   │   ├── router/
-│   │   ├── state/
-│   │   ├── views/
-│   │   ├── widgets/
-│   │   └── components/
-│   └── assets/
 ├── frontend-next/
 │   ├── app/
 │   ├── components/
@@ -81,12 +70,8 @@ Job submission, claim/resume logic, state transitions, checkpointing, and schedu
 ### `backend/storage/`
 Interfaces and SQLite implementation. No business rules here.
 
-### `frontend/`
-Plain JS SPA code. Keep route-level views separate from reusable widgets/components.
-
 ### `frontend-next/`
-Next.js migration workspace. Keep API access, auth bootstrap, route guards, and URL-state helpers centralized so feature slices can move over incrementally.
-Browser smoke coverage for migrated routes lives under `frontend-next/e2e/`.
+Primary product frontend. Keep API access, auth bootstrap, route guards, and URL-state helpers centralized, and keep browser smoke coverage under `frontend-next/e2e/`.
 
 ### `cli/`
 - `dmarc_submit.py`: API-key-authenticated report submission

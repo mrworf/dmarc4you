@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This repository builds a **single-organization, self-hosted DMARC analysis platform** with a Python backend, a plain HTML/CSS/JavaScript SPA frontend, SQLite in v1, versioned REST API endpoints, background-job-based ingestion, and strong RBAC/domain scoping.
+This repository builds a **single-organization, self-hosted DMARC analysis platform** with a Python backend, a Next.js frontend, SQLite in v1, versioned REST API endpoints, background-job-based ingestion, and strong RBAC/domain scoping.
 
 ## How to work in this repo
 
@@ -39,7 +39,7 @@ backend/
   services/
   policies/
   storage/
-frontend/
+frontend-next/
 cli/
 shared/
 tests/

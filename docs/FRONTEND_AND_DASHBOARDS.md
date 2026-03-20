@@ -2,28 +2,27 @@
 
 ## Frontend approach
 
-Use a plain HTML/CSS/JavaScript SPA with client-side routing and backend-served assets.
+Use the Next.js frontend in `frontend-next/` as the canonical web UI.
 
 Why this shape:
 
 - shareable URLs
 - responsive dashboard interactions
 - easier drill-down without full page refreshes
-- no framework required unless the project later proves it beneficial
+- a dedicated frontend runtime that can be deployed separately from FastAPI or behind the same reverse proxy
 
 ## Route ideas
 
 - `/login` (implemented)
-- `/app` (implemented)
-- `/app/dashboards` (implemented)
-- `/app/dashboards/:id` (implemented)
-- `/app/search` (implemented)
-- `/app/upload` (implemented)
-- `/app/domains` (implemented)
-- `/app/domain-maintenance-jobs/:id` (implemented)
-- `/app/users` (implemented)
-- `/app/apikeys` (implemented)
-- `/app/audit` (implemented)
+- `/domains` (implemented)
+- `/dashboards` (implemented)
+- `/dashboards/:id` (implemented)
+- `/search` (implemented)
+- `/upload` (implemented)
+- `/domain-maintenance-jobs/:id` (implemented)
+- `/users` (implemented)
+- `/apikeys` (implemented)
+- `/audit` (implemented)
 
 ## URL-state requirements
 

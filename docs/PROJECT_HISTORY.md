@@ -4,7 +4,7 @@ This document keeps implementation-history and migration-oriented references tha
 
 ## Frontend migration references
 
-The repository contains Next.js migration material and supporting notes in:
+The repository completed the frontend move from the retired backend-served SPA to the current Next.js UI. Historical migration notes remain in:
 
 - [Frontend Migration](docs/FRONTEND_MIGRATION.md)
 - [Frontend Migration Slices](docs/FRONTEND_MIGRATION_SLICES.md)
@@ -12,7 +12,7 @@ The repository contains Next.js migration material and supporting notes in:
 
 ## Seeded browser regression notes
 
-The seeded browser harness and migration wrap-up notes remain documented in:
+The seeded browser harness and frontend cutover notes remain documented in:
 
 - [Getting Started](docs/GETTING_STARTED.md#seeded-e2e-browser-environment)
 - [Frontend Migration](docs/FRONTEND_MIGRATION.md)

@@ -1,93 +1,28 @@
 # Frontend Migration Slices
 
-Implement the Next.js migration as thin, testable slices that preserve FastAPI as the source of truth.
+This file is retained as the migration execution record.
 
-This plan is intentionally focused on the changes discussed for the frontend migration and related scalability work:
+## Status
 
-- typed API contracts for UI-facing endpoints
-- a durable frontend platform in `frontend-next/`
-- explicit split-origin deployment/auth configuration
-- migration-safe validation and rollout
-- preparation for later operational scaling without mixing in a backend rewrite
+- the migration is complete
+- `frontend-next/` is now the primary and only supported frontend
+- the legacy backend-served SPA has been retired
 
-## Migration principles
+## Migration principles that were followed
 
-- keep the migration **frontend-only**
+- keep the migration frontend-only
 - preserve `/api/v1` as the primary application API
 - keep RBAC, domain scoping, ingest, retention, and archival rules on the backend
-- migrate route-by-route while the legacy SPA remains available
-- tighten API contracts before relying on them broadly from the new frontend
 - prefer additive backend changes over endpoint redesigns unless required
 
-## Phase 1 — Platform foundation
+## Completed phases
 
-Goal: create the minimum platform needed to migrate screens safely.
-
-Deliver:
-
-- typed response schemas for initial UI-facing endpoints
-- standardized API error envelopes
-- cookie/CORS/frontend-origin config for split-origin development
-- Next.js app shell, auth bootstrap, API client, route guards, and URL-state helpers
-- readiness endpoint and migration docs
-
-## Phase 2 — Core app shell migration
-
-Goal: replace the top-level navigation and most-visited read/create flows first.
-
-Deliver:
-
-- login flow in Next.js
-- domains list in Next.js
-- dashboards list/create in Next.js
-- shared layout, nav, status states, and role-aware route visibility
-
-## Phase 3 — Search and dashboard read paths
-
-Goal: migrate the most interactive views with reusable filter/query patterns.
-
-Deliver:
-
-- search route with query-param state
-- dashboard detail read-only page
-- report detail overlays or dedicated detail routes
-- reusable tables, pagination, and filter state serialization
-
-## Phase 4 — Dashboard management workflows
-
-Goal: move the feature set that makes dashboards a real product surface.
-
-Deliver:
-
-- dashboard edit/delete
-- sharing and ownership transfer
-- dashboard export/import UX
-- scope preflight validation and impacted-user messaging
-
-## Phase 5 — Admin and ingest workflows
-
-Goal: move the operational screens used by admins and day-to-day operators.
-
-Deliver:
-
-- ingest jobs list/detail
-- upload flow
-- users management
-- API key management
-- audit browsing/filtering
-
-## Phase 6 — Migration hardening and cutover
-
-Goal: make the Next.js frontend production-ready and removable from the legacy SPA path.
-
-Deliver:
-
-- browser-level test harness foundation early enough to protect later slices
-- e2e coverage for critical role-based flows
-- contract checks for frontend-dependent APIs
-- deployment documentation for same-origin and split-origin setups
-- reverse-proxy/cutover plan
-- legacy SPA removal checklist
+1. Platform foundation
+2. Core app shell migration
+3. Search and dashboard read paths
+4. Dashboard management workflows
+5. Admin and ingest workflows
+6. Migration hardening and cutover
 
 ## Suggested migration slices
 
@@ -206,35 +141,10 @@ Deliver:
    - verify all required routes exist in `frontend-next/`
    - verify critical e2e matrix across roles using the frontend harness
    - switch primary user-facing frontend to Next.js
-   - remove or retire legacy SPA mount only after parity is confirmed
+   - retire the legacy SPA mount after parity was confirmed
 
-## Suggested execution order
+## Final outcome
 
-1. finish dashboard detail and search read paths
-2. finalize the frontend test harness approach and land the harness foundation slice
-3. migrate search and immediately extend harness coverage for its URL-state behavior
-4. finish dashboard management workflows
-5. migrate upload and ingest jobs plus admin routes: users, API keys, audit
-6. expand browser/e2e coverage for critical migrated flows, then finish contract hardening
-7. finalize deployment docs and cutover
-
-## Validation expectations per slice
-
-- backend:
-  - unit or integration coverage for any touched API contract or policy behavior
-  - OpenAPI/schema verification for newly typed endpoints
-- frontend:
-  - route smoke checks for migrated pages
-  - manual or automated auth/CSRF verification for any mutation flow
-  - URL-state restoration checks for any route with filters/pagination
-- rollout:
-  - keep legacy SPA functional until the matching Next.js replacement is verified
-  - avoid removing old routes/UI in the same slice that introduces a new path unless parity is already proven
-
-## Working rules for each slice
-
-- keep slices reviewable and behavior-focused
-- prefer one real migrated workflow per slice over broad scaffolding
-- avoid bundling visual redesign, API redesign, and route migration into one change
-- update docs when a slice changes deployment, auth, or migration sequencing
-- record status in this file as slices are completed so the migration remains decision-complete
+- the web product now runs on Next.js
+- FastAPI is API-only in the supported deployment model
+- seeded browser coverage and route-cutover checks remain part of the repository for regression protection

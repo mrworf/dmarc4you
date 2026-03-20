@@ -190,7 +190,7 @@ Upload reports directly through the web interface.
 ### Steps
 
 1. Log in to the application
-2. Navigate to **Upload** (`/app/upload`)
+2. Navigate to **Upload** (`/upload`)
 3. Either:
    - **Paste** XML content into the text area, or
    - **Select one or more files** using the file picker (`.xml`, `.xml.gz`, `.zip`, `.eml`)
@@ -227,7 +227,7 @@ curl -H "Authorization: Bearer YOUR_KEY" \
 
 ### Via UI
 
-1. Navigate to **Ingest Jobs** (`/app/ingest-jobs`)
+1. Navigate to **Ingest Jobs** (`/ingest-jobs`)
 2. Click a job ID to view details
 3. See per-report outcomes: accepted, rejected, duplicate, invalid
 

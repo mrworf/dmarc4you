@@ -59,7 +59,7 @@ export function AppShell({ title, description, children, actions }: AppShellProp
       {isNavOpen ? <div className="nav-scrim" onClick={() => setIsNavOpen(false)} role="presentation" /> : null}
       <aside className="surface-card sidebar" data-open={isNavOpen}>
         <div className="stack">
-          <p className="eyebrow">DMARC Analyzer</p>
+          <p className="eyebrow">DMARCWatch</p>
           <h1 style={{ margin: 0, fontSize: "1.8rem" }}>Operations console</h1>
           {user ? (
             <>

@@ -1,4 +1,4 @@
-# DMARC Analyzer configuration
+# DMARCWatch configuration
 # Copy to config.yaml or set DMARC_CONFIG env var to your file path.
 # All options can be overridden via DMARC_* environment variables.
 

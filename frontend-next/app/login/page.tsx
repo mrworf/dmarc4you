@@ -43,7 +43,7 @@ export default function LoginPage() {
   return (
     <main className="app-frame app-frame-auth auth-shell">
       <section className="hero-card stack">
-        <p className="eyebrow">DMARC Analyzer</p>
+        <p className="eyebrow">DMARCWatch</p>
         <h1 className="page-title">DMARC operations, in one focused workspace.</h1>
         <p className="lede">
           Sign in to review domains, dashboards, ingest jobs, search results, and admin activity from one place.
