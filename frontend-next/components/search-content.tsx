@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { usePathname, useSearchParams } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
@@ -18,6 +18,8 @@ import {
   addUniqueValue,
   aggregateGroupingOptions,
   appendQueryValue,
+  parseQueryTerms,
+  buildAggregateExplorerContextKey,
   buildAggregateExplorerParams,
   buildAggregateSearchBody,
   buildGroupedSearchBody,
@@ -26,6 +28,7 @@ import {
   getAvailableAggregateGroupingOptions,
   getSelectedAggregateGroupingValue,
   parseAggregateExplorerState,
+  removeQueryTerm,
   removeValue,
   toggleValue,
   type AggregateExplorerState,
@@ -133,13 +136,13 @@ function buildAppliedChips(
     });
   });
 
-  if (state.query) {
+  parseQueryTerms(state.query).forEach((term) => {
     chips.push({
-      id: "query",
-      label: `Search: ${state.query}`,
-      onRemove: () => onRemove((current) => ({ ...current, query: "" })),
+      id: `query:${term}`,
+      label: `Search: ${term}`,
+      onRemove: () => onRemove((current) => ({ ...current, query: removeQueryTerm(current.query, term) })),
     });
-  }
+  });
   if (state.from) {
     chips.push({
       id: "from",
@@ -321,6 +324,7 @@ export function SearchContent() {
     () => buildGroupedSearchBody(currentState, currentState.domains, { page: currentState.page, pageSize: 20 }),
     [currentState],
   );
+  const groupedContextKey = useMemo(() => buildAggregateExplorerContextKey(currentState, currentState.domains), [currentState]);
   const forensicPath = useMemo(() => buildForensicPath(currentState), [currentState]);
   const hasAppliedSearch = currentState.reportType === "aggregate" ? hasAggregateCriteria(currentState) : !!(currentState.domains.length || currentState.from || currentState.to);
 
@@ -334,6 +338,7 @@ export function SearchContent() {
     queryKey: ["search", "aggregate-grouped", groupedRootRequest],
     queryFn: () => apiClient.post<GroupedSearchResponse>("/api/v1/search/grouped", groupedRootRequest),
     enabled: currentState.reportType === "aggregate" && hasAppliedSearch && currentState.grouping.length > 0,
+    placeholderData: keepPreviousData,
   });
 
   const forensicQuery = useQuery({
@@ -350,6 +355,9 @@ export function SearchContent() {
     currentState.reportType === "forensic" ? forensicQuery.isLoading : currentState.grouping.length ? groupedQuery.isLoading : aggregateQuery.isLoading;
   const error =
     currentState.reportType === "forensic" ? forensicQuery.error : currentState.grouping.length ? groupedQuery.error : aggregateQuery.error;
+  const isGroupedMode = currentState.reportType === "aggregate" && currentState.grouping.length > 0;
+  const isGroupedInitialLoading = isGroupedMode && groupedQuery.isPending && !groupedResult;
+  const isGroupedRefreshing = isGroupedMode && groupedQuery.isFetching && !!groupedResult;
   const totalPages = activeResult ? Math.max(1, Math.ceil(activeResult.total / activeResult.page_size)) : 1;
   const domains = domainsQuery.data?.domains ?? [];
   const appliedChips = buildAppliedChips(currentState, (updater) => {
@@ -720,7 +728,8 @@ export function SearchContent() {
           </div>
         ) : null}
         {!hasAppliedSearch ? <p className="status-text">Nothing is loaded yet. Add a query, domain, date range, or advanced filter and the results will update here.</p> : null}
-        {hasAppliedSearch && isLoading ? <p className="status-text">Loading results...</p> : null}
+        {hasAppliedSearch && (isGroupedMode ? isGroupedInitialLoading : isLoading) ? <p className="status-text">Loading results...</p> : null}
+        {hasAppliedSearch && isGroupedRefreshing ? <p className="status-text">Updating grouped results...</p> : null}
         {hasAppliedSearch && error ? <p className="error-text">{error instanceof Error ? error.message : "Failed to load results"}</p> : null}
         {domainsQuery.error ? <p className="error-text">{domainsQuery.error instanceof Error ? domainsQuery.error.message : "Failed to load visible domains"}</p> : null}
         {hasAppliedSearch && aggregateResult && currentState.reportType === "aggregate" && !currentState.grouping.length ? (
@@ -728,6 +737,7 @@ export function SearchContent() {
         ) : null}
         {hasAppliedSearch && groupedResult && currentState.reportType === "aggregate" && currentState.grouping.length ? (
           <GroupedAggregateResultsTable
+            contextKey={groupedContextKey}
             emptyMessage="No grouped aggregate results found."
             grouping={currentState.grouping}
             initialResult={groupedResult}

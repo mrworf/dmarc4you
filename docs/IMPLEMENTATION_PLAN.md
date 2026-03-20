@@ -135,7 +135,7 @@ Deliver:
    - Forensic results table with domain, source IP, header from, SPF/DKIM/DMARC results, failure type, arrival time
    - URL hash state includes report_type for bookmarkable forensic searches
 30. **FTS free-text search** ✓ (done)
-   - FTS5 virtual table `aggregate_records_fts` indexing source_ip, header_from, envelope_from, envelope_to, org_name
+   - FTS5 virtual table `aggregate_records_fts` indexing source_ip, resolved_name, resolved_name_domain, header_from, envelope_from, envelope_to, org_name
    - Triggers to keep FTS in sync on INSERT/DELETE
    - `query` parameter in POST /api/v1/search for free-text search with prefix matching
    - Search UI text input for query; URL hash state includes query for bookmarks

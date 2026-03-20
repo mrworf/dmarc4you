@@ -198,6 +198,33 @@ export function buildGroupedSearchBody(
   };
 }
 
+function sortedValues(values: string[]): string[] {
+  return [...values].sort((left, right) => left.localeCompare(right));
+}
+
+export function buildAggregateExplorerContextKey(state: AggregateExplorerState, domains: string[]): string {
+  return JSON.stringify({
+    domains: sortedValues(domains),
+    query: state.query,
+    from: state.from,
+    to: state.to,
+    includeDmarcAlignment: sortedValues(state.includeDmarcAlignment),
+    includeDkimAlignment: sortedValues(state.includeDkimAlignment),
+    includeSpfAlignment: sortedValues(state.includeSpfAlignment),
+    includeSpf: sortedValues(state.includeSpf),
+    includeDkim: sortedValues(state.includeDkim),
+    includeDisposition: sortedValues(state.includeDisposition),
+    excludeDmarcAlignment: sortedValues(state.excludeDmarcAlignment),
+    excludeDkimAlignment: sortedValues(state.excludeDkimAlignment),
+    excludeSpfAlignment: sortedValues(state.excludeSpfAlignment),
+    excludeSpf: sortedValues(state.excludeSpf),
+    excludeDkim: sortedValues(state.excludeDkim),
+    excludeDisposition: sortedValues(state.excludeDisposition),
+    grouping: state.grouping,
+    page: state.page,
+  });
+}
+
 export function getAvailableAggregateGroupingOptions(grouping: string[]): AggregateGroupingOption[] {
   return aggregateGroupingOptions.filter((option) => !grouping.includes(option.value));
 }
@@ -227,19 +254,84 @@ export function removeValue(values: string[], value: string): string[] {
   return values.filter((item) => item !== value);
 }
 
+function pushParsedQueryTerm(terms: string[], value: string) {
+  const trimmedValue = value.trim();
+  if (trimmedValue) {
+    terms.push(trimmedValue);
+  }
+}
+
+export function parseQueryTerms(query: string): string[] {
+  const terms: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < query.length; index += 1) {
+    const character = query[index];
+    if (inQuotes) {
+      if (character === '"') {
+        if (query[index + 1] === '"') {
+          current += '"';
+          index += 1;
+          continue;
+        }
+        inQuotes = false;
+        continue;
+      }
+      current += character;
+      continue;
+    }
+
+    if (/\s/.test(character)) {
+      pushParsedQueryTerm(terms, current);
+      current = "";
+      continue;
+    }
+
+    if (character === '"' && !current) {
+      inQuotes = true;
+      continue;
+    }
+
+    current += character;
+  }
+
+  pushParsedQueryTerm(terms, current);
+  return terms;
+}
+
+function serializeQueryTerm(term: string): string {
+  return /[\s"]/.test(term) ? `"${term.replace(/"/g, '""')}"` : term;
+}
+
+export function buildQueryFromTerms(terms: string[]): string {
+  const uniqueTerms: string[] = [];
+  const seenTerms = new Set<string>();
+  terms.forEach((term) => {
+    const trimmedTerm = term.trim();
+    if (!trimmedTerm || seenTerms.has(trimmedTerm)) {
+      return;
+    }
+    seenTerms.add(trimmedTerm);
+    uniqueTerms.push(trimmedTerm);
+  });
+  return uniqueTerms.map(serializeQueryTerm).join(" ");
+}
+
+export function removeQueryTerm(query: string, value: string): string {
+  return buildQueryFromTerms(parseQueryTerms(query).filter((term) => term !== value.trim()));
+}
+
 export function appendQueryValue(query: string, value: string): string {
   const trimmedValue = value.trim();
   if (!trimmedValue) {
     return query;
   }
-  const parts = query
-    .split(/\s+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
+  const parts = parseQueryTerms(query);
   if (parts.includes(trimmedValue)) {
     return query;
   }
-  return [...parts, trimmedValue].join(" ");
+  return buildQueryFromTerms([...parts, trimmedValue]);
 }
 
 export function formatOptionLabel(value: string): string {

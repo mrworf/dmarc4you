@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
@@ -22,6 +22,7 @@ import {
   addUniqueValue,
   appendQueryValue,
   aggregateGroupingOptions,
+  buildAggregateExplorerContextKey,
   buildAggregateExplorerParams,
   buildAggregateSearchBody,
   buildGroupedSearchBody,
@@ -29,7 +30,9 @@ import {
   formatOptionLabel,
   getAvailableAggregateGroupingOptions,
   getSelectedAggregateGroupingValue,
+  parseQueryTerms,
   parseAggregateExplorerState,
+  removeQueryTerm,
   removeValue,
   toggleValue,
   type AggregateExplorerState,
@@ -84,13 +87,13 @@ function buildAppliedChips(
   onRemove: (updater: (current: AggregateExplorerState) => AggregateExplorerState) => void,
 ): AppliedFilterChip[] {
   const chips: AppliedFilterChip[] = [];
-  if (state.query) {
+  parseQueryTerms(state.query).forEach((term) => {
     chips.push({
-      id: "query",
-      label: `Search: ${state.query}`,
-      onRemove: () => onRemove((current) => ({ ...current, query: "" })),
+      id: `query:${term}`,
+      label: `Search: ${term}`,
+      onRemove: () => onRemove((current) => ({ ...current, query: removeQueryTerm(current.query, term) })),
     });
-  }
+  });
   if (state.from) {
     chips.push({
       id: "from",
@@ -189,6 +192,19 @@ function buildAppliedChips(
   return chips;
 }
 
+function getDashboardPeriodLabel(state: AggregateExplorerState): string {
+  if (state.from && state.to) {
+    return `From ${state.from} to ${state.to}`;
+  }
+  if (state.from) {
+    return `From ${state.from}`;
+  }
+  if (state.to) {
+    return `Through ${state.to}`;
+  }
+  return "All time";
+}
+
 function renderMultiValueToggles(values: string[], selectedValues: string[], onToggle: (value: string) => void) {
   return (
     <div className="checkbox-grid">
@@ -263,6 +279,7 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
     () => buildGroupedSearchBody(currentState, domainNames, { page: currentState.page, pageSize: 20 }),
     [currentState, domainNames],
   );
+  const groupedContextKey = useMemo(() => buildAggregateExplorerContextKey(currentState, domainNames), [currentState, domainNames]);
 
   const flatSearchQuery = useQuery({
     queryKey: ["dashboard-search", dashboardId, searchBody],
@@ -273,10 +290,15 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
     queryKey: ["dashboard-search-grouped", dashboardId, groupedRootRequest],
     queryFn: () => apiClient.post<GroupedSearchResponse>("/api/v1/search/grouped", groupedRootRequest),
     enabled: domainNames.length > 0 && currentState.grouping.length > 0,
+    placeholderData: keepPreviousData,
   });
 
   const dashboard = dashboardQuery.data;
   const result = currentState.grouping.length ? groupedSearchQuery.data : flatSearchQuery.data;
+  const isGroupedMode = currentState.grouping.length > 0;
+  const isGroupedInitialLoading = isGroupedMode && groupedSearchQuery.isPending && !groupedSearchQuery.data;
+  const isGroupedRefreshing = isGroupedMode && groupedSearchQuery.isFetching && !!groupedSearchQuery.data;
+  const dashboardPeriodLabel = getDashboardPeriodLabel(currentState);
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.page_size)) : 1;
   const appliedChips = buildAppliedChips(currentState, (updater) => {
     updateDraftState((current) => ({ ...updater(current), page: 1 }));
@@ -749,6 +771,7 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
           <div className="stack" style={{ gap: 8 }}>
             <h2 className="section-title">Live results</h2>
             <p className="section-intro">Review the current aggregate records for the domains in this dashboard.</p>
+            <p className="status-text">{`Dashboard period: ${dashboardPeriodLabel}`}</p>
           </div>
           {appliedChips.length ? (
             <button className="button-secondary" onClick={resetFilters} type="button">
@@ -770,10 +793,11 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
         ) : null}
         {dashboard && !domainNames.length ? <p className="status-text">This dashboard has no domains in scope.</p> : null}
         {currentState.grouping.length ? (
-          groupedSearchQuery.isLoading ? <p className="status-text">Loading live dashboard results...</p> : null
+          isGroupedInitialLoading ? <p className="status-text">Loading live dashboard results...</p> : null
         ) : flatSearchQuery.isLoading ? (
           <p className="status-text">Loading live dashboard results...</p>
         ) : null}
+        {isGroupedRefreshing ? <p className="status-text">Updating grouped results...</p> : null}
         {currentState.grouping.length ? (
           groupedSearchQuery.error ? <p className="error-text">{groupedSearchQuery.error instanceof Error ? groupedSearchQuery.error.message : "Failed to load dashboard results"}</p> : null
         ) : flatSearchQuery.error ? (
@@ -790,12 +814,15 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
         ) : null}
         {result && currentState.grouping.length ? (
           <GroupedAggregateResultsTable
+            contextKey={groupedContextKey}
             emptyMessage="No grouped dashboard results yet for this scope."
             grouping={currentState.grouping}
             initialResult={result as GroupedSearchResponse}
             loadBranch={loadGroupedBranch}
             onQuickFilter={handleQuickFilter}
             onViewReport={setSelectedAggregateReportId}
+            showPeriodColumn={false}
+            showSummaryCounts={false}
             visibleColumns={dashboard?.visible_columns}
           />
         ) : null}

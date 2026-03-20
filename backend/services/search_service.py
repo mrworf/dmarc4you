@@ -501,9 +501,58 @@ def _escape_fts_query(query: str) -> str:
     """Escape special FTS5 characters and format for prefix matching."""
     if not query or not query.strip():
         return ""
-    escaped = query.replace('"', '""')
-    terms = escaped.split()
-    return " ".join(f'"{t}"*' for t in terms if t)
+    terms: list[str] = []
+    current: list[str] = []
+    in_quotes = False
+    index = 0
+
+    while index < len(query):
+        character = query[index]
+        if in_quotes:
+            if character == '"':
+                if index + 1 < len(query) and query[index + 1] == '"':
+                    current.append('"')
+                    index += 2
+                    continue
+                in_quotes = False
+                index += 1
+                continue
+            current.append(character)
+            index += 1
+            continue
+
+        if character.isspace():
+            term = "".join(current).strip()
+            if term:
+                terms.append(term)
+            current = []
+            index += 1
+            continue
+
+        if character == '"' and not current:
+            in_quotes = True
+            index += 1
+            continue
+
+        current.append(character)
+        index += 1
+
+    term = "".join(current).strip()
+    if term:
+        terms.append(term)
+
+    def build_phrase(value: str) -> str:
+        parts = [part for part in value.split() if part]
+        if not parts:
+            return ""
+        escaped_parts = []
+        for part in parts:
+            escaped_part = part.replace('"', '""')
+            escaped_parts.append(f'"{escaped_part}"')
+        escaped_parts[-1] = f"{escaped_parts[-1]}*"
+        return " + ".join(escaped_parts)
+
+    return " ".join(filter(None, (build_phrase(term) for term in terms)))
 
 
 def _build_record_item(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -736,7 +785,8 @@ def search_records(
 
     include: e.g. {"spf_result": ["fail"]} -> only rows where spf_result IN ('fail')
     exclude: e.g. {"disposition": ["none"]} -> only rows where disposition NOT IN ('none')
-    query: free-text search over source_ip, header_from, envelope_from, envelope_to, org_name
+    query: free-text search over source_ip, resolved_name, resolved_name_domain, header_from, envelope_from,
+           envelope_to, and org_name
     """
     backfill_missing_aggregate_alignment(config.database_path)
     allowed_domains = _allowed_domain_names(config, current_user)

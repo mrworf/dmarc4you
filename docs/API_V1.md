@@ -199,6 +199,8 @@ Request example:
 
 Aggregate search filters also support `dkim_alignment`, `spf_alignment`, and `dmarc_alignment`.
 
+Free-text `query` matches `source_ip`, `resolved_name`, `resolved_name_domain`, `header_from`, `envelope_from`, `envelope_to`, and `org_name`.
+
 ### `POST /api/v1/search/grouped`
 
 Hierarchical aggregate search for the dashboard/search explorer.

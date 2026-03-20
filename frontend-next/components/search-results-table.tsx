@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   AggregateSearchResult,
@@ -39,9 +39,11 @@ type QuickFilterActions = {
 };
 
 type BranchState = {
+  contextKey?: string;
   data?: GroupedSearchResponse;
   error?: string;
   isLoading: boolean;
+  path: GroupPathPart[];
 };
 
 function isLegacyGroupedResult(item: AggregateSearchResult | GroupedSearchResult): item is GroupedSearchResult {
@@ -56,17 +58,90 @@ function pathKey(path: GroupPathPart[]): string {
   return path.map((part) => `${part.field}:${part.value}`).join("|");
 }
 
+function isSamePath(left: GroupPathPart[], right: GroupPathPart[]): boolean {
+  return left.length === right.length && left.every((part, index) => part.field === right[index]?.field && part.value === right[index]?.value);
+}
+
+function isPathDescendant(path: GroupPathPart[], ancestor: GroupPathPart[]): boolean {
+  return path.length > ancestor.length && ancestor.every((part, index) => part.field === path[index]?.field && part.value === path[index]?.value);
+}
+
+function isPathPrefixCompatible(path: GroupPathPart[], grouping: string[]): boolean {
+  return path.length <= grouping.length && path.every((part, index) => grouping[index] === part.field);
+}
+
+function hasRootNode(items: Array<GroupedSearchNode | GroupedSearchLeafRow>, path: GroupPathPart[]): boolean {
+  if (!path.length) {
+    return true;
+  }
+  const rootKey = pathKey(path.slice(0, 1));
+  return items.some((item) => isGroupedNode(item) && pathKey(item.path) === rootKey);
+}
+
+function pruneExpandedPaths(
+  expandedPaths: Record<string, GroupPathPart[]>,
+  initialResult: GroupedSearchResponse,
+  grouping: string[],
+): Record<string, GroupPathPart[]> {
+  return Object.fromEntries(
+    Object.entries(expandedPaths).filter(([, path]) => isPathPrefixCompatible(path, grouping) && hasRootNode(initialResult.items, path)),
+  );
+}
+
+function pruneBranchCache(
+  branches: Record<string, BranchState>,
+  initialResult: GroupedSearchResponse,
+  grouping: string[],
+): Record<string, BranchState> {
+  return Object.fromEntries(
+    Object.entries(branches).filter(([, branch]) => isPathPrefixCompatible(branch.path, grouping) && hasRootNode(initialResult.items, branch.path)),
+  );
+}
+
+function reconcileExpandedPathsForBranch(
+  expandedPaths: Record<string, GroupPathPart[]>,
+  path: GroupPathPart[],
+  data: GroupedSearchResponse,
+): Record<string, GroupPathPart[]> {
+  return Object.fromEntries(
+    Object.entries(expandedPaths).filter(([, candidatePath]) => {
+      if (isSamePath(candidatePath, path) || !isPathDescendant(candidatePath, path)) {
+        return true;
+      }
+      if (data.level_kind !== "group") {
+        return false;
+      }
+      const nextChildPath = candidatePath.slice(0, path.length + 1);
+      return data.items.some((item) => isGroupedNode(item) && isSamePath(item.path, nextChildPath));
+    }),
+  );
+}
+
+function pruneBranchesForExpandedPaths(
+  branches: Record<string, BranchState>,
+  expandedPaths: Record<string, GroupPathPart[]>,
+): Record<string, BranchState> {
+  return Object.fromEntries(
+    Object.entries(branches).filter(([, branch]) =>
+      Object.values(expandedPaths).some((path) => isSamePath(path, branch.path) || isPathDescendant(path, branch.path)),
+    ),
+  );
+}
+
 function CellValueWithActions({
   actions,
+  textValue,
   value,
   onQuickFilter,
 }: {
-  value: string;
+  textValue?: string;
+  value: ReactNode;
   actions: QuickFilterActions;
   onQuickFilter?: (option: SearchQuickFilterOption) => void;
 }) {
   const includeAction = actions.includeAction;
   const excludeAction = actions.excludeAction;
+  const actionLabel = textValue ?? (typeof value === "string" ? value : "value");
 
   return (
     <div className="cell-value-wrap">
@@ -86,7 +161,7 @@ function CellValueWithActions({
       )}
       {excludeAction && onQuickFilter ? (
         <button
-          aria-label={`Exclude ${value}`}
+          aria-label={`Exclude ${actionLabel}`}
           className="cell-exclude-trigger"
           onClick={(event) => {
             event.preventDefault();
@@ -105,10 +180,71 @@ function StatusPill({ tone, value }: { value: string; tone: string }) {
   return <span className={`status-pill status-pill-${tone}`}>{value}</span>;
 }
 
+function getStatusQuickFilterActions(column: string, value: string): QuickFilterActions {
+  if (!value) {
+    return {};
+  }
+  switch (column) {
+    case "disposition":
+      return {
+        includeAction: { label: "Include disposition", target: "include_disposition", value },
+        excludeAction: { label: "Exclude disposition", target: "exclude_disposition", value },
+      };
+    case "dkim_result":
+      return {
+        includeAction: { label: "Include DKIM", target: "include_dkim", value },
+        excludeAction: { label: "Exclude DKIM", target: "exclude_dkim", value },
+      };
+    case "spf_result":
+      return {
+        includeAction: { label: "Include SPF", target: "include_spf", value },
+        excludeAction: { label: "Exclude SPF", target: "exclude_spf", value },
+      };
+    case "dmarc_alignment":
+      return {
+        includeAction: { label: "Include DMARC alignment", target: "include_dmarc_alignment", value },
+        excludeAction: { label: "Exclude DMARC alignment", target: "exclude_dmarc_alignment", value },
+      };
+    case "dkim_alignment":
+      return {
+        includeAction: { label: "Include DKIM alignment", target: "include_dkim_alignment", value },
+        excludeAction: { label: "Exclude DKIM alignment", target: "exclude_dkim_alignment", value },
+      };
+    case "spf_alignment":
+      return {
+        includeAction: { label: "Include SPF alignment", target: "include_spf_alignment", value },
+        excludeAction: { label: "Exclude SPF alignment", target: "exclude_spf_alignment", value },
+      };
+    default:
+      return {};
+  }
+}
+
+function renderStatusPillCell(
+  column: string,
+  itemValue: string | null,
+  tone: string,
+  onQuickFilter?: (option: SearchQuickFilterOption) => void,
+) {
+  if (!itemValue) {
+    return "n/a";
+  }
+  return (
+    <CellValueWithActions
+      actions={getStatusQuickFilterActions(column, itemValue)}
+      onQuickFilter={onQuickFilter}
+      textValue={itemValue}
+      value={<StatusPill tone={tone} value={itemValue} />}
+    />
+  );
+}
+
 function SummaryBar({
   segments,
+  showCountLabel = true,
   title,
 }: {
+  showCountLabel?: boolean;
   title: string;
   segments: Array<{ colorClass: string; label: string; value: number }>;
 }) {
@@ -122,7 +258,7 @@ function SummaryBar({
         })}
       </div>
       <span className="summary-bar-label">{title}</span>
-      <span className="summary-bar-count">{total}</span>
+      {showCountLabel ? <span className="summary-bar-count">{total}</span> : null}
     </div>
   );
 }
@@ -179,47 +315,17 @@ function getAggregateQuickFilterActions(column: string, item: AggregateSearchRes
         ? { includeAction: { label: "Include in search", target: "query", value: item.resolved_name_domain } }
         : {};
     case "disposition":
-      return item.disposition
-        ? {
-            includeAction: { label: "Include disposition", target: "include_disposition", value: item.disposition },
-            excludeAction: { label: "Exclude disposition", target: "exclude_disposition", value: item.disposition },
-          }
-        : {};
+      return item.disposition ? getStatusQuickFilterActions(column, item.disposition) : {};
     case "dkim_result":
-      return item.dkim_result
-        ? {
-            includeAction: { label: "Include DKIM", target: "include_dkim", value: item.dkim_result },
-            excludeAction: { label: "Exclude DKIM", target: "exclude_dkim", value: item.dkim_result },
-          }
-        : {};
+      return item.dkim_result ? getStatusQuickFilterActions(column, item.dkim_result) : {};
     case "spf_result":
-      return item.spf_result
-        ? {
-            includeAction: { label: "Include SPF", target: "include_spf", value: item.spf_result },
-            excludeAction: { label: "Exclude SPF", target: "exclude_spf", value: item.spf_result },
-          }
-        : {};
+      return item.spf_result ? getStatusQuickFilterActions(column, item.spf_result) : {};
     case "dmarc_alignment":
-      return item.dmarc_alignment
-        ? {
-            includeAction: { label: "Include DMARC alignment", target: "include_dmarc_alignment", value: item.dmarc_alignment },
-            excludeAction: { label: "Exclude DMARC alignment", target: "exclude_dmarc_alignment", value: item.dmarc_alignment },
-          }
-        : {};
+      return item.dmarc_alignment ? getStatusQuickFilterActions(column, item.dmarc_alignment) : {};
     case "dkim_alignment":
-      return item.dkim_alignment
-        ? {
-            includeAction: { label: "Include DKIM alignment", target: "include_dkim_alignment", value: item.dkim_alignment },
-            excludeAction: { label: "Exclude DKIM alignment", target: "exclude_dkim_alignment", value: item.dkim_alignment },
-          }
-        : {};
+      return item.dkim_alignment ? getStatusQuickFilterActions(column, item.dkim_alignment) : {};
     case "spf_alignment":
-      return item.spf_alignment
-        ? {
-            includeAction: { label: "Include SPF alignment", target: "include_spf_alignment", value: item.spf_alignment },
-            excludeAction: { label: "Exclude SPF alignment", target: "exclude_spf_alignment", value: item.spf_alignment },
-          }
-        : {};
+      return item.spf_alignment ? getStatusQuickFilterActions(column, item.spf_alignment) : {};
     case "domain":
       return item.domain ? { includeAction: { label: "Limit to domain", target: "domains", value: item.domain } } : {};
     case "org_name":
@@ -337,29 +443,40 @@ export function AggregateSearchResultsTable({
 }
 
 export function GroupedAggregateResultsTable({
+  contextKey,
   emptyMessage,
   grouping,
   initialResult,
   loadBranch,
   onQuickFilter,
   onViewReport,
+  showPeriodColumn = true,
+  showSummaryCounts = true,
   visibleColumns,
 }: {
+  contextKey: string;
   emptyMessage: string;
   grouping: string[];
   initialResult: GroupedSearchResponse;
   loadBranch: (path: GroupPathPart[]) => Promise<GroupedSearchResponse>;
   onQuickFilter?: (option: SearchQuickFilterOption) => void;
   onViewReport?: (reportId: string) => void;
+  showPeriodColumn?: boolean;
+  showSummaryCounts?: boolean;
   visibleColumns?: string[];
 }) {
-  const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
+  const [expandedPaths, setExpandedPaths] = useState<Record<string, GroupPathPart[]>>({});
   const [branches, setBranches] = useState<Record<string, BranchState>>({});
+  const contextKeyRef = useRef(contextKey);
+  const loadBranchRef = useRef(loadBranch);
 
   useEffect(() => {
-    setExpandedKeys({});
-    setBranches({});
-  }, [initialResult, grouping]);
+    contextKeyRef.current = contextKey;
+  }, [contextKey]);
+
+  useEffect(() => {
+    loadBranchRef.current = loadBranch;
+  }, [loadBranch]);
 
   const leafColumns = useMemo(() => {
     const baseColumns = visibleColumns?.length
@@ -380,29 +497,130 @@ export function GroupedAggregateResultsTable({
         ];
     return baseColumns.filter((column) => !grouping.includes(column));
   }, [grouping, visibleColumns]);
+  const groupedColumnCount = showPeriodColumn ? 7 : 6;
+
+  const collapsePath = useCallback((path: GroupPathPart[]) => {
+    setExpandedPaths((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([, candidatePath]) => !isSamePath(candidatePath, path) && !isPathDescendant(candidatePath, path)),
+      ),
+    );
+    setBranches((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([, branch]) => !isSamePath(branch.path, path) && !isPathDescendant(branch.path, path)),
+      ),
+    );
+  }, []);
+
+  const refreshBranch = useCallback(
+    async (path: GroupPathPart[]) => {
+      const key = pathKey(path);
+      const requestContextKey = contextKeyRef.current;
+
+      setBranches((current) => {
+        const branch = current[key];
+        if (branch?.isLoading && branch.contextKey === requestContextKey) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            contextKey: requestContextKey,
+            data: branch?.data,
+            error: undefined,
+            isLoading: true,
+            path,
+          },
+        };
+      });
+
+      try {
+        const data = await loadBranchRef.current(path);
+        if (contextKeyRef.current !== requestContextKey) {
+          return;
+        }
+        if (!data.items.length && data.total === 0) {
+          collapsePath(path);
+          return;
+        }
+
+        setBranches((current) => ({
+          ...current,
+          [key]: {
+            contextKey: requestContextKey,
+            data,
+            error: undefined,
+            isLoading: false,
+            path,
+          },
+        }));
+        setExpandedPaths((current) => {
+          const nextExpandedPaths = reconcileExpandedPathsForBranch(current, path, data);
+          setBranches((branchState) => pruneBranchesForExpandedPaths(branchState, nextExpandedPaths));
+          return nextExpandedPaths;
+        });
+      } catch (error) {
+        if (contextKeyRef.current !== requestContextKey) {
+          return;
+        }
+        setBranches((current) => ({
+          ...current,
+          [key]: {
+            contextKey: requestContextKey,
+            data: current[key]?.data,
+            error: error instanceof Error ? error.message : "Failed to load grouped results",
+            isLoading: false,
+            path,
+          },
+        }));
+      }
+    },
+    [collapsePath],
+  );
 
   async function toggleBranch(node: GroupedSearchNode) {
     const key = pathKey(node.path);
-    const isExpanded = !!expandedKeys[key];
+    const isExpanded = !!expandedPaths[key];
     if (isExpanded) {
-      setExpandedKeys((current) => ({ ...current, [key]: false }));
+      setExpandedPaths((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([, path]) => !isSamePath(path, node.path) && !isPathDescendant(path, node.path)),
+        ),
+      );
       return;
     }
-    setExpandedKeys((current) => ({ ...current, [key]: true }));
-    if (branches[key]?.data || branches[key]?.isLoading) {
+    setExpandedPaths((current) => ({ ...current, [key]: node.path }));
+    if (branches[key]?.data && branches[key]?.contextKey === contextKey && !branches[key]?.isLoading) {
       return;
     }
-    setBranches((current) => ({ ...current, [key]: { isLoading: true } }));
-    try {
-      const data = await loadBranch(node.path);
-      setBranches((current) => ({ ...current, [key]: { data, isLoading: false } }));
-    } catch (error) {
-      setBranches((current) => ({
-        ...current,
-        [key]: { error: error instanceof Error ? error.message : "Failed to load grouped results", isLoading: false },
-      }));
-    }
+    void refreshBranch(node.path);
   }
+
+  useEffect(() => {
+    const nextExpandedPaths = pruneExpandedPaths(expandedPaths, initialResult, grouping);
+    if (
+      Object.keys(nextExpandedPaths).length !== Object.keys(expandedPaths).length ||
+      Object.keys(nextExpandedPaths).some((key) => !expandedPaths[key] || !isSamePath(nextExpandedPaths[key], expandedPaths[key]))
+    ) {
+      setExpandedPaths(nextExpandedPaths);
+    }
+
+    const nextBranches = pruneBranchCache(branches, initialResult, grouping);
+    if (
+      Object.keys(nextBranches).length !== Object.keys(branches).length ||
+      Object.keys(nextBranches).some((key) => nextBranches[key] !== branches[key])
+    ) {
+      setBranches(nextBranches);
+    }
+
+    Object.values(nextExpandedPaths).forEach((path) => {
+      const key = pathKey(path);
+      const branch = nextBranches[key];
+      if (!branch || branch.contextKey !== contextKey) {
+        void refreshBranch(path);
+      }
+    });
+  }, [branches, contextKey, expandedPaths, grouping, initialResult, refreshBranch]);
 
   function renderBranchRows(items: Array<GroupedSearchNode | GroupedSearchLeafRow>, depth: number): JSX.Element[] {
     const rows: JSX.Element[] = [];
@@ -413,14 +631,15 @@ export function GroupedAggregateResultsTable({
 
       const key = pathKey(item.path);
       const branch = branches[key];
-      const isExpanded = !!expandedKeys[key];
+      const isExpanded = !!expandedPaths[key];
       rows.push(
         <Fragment key={`group-${key}`}>
-          <tr className="group-row">
+          <tr className="group-row" data-group-key={key}>
             <td>
               <div className="group-cell" style={{ paddingLeft: depth * 18 }}>
                 <button
                   aria-expanded={isExpanded}
+                  aria-label={`${isExpanded ? "Collapse" : "Expand"} ${getAggregateFieldLabel(item.field)} ${item.label}`}
                   className="group-toggle"
                   onClick={() => {
                     void toggleBranch(item);
@@ -449,6 +668,7 @@ export function GroupedAggregateResultsTable({
                   { colorClass: "summary-red", label: "Fail", value: item.dmarc_alignment_summary.fail },
                   { colorClass: "summary-blue", label: "Unknown", value: item.dmarc_alignment_summary.unknown },
                 ]}
+                showCountLabel={showSummaryCounts}
                 title="DMARC"
               />
             </td>
@@ -459,24 +679,27 @@ export function GroupedAggregateResultsTable({
                   { colorClass: "summary-amber", label: "Quarantine", value: item.disposition_summary.quarantine },
                   { colorClass: "summary-red", label: "Reject", value: item.disposition_summary.reject },
                 ]}
+                showCountLabel={showSummaryCounts}
                 title="Policy"
               />
             </td>
-            <td>
-              {item.first_record_date ?? "n/a"}
-              {item.last_record_date && item.last_record_date !== item.first_record_date ? ` to ${item.last_record_date}` : ""}
-            </td>
+            {showPeriodColumn ? (
+              <td>
+                {item.first_record_date ?? "n/a"}
+                {item.last_record_date && item.last_record_date !== item.first_record_date ? ` to ${item.last_record_date}` : ""}
+              </td>
+            ) : null}
           </tr>
           {isExpanded && branch?.isLoading ? (
             <tr>
-              <td className="status-text" colSpan={7}>
-                Loading grouped results...
+              <td className="status-text" colSpan={groupedColumnCount}>
+                {branch.data ? "Updating grouped results..." : "Loading grouped results..."}
               </td>
             </tr>
           ) : null}
           {isExpanded && branch?.error ? (
             <tr>
-              <td className="error-text" colSpan={7}>
+              <td className="error-text" colSpan={groupedColumnCount}>
                 {branch.error}
               </td>
             </tr>
@@ -484,7 +707,7 @@ export function GroupedAggregateResultsTable({
           {isExpanded && branch?.data && branch.data.level_kind === "group" ? renderBranchRows(branch.data.items, depth + 1) : null}
           {isExpanded && branch?.data && branch.data.level_kind === "row" ? (
             <tr>
-              <td colSpan={7}>
+              <td colSpan={groupedColumnCount}>
                 <div className="group-leaf-wrap" style={{ paddingLeft: (depth + 1) * 18 }}>
                   <AggregateSearchResultsTable
                     emptyMessage="No leaf rows."
@@ -552,7 +775,7 @@ export function GroupedAggregateResultsTable({
             <th>Reports</th>
             <th>DMARC alignment</th>
             <th>Disposition</th>
-            <th>Period</th>
+            {showPeriodColumn ? <th>Period</th> : null}
           </tr>
         </thead>
         <tbody>{renderBranchRows(initialResult.items, 0)}</tbody>
@@ -585,17 +808,17 @@ function renderAggregateCell(
     case "count":
       return item.count;
     case "disposition":
-      return item.disposition ? <StatusPill tone={`disposition-${item.disposition}`} value={item.disposition} /> : "n/a";
+      return renderStatusPillCell(column, item.disposition, `disposition-${item.disposition ?? ""}`, onQuickFilter);
     case "dkim_result":
-      return item.dkim_result ? <StatusPill tone={`result-${item.dkim_result}`} value={item.dkim_result} /> : "n/a";
+      return renderStatusPillCell(column, item.dkim_result, `result-${item.dkim_result ?? ""}`, onQuickFilter);
     case "spf_result":
-      return item.spf_result ? <StatusPill tone={`result-${item.spf_result}`} value={item.spf_result} /> : "n/a";
+      return renderStatusPillCell(column, item.spf_result, `result-${item.spf_result ?? ""}`, onQuickFilter);
     case "dmarc_alignment":
-      return item.dmarc_alignment ? <StatusPill tone={`dmarc-${item.dmarc_alignment}`} value={item.dmarc_alignment} /> : "n/a";
+      return renderStatusPillCell(column, item.dmarc_alignment, `dmarc-${item.dmarc_alignment ?? ""}`, onQuickFilter);
     case "dkim_alignment":
-      return item.dkim_alignment ? <StatusPill tone={`alignment-${item.dkim_alignment}`} value={item.dkim_alignment} /> : "n/a";
+      return renderStatusPillCell(column, item.dkim_alignment, `alignment-${item.dkim_alignment ?? ""}`, onQuickFilter);
     case "spf_alignment":
-      return item.spf_alignment ? <StatusPill tone={`alignment-${item.spf_alignment}`} value={item.spf_alignment} /> : "n/a";
+      return renderStatusPillCell(column, item.spf_alignment, `alignment-${item.spf_alignment ?? ""}`, onQuickFilter);
     case "domain":
       return <CellValueWithActions actions={getAggregateQuickFilterActions(column, item)} onQuickFilter={onQuickFilter} value={item.domain} />;
     case "org_name":

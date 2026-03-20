@@ -79,17 +79,43 @@ def populated_db(test_db, config):
         rec1_id = f"rec_{uuid.uuid4().hex[:8]}"
         conn.execute(
             """INSERT INTO aggregate_report_records 
-               (id, aggregate_report_id, source_ip, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (rec1_id, report_id, "192.0.2.1", 100, "none", "pass", "pass", "sender@example.com", "bounce@example.com", "example.com"),
+               (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                rec1_id,
+                report_id,
+                "192.0.2.1",
+                "mail.google.com",
+                "google.com",
+                100,
+                "none",
+                "pass",
+                "pass",
+                "sender@example.com",
+                "bounce@example.com",
+                "example.com",
+            ),
         )
         
         rec2_id = f"rec_{uuid.uuid4().hex[:8]}"
         conn.execute(
             """INSERT INTO aggregate_report_records 
-               (id, aggregate_report_id, source_ip, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (rec2_id, report_id, "198.51.100.5", 50, "quarantine", "fail", "fail", "spammer@malicious.net", "fake@malicious.net", "example.com"),
+               (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                rec2_id,
+                report_id,
+                "198.51.100.5",
+                "mx1.malicious.net",
+                "malicious.net",
+                50,
+                "quarantine",
+                "fail",
+                "fail",
+                "spammer@malicious.net",
+                "fake@malicious.net",
+                "example.com",
+            ),
         )
         
         report2_id = f"agg_{uuid.uuid4().hex[:8]}"
@@ -102,9 +128,22 @@ def populated_db(test_db, config):
         rec3_id = f"rec_{uuid.uuid4().hex[:8]}"
         conn.execute(
             """INSERT INTO aggregate_report_records 
-               (id, aggregate_report_id, source_ip, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (rec3_id, report2_id, "10.0.0.1", 25, "none", "pass", "pass", "internal@corp.example.com", "noreply@corp.example.com", "example.com"),
+               (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                rec3_id,
+                report2_id,
+                "10.0.0.1",
+                "mail.microsoft.com",
+                "microsoft.com",
+                25,
+                "none",
+                "pass",
+                "pass",
+                "internal@corp.example.com",
+                "noreply@corp.example.com",
+                "example.com",
+            ),
         )
         
         conn.commit()
@@ -137,6 +176,10 @@ class TestEscapeFtsQuery:
         result = _escape_fts_query("  google   fail  ")
         assert result == '"google"* "fail"*'
 
+    def test_preserves_quoted_phrases(self):
+        result = _escape_fts_query('google "some world"')
+        assert result == '"google"* "some" + "world"*'
+
 
 class TestSearchRecordsFts:
     """Tests for FTS search in search_records."""
@@ -161,6 +204,13 @@ class TestSearchRecordsFts:
         assert result["total"] == 2
         for item in result["items"]:
             assert item["org_name"] == "Google Inc"
+
+    def test_search_by_quoted_phrase(self, populated_db, config, super_admin_user):
+        """Quoted phrase queries stay intact instead of splitting into separate chips/terms."""
+        result = search_records(config, super_admin_user, query='"Google Inc"')
+        assert result["total"] == 2
+        for item in result["items"]:
+            assert item["org_name"] == "Google Inc"
     
     def test_search_by_source_ip(self, populated_db, config, super_admin_user):
         """FTS search finds records by source_ip."""
@@ -173,6 +223,18 @@ class TestSearchRecordsFts:
         result = search_records(config, super_admin_user, query="malicious")
         assert result["total"] == 1
         assert "malicious" in result["items"][0]["header_from"]
+
+    def test_search_by_resolved_host(self, populated_db, config, super_admin_user):
+        """FTS search finds records by resolved host."""
+        result = search_records(config, super_admin_user, query="mail.google.com")
+        assert result["total"] == 1
+        assert result["items"][0]["resolved_name"] == "mail.google.com"
+
+    def test_search_by_resolved_host_domain(self, populated_db, config, super_admin_user):
+        """FTS search finds records by resolved host domain."""
+        result = search_records(config, super_admin_user, query="google.com")
+        assert result["total"] == 1
+        assert result["items"][0]["resolved_name_domain"] == "google.com"
     
     def test_search_combined_with_filters(self, populated_db, config, super_admin_user):
         """FTS search works with include/exclude filters."""

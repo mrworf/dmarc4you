@@ -315,6 +315,26 @@ def test_post_search_returns_resolved_name_fields(search_records_client, temp_db
     assert item["resolved_name_domain"] == "example.net"
 
 
+def test_post_search_query_matches_resolved_host(search_records_client, temp_db_path: str) -> None:
+    client, _ = search_records_client
+    conn = get_connection(temp_db_path)
+    conn.execute(
+        """UPDATE aggregate_report_records
+           SET resolved_name = ?, resolved_name_domain = ?
+           WHERE source_ip = ?""",
+        ("mail.example.net", "example.net", "192.0.2.1"),
+    )
+    conn.commit()
+    conn.close()
+
+    r = client.post("/api/v1/search", json={"query": "mail.example.net"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 1
+    assert data["items"][0]["source_ip"] == "192.0.2.1"
+    assert data["items"][0]["resolved_name"] == "mail.example.net"
+
+
 def test_post_search_groups_by_source_ip(search_records_client) -> None:
     client, _ = search_records_client
     r = client.post("/api/v1/search", json={"group_by": "source_ip"})

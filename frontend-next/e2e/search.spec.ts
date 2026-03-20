@@ -44,9 +44,14 @@ async function applyDefaultAggregateFilters(page: Page) {
 
   await page.getByRole("button", { name: "More filters" }).click();
   const filtersPanel = page.locator('[role="dialog"]').filter({ has: page.getByRole("heading", { name: "More filters" }) });
-  await filtersPanel.locator(".stack").nth(0).locator(".checkbox-card").filter({ hasText: "Pass" }).click();
+  const includeSpfSection = filtersPanel.locator(".stack").filter({ has: filtersPanel.getByText("Include SPF") }).first();
+  await includeSpfSection.locator(".checkbox-card").filter({ hasText: /^Pass$/ }).click();
   await page.getByRole("button", { name: "Done" }).click();
   await expect(page).toHaveURL(/include_spf=pass/);
+}
+
+function formatFilterChipValue(value: string): string {
+  return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value;
 }
 
 test.describe("frontend-next search coverage", () => {
@@ -105,6 +110,94 @@ test.describe("frontend-next search coverage", () => {
     await expectNoReload(page, marker);
   });
 
+  test("aggregate search keeps grouped branches open during live filter refresh", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await page.goto("/search");
+
+    await expect(page.getByRole("heading", { name: "Search", exact: true })).toBeVisible();
+    const marker = await installNoReloadMarker(page);
+
+    const configuredDomain = process.env.DMARC_E2E_SEARCH_DOMAIN;
+    if (configuredDomain) {
+      await page.getByLabel(configuredDomain, { exact: true }).check();
+    } else {
+      await page.locator(".search-domain-grid input[type='checkbox']").first().check();
+    }
+    await page.getByLabel("Free-text search").fill(process.env.DMARC_E2E_SEARCH_QUERY ?? "google");
+    await page.getByRole("button", { name: "Add level" }).click();
+
+    const firstToggle = page.locator(".group-toggle").first();
+    await expect(firstToggle).toBeVisible();
+    await firstToggle.click();
+    await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(".group-leaf-wrap").first()).toBeVisible();
+
+    await page.getByLabel("Free-text search").fill("");
+
+    await expectNoReload(page, marker);
+    await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(".group-leaf-wrap").first()).toBeVisible();
+  });
+
+  test("aggregate search collapses impossible grouped branches when grouping order changes", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await page.goto("/search");
+
+    await expect(page.getByRole("heading", { name: "Search", exact: true })).toBeVisible();
+    const marker = await installNoReloadMarker(page);
+
+    const configuredDomain = process.env.DMARC_E2E_SEARCH_DOMAIN;
+    if (configuredDomain) {
+      await page.getByLabel(configuredDomain, { exact: true }).check();
+    } else {
+      await page.locator(".search-domain-grid input[type='checkbox']").first().check();
+    }
+
+    await page.getByRole("button", { name: "Add level" }).click();
+    await page.getByLabel("Add grouping").selectOption("disposition");
+    await page.getByRole("button", { name: "Add level" }).click();
+
+    const firstToggle = page.locator(".group-toggle").first();
+    await expect(firstToggle).toBeVisible();
+    await firstToggle.click();
+    await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
+
+    await page.getByRole("button", { name: "Move Domain later" }).click();
+
+    await expectNoReload(page, marker);
+    await expect(page.locator(".group-toggle[aria-expanded='true']")).toHaveCount(0);
+    await expect(page.locator(".group-leaf-wrap")).toHaveCount(0);
+  });
+
+  test("aggregate search collapses filtered-out grouped branches while keeping valid ones open", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await page.goto("/search");
+
+    await expect(page.getByRole("heading", { name: "Search", exact: true })).toBeVisible();
+    const marker = await installNoReloadMarker(page);
+
+    await page.getByLabel("From", { exact: true }).fill(process.env.DMARC_E2E_SEARCH_FROM ?? "2025-01-01");
+    await page.getByLabel("To", { exact: true }).fill(process.env.DMARC_E2E_SEARCH_TO ?? "2025-12-31");
+    await page.getByRole("button", { name: "Add level" }).click();
+
+    const rootToggles = page.locator(".group-toggle");
+    await expect(rootToggles.first()).toBeVisible();
+    test.skip((await rootToggles.count()) < 2, "Branch-collapse coverage needs at least two root grouped results.");
+
+    const firstDomainQuickFilter = page.locator(".group-row .cell-primary-action").first();
+
+    await rootToggles.nth(0).click();
+    await rootToggles.nth(1).click();
+    await expect(rootToggles.nth(0)).toHaveAttribute("aria-expanded", "true");
+    await expect(rootToggles.nth(1)).toHaveAttribute("aria-expanded", "true");
+
+    await firstDomainQuickFilter.click();
+
+    await expectNoReload(page, marker);
+    await expect(page.locator(".group-toggle[aria-expanded='true']")).toHaveCount(1);
+    await expect(page.locator(".group-row .cell-primary-action")).toHaveCount(1);
+  });
+
   test("aggregate search debounces text/date changes and persists them after reload", async ({ page }) => {
     await loginAsSuperAdmin(page);
     await page.goto("/search");
@@ -133,6 +226,113 @@ test.describe("frontend-next search coverage", () => {
     await expect(page.getByLabel("Free-text search")).toHaveValue(process.env.DMARC_E2E_SEARCH_QUERY ?? "google");
     await expect(page.getByLabel("From", { exact: true })).toHaveValue(process.env.DMARC_E2E_SEARCH_FROM ?? "2025-01-01");
     await expect(page.getByLabel("To", { exact: true })).toHaveValue(process.env.DMARC_E2E_SEARCH_TO ?? "2025-01-31");
+  });
+
+  test("aggregate search keeps multi-word added search terms intact and removable", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await page.goto("/search");
+
+    await expect(page.getByRole("heading", { name: "Search", exact: true })).toBeVisible();
+
+    const configuredDomain = process.env.DMARC_E2E_SEARCH_DOMAIN;
+    if (configuredDomain) {
+      await page.getByLabel(configuredDomain, { exact: true }).check();
+    } else {
+      await page.locator(".search-domain-grid input[type='checkbox']").first().check();
+    }
+
+    await page.getByLabel("Free-text search").fill("192.0.2.21");
+    const orgButton = page.getByRole("button", { name: "Google Workspace", exact: true }).first();
+    await expect(orgButton).toBeVisible();
+    await orgButton.click();
+
+    await expect(page.getByLabel("Free-text search")).toHaveValue('192.0.2.21 "Google Workspace"');
+    await expect(page.getByText("Search: 192.0.2.21")).toBeVisible();
+    await expect(page.getByText("Search: Google Workspace")).toBeVisible();
+    await expect(page).toHaveURL(/query=192\.0\.2\.21(?:\+|%20)%22Google(?:\+|%20)Workspace%22/);
+
+    await page.getByRole("button", { name: "Remove Search: Google Workspace" }).click();
+
+    await expect(page.getByLabel("Free-text search")).toHaveValue("192.0.2.21");
+    await expect(page.getByText("Search: Google Workspace")).toHaveCount(0);
+    await expect(page.getByText("Search: 192.0.2.21")).toBeVisible();
+    await expect(page).toHaveURL(/query=192\.0\.2\.21/);
+  });
+
+  test("aggregate search supports resolved host queries and status-pill quick filters", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await page.goto("/search");
+
+    await expect(page.getByRole("heading", { name: "Search", exact: true })).toBeVisible();
+
+    const configuredDomain = process.env.DMARC_E2E_SEARCH_DOMAIN;
+    if (configuredDomain) {
+      await page.getByLabel(configuredDomain, { exact: true }).check();
+    } else {
+      await page.locator(".search-domain-grid input[type='checkbox']").first().check();
+    }
+
+    const firstRow = page.locator(".data-table tbody tr").first();
+    await expect(firstRow).toBeVisible();
+
+    const resolvedHostButton = firstRow.locator("td:nth-child(3) .cell-primary-action");
+    await expect(resolvedHostButton).toBeVisible();
+    const resolvedHost = ((await resolvedHostButton.textContent()) ?? "").trim();
+    expect(resolvedHost).not.toBe("");
+    await resolvedHostButton.click();
+
+    await expect(page.getByLabel("Free-text search")).toHaveValue(resolvedHost);
+    await expect(page.getByText(`Search: ${resolvedHost}`)).toBeVisible();
+
+    const dispositionButton = page.locator(".data-table tbody tr").first().locator("td:nth-child(5) .cell-primary-action");
+    const dkimButton = page.locator(".data-table tbody tr").first().locator("td:nth-child(6) .cell-primary-action");
+    const spfButton = page.locator(".data-table tbody tr").first().locator("td:nth-child(7) .cell-primary-action");
+    const dmarcAlignmentButton = page.locator(".data-table tbody tr").first().locator("td:nth-child(8) .cell-primary-action");
+
+    await expect(dispositionButton).toBeVisible();
+    await expect(dkimButton).toBeVisible();
+    await expect(spfButton).toBeVisible();
+    await expect(dmarcAlignmentButton).toBeVisible();
+
+    const disposition = ((await dispositionButton.textContent()) ?? "").trim();
+    const dkim = ((await dkimButton.textContent()) ?? "").trim();
+    const spf = ((await spfButton.textContent()) ?? "").trim();
+    const dmarcAlignment = ((await dmarcAlignmentButton.textContent()) ?? "").trim();
+
+    await dispositionButton.click();
+    await dkimButton.click();
+    await spfButton.click();
+    await dmarcAlignmentButton.click();
+
+    await expect(page.getByText(`Disposition: ${formatFilterChipValue(disposition)}`)).toBeVisible();
+    await expect(page.getByText(`DKIM: ${formatFilterChipValue(dkim)}`)).toBeVisible();
+    await expect(page.getByText(`SPF: ${formatFilterChipValue(spf)}`)).toBeVisible();
+    await expect(page.getByText(`DMARC alignment: ${formatFilterChipValue(dmarcAlignment)}`)).toBeVisible();
+    await expect(page).toHaveURL(/include_disposition=/);
+    await expect(page).toHaveURL(/include_dkim=/);
+    await expect(page).toHaveURL(/include_spf=/);
+    await expect(page).toHaveURL(/include_dmarc_alignment=/);
+  });
+
+  test("grouped search keeps row-level period and count labels", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await page.goto("/search");
+
+    await expect(page.getByRole("heading", { name: "Search", exact: true })).toBeVisible();
+
+    const configuredDomain = process.env.DMARC_E2E_SEARCH_DOMAIN;
+    if (configuredDomain) {
+      await page.getByLabel(configuredDomain, { exact: true }).check();
+    } else {
+      await page.locator(".search-domain-grid input[type='checkbox']").first().check();
+    }
+
+    await page.getByLabel("Free-text search").fill(process.env.DMARC_E2E_SEARCH_QUERY ?? "google");
+    await page.getByRole("button", { name: "Add level" }).click();
+
+    await expect(page.locator(".grouped-data-table")).toBeVisible();
+    await expect(page.locator(".grouped-data-table thead").getByText("Period")).toBeVisible();
+    await expect(page.locator(".grouped-data-table .summary-bar-count").first()).toBeVisible();
   });
 
   test("search route switches between aggregate and forensic modes", async ({ page }) => {

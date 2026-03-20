@@ -134,6 +134,96 @@ test.describe("frontend-next critical happy paths", () => {
     await expectNoReload(page, marker);
   });
 
+  test("dashboard detail keeps grouped branches open during live filter refresh", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await openAnyDashboardDetail(page);
+
+    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    const marker = await installNoReloadMarker(page);
+
+    await page.getByLabel("Add grouping").selectOption("source_ip");
+    await page.getByRole("button", { name: "Add level" }).click();
+
+    const firstToggle = page.locator(".group-toggle").first();
+    await expect(firstToggle).toBeVisible();
+    await firstToggle.click();
+    await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(".group-leaf-wrap").first()).toBeVisible();
+
+    const firstGroupQuickFilter = page.locator(".group-row .cell-primary-action").first();
+
+    await firstGroupQuickFilter.click();
+
+    await expectNoReload(page, marker);
+    await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(".group-leaf-wrap").first()).toBeVisible();
+  });
+
+  test("dashboard detail keeps compatible grouped branches open when removing deeper grouping", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await openAnyDashboardDetail(page);
+
+    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    const marker = await installNoReloadMarker(page);
+
+    await page.getByRole("button", { name: "Add level" }).click();
+    await page.getByLabel("Add grouping").selectOption("disposition");
+    await page.getByRole("button", { name: "Add level" }).click();
+
+    const firstToggle = page.locator(".group-toggle").first();
+    await expect(firstToggle).toBeVisible();
+    await firstToggle.click();
+    await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
+
+    await page.getByRole("button", { name: "Remove Disposition" }).click();
+
+    await expectNoReload(page, marker);
+    await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(".group-leaf-wrap").first()).toBeVisible();
+  });
+
+  test("dashboard detail keeps multi-word added search terms intact and removable", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await openAnyDashboardDetail(page);
+
+    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+
+    await page.getByLabel("Search", { exact: true }).fill("192.0.2.21");
+    const orgButton = page.getByRole("button", { name: "Google Workspace", exact: true }).first();
+    await expect(orgButton).toBeVisible();
+    await orgButton.click();
+
+    await expect(page.getByLabel("Search", { exact: true })).toHaveValue('192.0.2.21 "Google Workspace"');
+    await expect(page.getByText("Search: 192.0.2.21")).toBeVisible();
+    await expect(page.getByText("Search: Google Workspace")).toBeVisible();
+    await expect(page).toHaveURL(/query=192\.0\.2\.21(?:\+|%20)%22Google(?:\+|%20)Workspace%22/);
+
+    await page.getByRole("button", { name: "Remove Search: Google Workspace" }).click();
+
+    await expect(page.getByLabel("Search", { exact: true })).toHaveValue("192.0.2.21");
+    await expect(page.getByText("Search: Google Workspace")).toHaveCount(0);
+    await expect(page.getByText("Search: 192.0.2.21")).toBeVisible();
+    await expect(page).toHaveURL(/query=192\.0\.2\.21/);
+  });
+
+  test("dashboard grouped view hides redundant bar counts and shows one dashboard-wide period summary", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await openAnyDashboardDetail(page);
+
+    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+
+    const fromValue = process.env.DMARC_E2E_SEARCH_FROM ?? "2025-01-01";
+    const toValue = process.env.DMARC_E2E_SEARCH_TO ?? "2025-12-31";
+    await page.getByLabel("From", { exact: true }).fill(fromValue);
+    await page.getByLabel("To", { exact: true }).fill(toValue);
+    await page.getByRole("button", { name: "Add level" }).click();
+
+    await expect(page.locator(".grouped-data-table")).toBeVisible();
+    await expect(page.getByText(`Dashboard period: From ${fromValue} to ${toValue}`)).toBeVisible();
+    await expect(page.locator(".grouped-data-table thead").getByText("Period")).toHaveCount(0);
+    await expect(page.locator(".grouped-data-table .summary-bar-count")).toHaveCount(0);
+  });
+
   test("dashboard detail edit supports live drag reordering and persists visible columns", async ({ page }) => {
     await loginAsSuperAdmin(page);
     await openAnyDashboardDetail(page);
