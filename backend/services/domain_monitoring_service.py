@@ -417,7 +417,7 @@ def _diff_dmarc(previous: dict[str, Any], current: dict[str, Any]) -> list[dict[
 def _extract_spf_includes(record_state: dict[str, Any]) -> list[str]:
     parsed = record_state.get("parsed") or {}
     includes = parsed.get("includes") or []
-    return [str(item) for item in includes]
+    return [str(item) for item in includes if _is_spf_sender_mechanism(str(item))]
 
 
 def _diff_spf(previous: dict[str, Any], current: dict[str, Any]) -> list[dict[str, Any]]:
@@ -980,6 +980,20 @@ def _strip_spf_qualifier(token: str) -> str:
     return token
 
 
+def _is_spf_sender_mechanism(token: str) -> bool:
+    mechanism = _strip_spf_qualifier(token).lower()
+    return (
+        mechanism.startswith("include:")
+        or mechanism.startswith("ip4:")
+        or mechanism.startswith("ip6:")
+        or mechanism == "a"
+        or mechanism.startswith("a:")
+        or mechanism == "mx"
+        or mechanism.startswith("mx:")
+        or mechanism.startswith("exists:")
+    )
+
+
 def _describe_a_mechanism(mechanism: str, domain_name: str) -> str:
     if mechanism == "a":
         return f"A/AAAA records for {domain_name}"
@@ -997,7 +1011,7 @@ def _describe_mx_mechanism(mechanism: str, domain_name: str) -> str:
 def _summarize_spf(record: str | None, domain_name: str) -> tuple[dict[str, Any], str, str]:
     value = record or ""
     mechanisms = [part for part in value.split() if part and not part.lower().startswith("v=spf1")]
-    includes = [part for part in mechanisms if _strip_spf_qualifier(part).startswith(("include:", "ip4:", "ip6:", "a", "mx", "exists:"))]
+    includes = [part for part in mechanisms if _is_spf_sender_mechanism(part)]
     qualifier = "neutral"
     if value.strip().endswith("-all"):
         qualifier = "fail"

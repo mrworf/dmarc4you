@@ -295,6 +295,7 @@ def test_spf_details_report_when_no_explicit_senders_are_listed() -> None:
     details = domain_monitoring_service._build_spf_details(parsed, "example.com")
 
     assert summary == "Reject unauthorized senders. 0 sender rule(s) configured."
+    assert parsed["includes"] == []
     assert parsed["allowed_senders"] == []
     assert parsed["referenced_services"] == []
     assert details[1]["values"] == ["No explicit addresses or hosts are allowed to send email as example.com."]
@@ -369,3 +370,29 @@ def test_restored_missing_record_creates_restore_event() -> None:
 
     assert direction == "improved"
     assert changes[0]["label"] == "DMARC record restored"
+
+
+def test_spf_diff_ignores_bad_historical_all_entries_in_includes() -> None:
+    direction, changes = domain_monitoring_service.classify_timeline_change(
+        {
+            "dmarc": {"status": domain_monitoring_service.DNS_RESULT_OK, "raw_value": "v=DMARC1; p=reject", "parsed": {"p": "reject"}},
+            "spf": {
+                "status": domain_monitoring_service.DNS_RESULT_OK,
+                "raw_value": "v=spf1 a ip4:85.195.17.213 ip6:2001:4db8:e003::213 -all",
+                "parsed": {"qualifier": "fail", "includes": []},
+            },
+            "dkim": [],
+        },
+        {
+            "dmarc": {"status": domain_monitoring_service.DNS_RESULT_OK, "raw_value": "v=DMARC1; p=reject", "parsed": {"p": "reject"}},
+            "spf": {
+                "status": domain_monitoring_service.DNS_RESULT_OK,
+                "raw_value": "v=spf1 a ip4:85.195.17.213 ip6:2001:4db8:e003::213 -all",
+                "parsed": {"qualifier": "fail", "includes": ["-all"]},
+            },
+            "dkim": [],
+        },
+    )
+
+    assert direction == "neutral"
+    assert changes == []
