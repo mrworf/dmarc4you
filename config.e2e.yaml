@@ -6,6 +6,10 @@ database:
 log:
   level: INFO
 
+server:
+  host: 127.0.0.1
+  port: 8001
+
 auth:
   session_secret: seeded-e2e-not-for-production
   session_cookie_name: dmarc_session
@@ -15,14 +19,14 @@ auth:
   csrf_cookie_same_site: strict
 
 frontend:
-  public_origin: http://127.0.0.1:3000
+  public_origin: http://127.0.0.1:3001
 
 api:
-  public_url: http://127.0.0.1:8000
+  public_url: http://127.0.0.1:8001
 
 cors:
   allowed_origins:
-    - http://127.0.0.1:3000
+    - http://127.0.0.1:3001
 
 archive:
   storage_path: .tmp/e2e/archive

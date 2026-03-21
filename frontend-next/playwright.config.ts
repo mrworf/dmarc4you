@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const frontendBaseUrl = process.env.DMARC_E2E_BASE_URL ?? "http://127.0.0.1:3000";
+const frontendBaseUrl = process.env.DMARC_E2E_BASE_URL ?? "http://127.0.0.1:3001";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -23,7 +23,7 @@ export default defineConfig({
   webServer: process.env.DMARC_E2E_USE_EXISTING_FRONTEND
     ? undefined
     : {
-        command: "npm run dev -- --hostname 127.0.0.1 --port 3000",
+        command: "npm run dev -- --hostname 127.0.0.1 --port 3001",
         url: frontendBaseUrl,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,

@@ -252,8 +252,8 @@ Seeded credentials:
 
 Seeded environment URLs:
 
-- Frontend: `http://127.0.0.1:3000`
-- API: `http://127.0.0.1:8000`
+- Frontend: `http://127.0.0.1:3001`
+- API: `http://127.0.0.1:8001`
 
 One-command local browser run:
 
@@ -265,7 +265,7 @@ npm run test:e2e:seeded
 That command:
 
 1. reseeds the SQLite database and archive storage using `config.e2e.yaml`
-2. starts FastAPI and Next.js locally
+2. starts FastAPI and Next.js locally on dedicated test ports (`127.0.0.1:8001` and `127.0.0.1:3001`)
 3. runs the full Playwright suite against the live services
 4. cleans up the seeded environment afterward
 

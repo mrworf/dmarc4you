@@ -82,6 +82,9 @@ def load_config(config_path: str | Path | None = None) -> Config:
     session_secret = auth.get("session_secret") or os.environ.get("DMARC_SESSION_SECRET") or "change-me-in-production"
     session_cookie_name = auth.get("session_cookie_name") or os.environ.get("DMARC_SESSION_COOKIE") or "dmarc_session"
     session_max_age_days = int(auth.get("session_max_age_days") or os.environ.get("DMARC_SESSION_MAX_AGE_DAYS") or 7)
+    server = data.get("server") or {}
+    server_host = str(server.get("host") or os.environ.get("DMARC_SERVER_HOST") or "0.0.0.0")
+    server_port = _parse_int(server.get("port") or os.environ.get("DMARC_SERVER_PORT"), 8000)
     session_cookie_secure = _parse_bool(
         auth.get("session_cookie_secure") or os.environ.get("DMARC_SESSION_COOKIE_SECURE"),
         False,
@@ -151,6 +154,8 @@ def load_config(config_path: str | Path | None = None) -> Config:
         session_secret=str(session_secret),
         session_cookie_name=str(session_cookie_name),
         session_max_age_days=session_max_age_days,
+        server_host=server_host,
+        server_port=server_port,
         session_cookie_secure=session_cookie_secure,
         session_cookie_same_site=session_cookie_same_site,  # type: ignore[arg-type]
         csrf_cookie_same_site=csrf_cookie_same_site,  # type: ignore[arg-type]

@@ -31,7 +31,7 @@ def main() -> None:
     _runner_thread = threading.Thread(target=run_loop, args=(config,), kwargs={"stop_event": _runner_stop, "interval_seconds": 2.0}, daemon=True)
     _runner_thread.start()
     logger.info("Starting server")
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(app, host=config.server_host, port=config.server_port, log_level="info")
 
 
 if __name__ == "__main__":

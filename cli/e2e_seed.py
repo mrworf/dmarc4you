@@ -19,8 +19,8 @@ from backend.storage.sqlite import get_connection, run_migrations
 DEFAULT_ENV_FILE = Path(".tmp/e2e/e2e.env")
 DEFAULT_SUMMARY_FILE = Path(".tmp/e2e/seed-summary.json")
 
-E2E_FRONTEND_URL = "http://127.0.0.1:3000"
-E2E_API_URL = "http://127.0.0.1:8000"
+DEFAULT_E2E_FRONTEND_URL = "http://127.0.0.1:3001"
+DEFAULT_E2E_API_URL = "http://127.0.0.1:8001"
 
 SUPERADMIN_PASSWORD = "seed-super-admin-pass"
 ADMIN_USERNAME = "e2e-admin"
@@ -243,6 +243,8 @@ def seed_e2e_environment(
 ) -> dict[str, Any] | None:
     """Seed or clean the deterministic frontend E2E environment."""
     config = load_config(config_path)
+    frontend_url = config.frontend_public_origin or DEFAULT_E2E_FRONTEND_URL
+    api_url = config.api_public_url or DEFAULT_E2E_API_URL
     env_path = Path(env_file) if env_file is not None else DEFAULT_ENV_FILE
     summary_path = Path(summary_file) if summary_file is not None else DEFAULT_SUMMARY_FILE
 
@@ -335,9 +337,9 @@ def seed_e2e_environment(
         "DMARC_E2E_SEARCH_QUERY": SEARCH_QUERY,
         "DMARC_E2E_SEARCH_FROM": SEARCH_FROM,
         "DMARC_E2E_SEARCH_TO": SEARCH_TO,
-        "DMARC_E2E_BASE_URL": E2E_FRONTEND_URL,
-        "DMARC_E2E_API_BASE_URL": E2E_API_URL,
-        "NEXT_PUBLIC_API_BASE_URL": E2E_API_URL,
+        "DMARC_E2E_BASE_URL": frontend_url,
+        "DMARC_E2E_API_BASE_URL": api_url,
+        "NEXT_PUBLIC_API_BASE_URL": api_url,
         "NEXT_PUBLIC_CSRF_COOKIE_NAME": config.csrf_cookie_name,
         "NEXT_PUBLIC_REQUEST_ID_HEADER_NAME": "X-Request-ID",
     }
@@ -348,8 +350,8 @@ def seed_e2e_environment(
         "config_path": str(Path(config_path).resolve()) if config_path else None,
         "database_path": config.database_path,
         "archive_storage_path": config.archive_storage_path,
-        "frontend_url": E2E_FRONTEND_URL,
-        "api_url": E2E_API_URL,
+        "frontend_url": frontend_url,
+        "api_url": api_url,
         "domain_names": [PRIMARY_DOMAIN_NAME, SECONDARY_DOMAIN_NAME],
         "dashboard_id": dashboard["id"],
         "ingest_job_id": ingest_job_id,

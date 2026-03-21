@@ -74,12 +74,22 @@ def test_readiness_endpoint_reports_database_status(temp_db_path: str) -> None:
 def test_load_config_parses_split_origin_settings(monkeypatch) -> None:
     monkeypatch.setenv("DMARC_FRONTEND_PUBLIC_ORIGIN", "http://localhost:3000")
     monkeypatch.setenv("DMARC_CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    monkeypatch.setenv("DMARC_SERVER_HOST", "127.0.0.1")
+    monkeypatch.setenv("DMARC_SERVER_PORT", "8001")
     monkeypatch.setenv("DMARC_SESSION_COOKIE_SECURE", "true")
     monkeypatch.setenv("DMARC_SESSION_COOKIE_SAME_SITE", "none")
     monkeypatch.setenv("DMARC_CSRF_COOKIE_SAME_SITE", "lax")
     config = load_config(config_path="/tmp/does-not-exist.yaml")
     assert config.frontend_public_origin == "http://localhost:3000"
+    assert config.server_host == "127.0.0.1"
+    assert config.server_port == 8001
     assert config.session_cookie_secure is True
     assert config.session_cookie_same_site == "none"
     assert config.csrf_cookie_same_site == "lax"
     assert "http://localhost:3000" in config.cors_allowed_origins
+
+
+def test_load_config_defaults_server_bind_settings() -> None:
+    config = load_config(config_path="/tmp/does-not-exist.yaml")
+    assert config.server_host == "0.0.0.0"
+    assert config.server_port == 8000

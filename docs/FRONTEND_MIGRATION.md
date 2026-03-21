@@ -132,6 +132,7 @@ npm run contracts:check
 The seeded environment still provides:
 
 - deterministic frontend and backend URLs
+- dedicated harness ports (`127.0.0.1:3001` for Next.js, `127.0.0.1:8001` for FastAPI) so local dev services on `3000/8000` do not conflict
 - seeded super-admin, admin, manager, and viewer accounts
 - reproducible aggregate and forensic data for browser checks
 - `.tmp/e2e/e2e.env` and `.tmp/e2e/seed-summary.json` for debugging
