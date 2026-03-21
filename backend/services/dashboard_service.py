@@ -25,6 +25,22 @@ from backend.services.dashboard_columns import normalize_visible_columns
 DASHBOARD_ID_PREFIX = "dash_"
 
 
+def _load_dashboard_owner(conn, owner_user_id: str) -> dict[str, Any] | None:
+    cur = conn.execute(
+        "SELECT id, username, full_name, email FROM users WHERE id = ? AND disabled_at IS NULL",
+        (owner_user_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "username": row[1],
+        "full_name": row[2],
+        "email": row[3],
+    }
+
+
 def create_dashboard(
     config: Config,
     name: str,
@@ -96,6 +112,7 @@ def _build_dashboard_dict(conn, dashboard_id: str) -> dict[str, Any] | None:
         "name": row[1],
         "description": row[2] or "",
         "owner_user_id": row[3],
+        "owner": _load_dashboard_owner(conn, row[3]),
         "created_by_user_id": row[4],
         "created_at": row[5],
         "updated_at": row[6],
@@ -141,6 +158,7 @@ def list_dashboards(config: Config, current_user: dict[str, Any]) -> list[dict[s
                 "name": row[1],
                 "description": row[2] or "",
                 "owner_user_id": row[3],
+                "owner": _load_dashboard_owner(conn, row[3]),
                 "created_at": row[4],
                 "updated_at": row[5],
                 "visible_columns": normalize_visible_columns(_load_json_list(row[6])),

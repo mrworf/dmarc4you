@@ -8,7 +8,9 @@ import { AppShell } from "@/components/app-shell";
 import { apiClient, ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/context";
 import type {
+  DomainMonitoringDetailItem,
   DomainMonitoringHistoryEntry,
+  DomainMonitoringRecordState,
   DomainMonitoringResponse,
   TriggerDomainMonitoringCheckResponse,
   UpdateDomainMonitoringBody,
@@ -37,6 +39,16 @@ function directionClass(direction: string): string {
     return "timeline-node timeline-node-improved";
   }
   return "timeline-node timeline-node-neutral";
+}
+
+function statusBadgeClass(status: string): string {
+  if (status === "ok") {
+    return "monitoring-status-badge monitoring-status-ok";
+  }
+  if (status === "missing") {
+    return "monitoring-status-badge monitoring-status-missing";
+  }
+  return "monitoring-status-badge monitoring-status-error";
 }
 
 function renderPreviewEntry(entry: DomainMonitoringHistoryEntry) {
@@ -68,11 +80,105 @@ function renderPreviewEntry(entry: DomainMonitoringHistoryEntry) {
   );
 }
 
+function renderDetailItem(item: DomainMonitoringDetailItem, recordHost: string) {
+  const values = item.values?.length ? item.values : ["Not available"];
+  const displayAsList = item.display === "list";
+
+  return (
+    <div className="monitoring-detail-row" key={`${recordHost}-${item.label}`}>
+      <dt className="monitoring-detail-label">{item.label}</dt>
+      <dd className="monitoring-detail-values">
+        {displayAsList ? (
+          <ul className="monitoring-detail-bullets">
+            {values.map((value) => (
+              <li key={`${recordHost}-${item.label}-${value}`}>
+                {item.value_type === "email" && value.includes("@") ? (
+                  <a className="inline-link" href={`mailto:${value}`}>
+                    {value}
+                  </a>
+                ) : (
+                  value
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          values.map((value, index) => (
+            <span key={`${recordHost}-${item.label}-${value}-${index}`}>
+              {item.value_type === "email" && value.includes("@") ? (
+                <a className="inline-link" href={`mailto:${value}`}>
+                  {value}
+                </a>
+              ) : (
+                value
+              )}
+            </span>
+          ))
+        )}
+      </dd>
+    </div>
+  );
+}
+
+function renderRecordCard({
+  title,
+  subtitle,
+  record,
+}: {
+  title: string;
+  subtitle: string;
+  record: DomainMonitoringRecordState;
+}) {
+  return (
+    <article className="monitoring-record-card" key={record.host}>
+      <div className="monitoring-record-header">
+        <div className="stack" style={{ gap: 6 }}>
+          <div className="section-heading" style={{ gap: 12 }}>
+            <h3 className="monitoring-record-title">{title}</h3>
+            <span className={statusBadgeClass(record.status)}>{record.status}</span>
+          </div>
+          <p className="monitoring-record-subtitle">{subtitle}</p>
+          <div className="domain-meta">
+            <span>{record.host}</span>
+            {record.ttl_seconds ? <span>TTL {record.ttl_seconds}s</span> : null}
+          </div>
+        </div>
+      </div>
+      {record.summary ? <p className="monitoring-record-summary">{record.summary}</p> : null}
+      <dl className="monitoring-detail-list">
+        {(record.details ?? []).map((item) => renderDetailItem(item, record.host))}
+      </dl>
+      {record.explanation ? <p className="monitoring-record-note">{record.explanation}</p> : null}
+      <details className="monitoring-raw-disclosure">
+        <summary>Show raw record</summary>
+        <pre className="code-block">{record.raw_value || "No record found."}</pre>
+      </details>
+    </article>
+  );
+}
+
+function renderEmptyDkimCard(domainName: string) {
+  return (
+    <article className="monitoring-record-card monitoring-record-card-empty">
+      <div className="stack" style={{ gap: 8 }}>
+        <h3 className="monitoring-record-title">DKIM</h3>
+        <p className="monitoring-record-subtitle">No DKIM selectors are configured for monitoring yet.</p>
+        <p className="monitoring-record-note">
+          Add one or more selectors in Edit settings to check DNS keys such as
+          {" "}
+          <span className="monospace">selector._domainkey.{domainName}</span>.
+        </p>
+      </div>
+    </article>
+  );
+}
+
 export function DomainMonitoringDetailContent({ domainId }: { domainId: string }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [enabled, setEnabled] = useState(false);
-  const [selectorText, setSelectorText] = useState("");
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [draftEnabled, setDraftEnabled] = useState(false);
+  const [draftSelectorText, setDraftSelectorText] = useState("");
 
   const monitoringQuery = useQuery({
     queryKey: ["domain-monitoring", domainId],
@@ -83,12 +189,32 @@ export function DomainMonitoringDetailContent({ domainId }: { domainId: string }
   const canManage = user?.role === "super-admin" || user?.role === "admin";
 
   useEffect(() => {
-    if (!monitoringQuery.data) {
+    if (!monitoringQuery.data || !isEditOpen) {
       return;
     }
-    setEnabled(Boolean(monitoringQuery.data.domain.monitoring_enabled));
-    setSelectorText(selectorsToText(monitoringQuery.data.dkim_selectors));
-  }, [monitoringQuery.data]);
+    setDraftEnabled(Boolean(monitoringQuery.data.domain.monitoring_enabled));
+    setDraftSelectorText(selectorsToText(monitoringQuery.data.dkim_selectors));
+  }, [isEditOpen, monitoringQuery.data]);
+
+  useEffect(() => {
+    if (!isEditOpen) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsEditOpen(false);
+      }
+    }
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isEditOpen]);
 
   const updateMutation = useMutation({
     mutationFn: (body: UpdateDomainMonitoringBody) =>
@@ -96,6 +222,7 @@ export function DomainMonitoringDetailContent({ domainId }: { domainId: string }
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["domain-monitoring", domainId] });
       await queryClient.invalidateQueries({ queryKey: ["domains"] });
+      setIsEditOpen(false);
     },
   });
 
@@ -110,9 +237,18 @@ export function DomainMonitoringDetailContent({ domainId }: { domainId: string }
 
   async function handleSave() {
     await updateMutation.mutateAsync({
-      enabled,
-      dkim_selectors: parseSelectors(selectorText),
+      enabled: draftEnabled,
+      dkim_selectors: parseSelectors(draftSelectorText),
     });
+  }
+
+  function openEditModal() {
+    if (!monitoringQuery.data) {
+      return;
+    }
+    setDraftEnabled(Boolean(monitoringQuery.data.domain.monitoring_enabled));
+    setDraftSelectorText(selectorsToText(monitoringQuery.data.dkim_selectors));
+    setIsEditOpen(true);
   }
 
   const currentState = monitoringQuery.data?.current_state;
@@ -128,6 +264,11 @@ export function DomainMonitoringDetailContent({ domainId }: { domainId: string }
           <Link className="button-secondary" href="/domains">
             Back to domains
           </Link>
+          {canManage ? (
+            <button className="button-primary" onClick={openEditModal} type="button">
+              Edit
+            </button>
+          ) : null}
           <button className="button-secondary" onClick={() => monitoringQuery.refetch()} type="button">
             Refresh
           </button>
@@ -150,11 +291,15 @@ export function DomainMonitoringDetailContent({ domainId }: { domainId: string }
             </article>
             <article className="stat-card">
               <p className="stat-label">Last successful check</p>
-              <p className="stat-value" style={{ fontSize: "1rem" }}>{formatMaybeDate(domain.monitoring_last_checked_at)}</p>
+              <p className="stat-value" style={{ fontSize: "1rem" }}>
+                {formatMaybeDate(domain.monitoring_last_checked_at)}
+              </p>
             </article>
             <article className="stat-card">
               <p className="stat-label">Next check</p>
-              <p className="stat-value" style={{ fontSize: "1rem" }}>{formatMaybeDate(domain.monitoring_next_check_at)}</p>
+              <p className="stat-value" style={{ fontSize: "1rem" }}>
+                {formatMaybeDate(domain.monitoring_next_check_at)}
+              </p>
             </article>
           </section>
 
@@ -164,7 +309,7 @@ export function DomainMonitoringDetailContent({ domainId }: { domainId: string }
                 <div className="stack" style={{ gap: 8 }}>
                   <h2 className="section-title">Current lookup failure</h2>
                   <p className="section-intro">
-                    DNS lookup failures are backend-logged and do not replace the last successful poll timestamp.
+                    The last successful snapshot is still shown below while the current DNS lookup issue is investigated.
                   </p>
                 </div>
               </div>
@@ -173,13 +318,13 @@ export function DomainMonitoringDetailContent({ domainId }: { domainId: string }
             </section>
           ) : null}
 
-          {canManage ? (
-            <section className="surface-card stack">
-              <div className="section-heading">
-                <div className="stack" style={{ gap: 8 }}>
-                  <h2 className="section-title">Monitoring settings</h2>
-                  <p className="section-intro">Turn monitoring on for this domain and list the DKIM selectors you want checked.</p>
-                </div>
+          <section className="surface-card stack">
+            <div className="section-heading">
+              <div className="stack" style={{ gap: 8 }}>
+                <h2 className="section-title">Current DNS state</h2>
+                <p className="section-intro">Each card summarizes the most recently observed DNS record in plain language.</p>
+              </div>
+              {canManage ? (
                 <div className="section-actions">
                   <button
                     className="button-secondary"
@@ -189,62 +334,42 @@ export function DomainMonitoringDetailContent({ domainId }: { domainId: string }
                   >
                     Check now
                   </button>
-                  <button className="button-primary" disabled={updateMutation.isPending} onClick={handleSave} type="button">
-                    Save settings
-                  </button>
                 </div>
-              </div>
-              {saveError ? <p className="error-text">{saveError}</p> : null}
-              {triggerError ? <p className="error-text">{triggerError}</p> : null}
-              {triggerMutation.data?.state === "suppressed_recently" ? (
-                <p className="status-text">A check was already triggered recently, so no new job was enqueued.</p>
               ) : null}
-              <label className="field-label">
-                <input checked={enabled} onChange={(event) => setEnabled(event.target.checked)} type="checkbox" />
-                <span> Enable DNS monitoring for this domain</span>
-              </label>
-              <label className="field-label" htmlFor="dkim-selectors">
-                DKIM selectors
-              </label>
-              <textarea
-                className="textarea-input"
-                id="dkim-selectors"
-                onChange={(event) => setSelectorText(event.target.value)}
-                placeholder={"selector1\nselector2"}
-                rows={5}
-                value={selectorText}
-              />
-              <p className="section-intro">Enter one selector per line. These are checked at `selector._domainkey.{domain?.name}`.</p>
-            </section>
-          ) : null}
-
-          <section className="surface-card stack">
-            <div className="section-heading">
-              <div className="stack" style={{ gap: 8 }}>
-                <h2 className="section-title">Current DNS state</h2>
-                <p className="section-intro">Plain-language explanations are generated from the currently observed DNS records.</p>
-              </div>
             </div>
+            {triggerError ? <p className="error-text">{triggerError}</p> : null}
+            {triggerMutation.data?.state === "suppressed_recently" ? (
+              <p className="status-text">A check was already triggered recently, so no new job was enqueued.</p>
+            ) : null}
             {!currentState ? <p className="status-text">No monitoring snapshot has been captured yet.</p> : null}
             {currentState ? (
-              <div className="domain-list">
-                {[currentState.dmarc, currentState.spf, ...currentState.dkim].map((record) => (
-                  <article className="domain-row" key={record.host}>
-                    <div className="section-heading">
-                      <div className="stack" style={{ gap: 8 }}>
-                        <strong>{record.host}</strong>
-                        <div className="domain-meta">
-                          <span>Status: {record.status}</span>
-                          {record.ttl_seconds ? <span>TTL {record.ttl_seconds}s</span> : null}
-                        </div>
-                        <p>{record.summary || "No summary available."}</p>
-                        <p className="section-intro">{record.explanation || "No explanation available."}</p>
-                        <pre className="code-block">{record.raw_value || "No record found."}</pre>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
+              <>
+                <div className="domain-meta">
+                  <span>Snapshot captured {new Date(currentState.checked_at).toLocaleString()}</span>
+                  {currentState.ttl_seconds ? <span>Overall TTL {currentState.ttl_seconds}s</span> : null}
+                </div>
+                <div className="monitoring-card-grid">
+                  {renderRecordCard({
+                    title: "DMARC",
+                    subtitle: "How receiving systems should handle unauthenticated mail for this domain.",
+                    record: currentState.dmarc,
+                  })}
+                  {renderRecordCard({
+                    title: "SPF",
+                    subtitle: `Which addresses and services are allowed to send email as ${domain.name}.`,
+                    record: currentState.spf,
+                  })}
+                  {currentState.dkim.length
+                    ? currentState.dkim.map((record) =>
+                        renderRecordCard({
+                          title: "DKIM",
+                          subtitle: "Published signing key status for a monitored selector.",
+                          record,
+                        }),
+                      )
+                    : renderEmptyDkimCard(domain.name)}
+                </div>
+              </>
             ) : null}
           </section>
 
@@ -268,6 +393,79 @@ export function DomainMonitoringDetailContent({ domainId }: { domainId: string }
             ) : null}
           </section>
         </>
+      ) : null}
+
+      {isEditOpen && canManage && domain ? (
+        <div className="modal-backdrop" onClick={() => setIsEditOpen(false)} role="presentation">
+          <div
+            aria-modal="true"
+            className="modal-card surface-card dialog-card"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="modal-header">
+              <div className="stack" style={{ gap: 8 }}>
+                <p className="eyebrow">Monitoring</p>
+                <h2 style={{ margin: 0 }}>Edit monitoring settings</h2>
+                <p className="status-text" style={{ margin: 0 }}>
+                  Enable monitoring and choose which DKIM selectors should be checked for {domain.name}.
+                </p>
+              </div>
+              <button aria-label="Close monitoring settings" className="icon-button" onClick={() => setIsEditOpen(false)} type="button">
+                ×
+              </button>
+            </div>
+            <div className="stack" style={{ gap: 18 }}>
+              {saveError ? <p className="error-text">{saveError}</p> : null}
+              <div className="monitoring-toggle-group" role="group" aria-label="Monitoring status">
+                <button
+                  aria-pressed={draftEnabled}
+                  className={`monitoring-toggle-button${draftEnabled ? " monitoring-toggle-button-active" : ""}`}
+                  onClick={() => setDraftEnabled(true)}
+                  type="button"
+                >
+                  Monitoring enabled
+                </button>
+                <button
+                  aria-pressed={!draftEnabled}
+                  className={`monitoring-toggle-button${!draftEnabled ? " monitoring-toggle-button-active" : ""}`}
+                  onClick={() => setDraftEnabled(false)}
+                  type="button"
+                >
+                  Monitoring disabled
+                </button>
+              </div>
+              <label className="field-label" htmlFor="dkim-selectors">
+                DKIM selectors
+              </label>
+              <textarea
+                className="textarea-input"
+                id="dkim-selectors"
+                onChange={(event) => setDraftSelectorText(event.target.value)}
+                rows={6}
+                value={draftSelectorText}
+              />
+              <p className="section-intro">
+                Enter one selector per line. These will be checked at
+                {" "}
+                <span className="monospace">selector._domainkey.{domain.name}</span>.
+              </p>
+              <p className="detail-card-subtle" style={{ margin: 0 }}>
+                Example selectors: <span className="monospace">google</span>, <span className="monospace">default</span>,
+                {" "}
+                <span className="monospace">mail</span>.
+              </p>
+              <div className="dialog-actions">
+                <button className="button-secondary" onClick={() => setIsEditOpen(false)} type="button">
+                  Cancel
+                </button>
+                <button className="button-primary" disabled={updateMutation.isPending} onClick={handleSave} type="button">
+                  Save settings
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
     </AppShell>
   );

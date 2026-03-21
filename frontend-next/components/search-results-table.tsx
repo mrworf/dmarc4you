@@ -12,6 +12,7 @@ import type {
   SearchRecordsResponse,
 } from "@/lib/api/types";
 import { getAggregateFieldLabel } from "@/lib/aggregate-field-metadata";
+import { renderCountryLabel } from "@/lib/country-display";
 
 export type SearchQuickFilterOption = {
   label: string;
@@ -30,7 +31,8 @@ export type SearchQuickFilterOption = {
     | "include_spf_alignment"
     | "exclude_spf_alignment"
     | "include_dmarc_alignment"
-    | "exclude_dmarc_alignment";
+    | "exclude_dmarc_alignment"
+    | "country";
 };
 
 type QuickFilterActions = {
@@ -330,6 +332,11 @@ function getAggregateQuickFilterActions(column: string, item: AggregateSearchRes
       return item.domain ? { includeAction: { label: "Limit to domain", target: "domains", value: item.domain } } : {};
     case "org_name":
       return item.org_name ? { includeAction: { label: "Include in search", target: "query", value: item.org_name } } : {};
+    case "country_code":
+    case "country_name":
+      return item.country_name
+        ? { includeAction: { label: "Filter by country", target: "country", value: item.country_name } }
+        : {};
     default:
       return {};
   }
@@ -802,9 +809,23 @@ function renderAggregateCell(
       }
       return <CellValueWithActions actions={getAggregateQuickFilterActions(column, item)} onQuickFilter={onQuickFilter} value={item.resolved_name_domain ?? "n/a"} />;
     case "country_code":
-      return item.country_code ?? "n/a";
+      return (
+        <CellValueWithActions
+          actions={getAggregateQuickFilterActions(column, item)}
+          onQuickFilter={onQuickFilter}
+          textValue={item.country_name ?? item.country_code ?? undefined}
+          value={renderCountryLabel(item.country_code, item.country_name)}
+        />
+      );
     case "country_name":
-      return item.country_name ?? "n/a";
+      return (
+        <CellValueWithActions
+          actions={getAggregateQuickFilterActions(column, item)}
+          onQuickFilter={onQuickFilter}
+          textValue={item.country_name ?? undefined}
+          value={renderCountryLabel(item.country_code, item.country_name)}
+        />
+      );
     case "count":
       return item.count;
     case "disposition":
@@ -883,7 +904,7 @@ export function ForensicResultsTable({
               <td>{item.source_ip ?? "n/a"}</td>
               <td>{item.resolved_name ?? "n/a"}</td>
               <td>{item.resolved_name_domain ?? "n/a"}</td>
-              <td>{item.country_code ? `${item.country_code} ${item.country_name ?? ""}`.trim() : "n/a"}</td>
+              <td>{renderCountryLabel(item.country_code, item.country_name)}</td>
               <td>{item.header_from ?? "n/a"}</td>
               <td>{item.spf_result ?? "n/a"}</td>
               <td>{item.dkim_result ?? "n/a"}</td>

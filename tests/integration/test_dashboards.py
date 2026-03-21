@@ -52,6 +52,7 @@ def test_post_dashboard_creates_with_owner(dashboard_app_client) -> None:
     data = r.json()
     assert data["name"] == "My Dashboard"
     assert data["owner_user_id"]
+    assert data["owner"]["username"] == "admin"
     assert data["domain_ids"] == [domain_id]
     assert "domain_names" in data
     assert "example.com" in data["domain_names"]
@@ -69,7 +70,8 @@ def test_get_dashboards_list_only_owned(dashboard_app_client) -> None:
     assert r.status_code == 200
     assert len(r.json()["dashboards"]) >= 1
     first = r.json()["dashboards"][0]
-    assert set(first.keys()) >= {"id", "name", "description", "owner_user_id", "created_at", "updated_at", "domain_ids"}
+    assert set(first.keys()) >= {"id", "name", "description", "owner_user_id", "owner", "created_at", "updated_at", "domain_ids"}
+    assert first["owner"]["username"] == "admin"
 
 
 def test_get_dashboard_by_id_200_with_domain_ids(dashboard_app_client) -> None:
@@ -85,6 +87,7 @@ def test_get_dashboard_by_id_200_with_domain_ids(dashboard_app_client) -> None:
     assert r.status_code == 200
     assert r.json()["domain_ids"] == [domain_id]
     assert r.json()["domain_names"] == ["example.com"]
+    assert r.json()["owner"]["username"] == "admin"
 
 
 def test_dashboards_openapi_contract_includes_list_and_create_models() -> None:

@@ -67,7 +67,7 @@ export default function LoginPage() {
         <div>
           <p className="eyebrow">Sign In</p>
           <h2 style={{ margin: "0 0 8px" }}>Welcome back</h2>
-          <p className="status-text">Use your local account to open the operations console.</p>
+          <p className="status-text">Use your local account to sign in to DMARCWatch.</p>
         </div>
         <form className="stack" onSubmit={handleSubmit(onSubmit)}>
           <label className="field-label">

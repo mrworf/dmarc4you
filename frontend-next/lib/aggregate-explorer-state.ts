@@ -1,8 +1,11 @@
 import type { GroupPathPart, GroupedSearchBody, SearchRecordsBody } from "@/lib/api/types";
 import { buildSearchParams, parseIntegerParam, parseStringParam } from "@/lib/url-state";
 
+export type AggregatePageSize = number | "all";
+
 export type AggregateExplorerState = {
   domains: string[];
+  country: string;
   query: string;
   from: string;
   to: string;
@@ -19,6 +22,7 @@ export type AggregateExplorerState = {
   excludeDkim: string[];
   excludeDisposition: string[];
   grouping: string[];
+  pageSize: AggregatePageSize;
   page: number;
 };
 
@@ -41,6 +45,7 @@ export const aggregateGroupingOptions: AggregateGroupingOption[] = [
 
 export const defaultAggregateExplorerState: AggregateExplorerState = {
   domains: [],
+  country: "",
   query: "",
   from: "",
   to: "",
@@ -57,8 +62,11 @@ export const defaultAggregateExplorerState: AggregateExplorerState = {
   excludeDkim: [],
   excludeDisposition: [],
   grouping: [],
+  pageSize: 25,
   page: 1,
 };
+
+export const aggregatePageSizeOptions: AggregatePageSize[] = [25, 50, 100, 200, 300, "all"];
 
 export function parseCsvParam(value: string | null): string[] {
   if (!value) {
@@ -81,6 +89,7 @@ export function parseAggregateExplorerState(
   const { includeDomains } = options;
   return {
     domains: includeDomains ? parseCsvParam(searchParams.get("domains")) : [],
+    country: parseStringParam(searchParams.get("country")),
     query: parseStringParam(searchParams.get("query")),
     from: parseStringParam(searchParams.get("from")),
     to: parseStringParam(searchParams.get("to")),
@@ -97,8 +106,16 @@ export function parseAggregateExplorerState(
     excludeDkim: parseCsvParam(searchParams.get("exclude_dkim")),
     excludeDisposition: parseCsvParam(searchParams.get("exclude_disposition")),
     grouping: parseCsvParam(searchParams.get("grouping")).slice(0, 4),
+    pageSize: parsePageSizeParam(searchParams.get("page_size")),
     page: parseIntegerParam(searchParams.get("page"), 1),
   };
+}
+
+function parsePageSizeParam(value: string | null): AggregatePageSize {
+  if (value === "all") {
+    return "all";
+  }
+  return parseIntegerParam(value, 25);
 }
 
 export function buildAggregateExplorerParams(
@@ -109,6 +126,7 @@ export function buildAggregateExplorerParams(
   return buildSearchParams({
     ...extraParams,
     domains: includeDomains ? buildCsvParam(state.domains) : "",
+    country: state.country,
     query: state.query,
     from: state.from,
     to: state.to,
@@ -125,6 +143,7 @@ export function buildAggregateExplorerParams(
     exclude_dkim: buildCsvParam(state.excludeDkim),
     exclude_disposition: buildCsvParam(state.excludeDisposition),
     grouping: buildCsvParam(state.grouping),
+    page_size: state.pageSize === 25 ? "" : String(state.pageSize),
     page: state.page > 1 ? String(state.page) : "",
   });
 }
@@ -172,13 +191,14 @@ export function buildAggregateSearchBody(state: AggregateExplorerState, domains:
 
   return {
     domains: domains.length ? domains : undefined,
+    country: state.country || undefined,
     query: state.query || undefined,
     from: state.from || undefined,
     to: state.to || undefined,
     include: Object.keys(include).length ? include : undefined,
     exclude: Object.keys(exclude).length ? exclude : undefined,
     page: state.page,
-    page_size: 10,
+    page_size: state.pageSize === "all" ? 0 : state.pageSize,
   };
 }
 
@@ -205,6 +225,7 @@ function sortedValues(values: string[]): string[] {
 export function buildAggregateExplorerContextKey(state: AggregateExplorerState, domains: string[]): string {
   return JSON.stringify({
     domains: sortedValues(domains),
+    country: state.country,
     query: state.query,
     from: state.from,
     to: state.to,
@@ -221,6 +242,7 @@ export function buildAggregateExplorerContextKey(state: AggregateExplorerState, 
     excludeDkim: sortedValues(state.excludeDkim),
     excludeDisposition: sortedValues(state.excludeDisposition),
     grouping: state.grouping,
+    pageSize: state.pageSize,
     page: state.page,
   });
 }

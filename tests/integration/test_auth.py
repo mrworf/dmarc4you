@@ -105,6 +105,19 @@ def test_me_returns_optional_profile_fields(auth_app_client, temp_db_path: str) 
     assert data["user"]["email"] == "admin@example.com"
 
 
+def test_update_me_updates_optional_profile_fields(auth_app_client) -> None:
+    client, password = auth_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    response = client.put(
+        "/api/v1/auth/me",
+        json={"full_name": "Updated Admin", "email": "updated@example.com"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["user"]["full_name"] == "Updated Admin"
+    assert data["user"]["email"] == "updated@example.com"
+
+
 def test_audit_has_login_event(auth_app_client, temp_db_path: str) -> None:
     client, password = auth_app_client
     client.post("/api/v1/auth/login", json={"username": "admin", "password": password})

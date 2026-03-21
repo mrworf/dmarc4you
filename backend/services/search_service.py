@@ -184,6 +184,12 @@ def _cap_page_size(size: int) -> int:
     return min(size, MAX_PAGE_SIZE)
 
 
+def _normalize_search_page_size(size: int) -> int:
+    if size == 0:
+        return 0
+    return _cap_page_size(size)
+
+
 def _allowed_domain_names(config: Config, current_user: dict[str, Any]) -> list[str]:
     return [d["name"] for d in list_domains(config, current_user)]
 
@@ -201,6 +207,7 @@ def _build_record_where_clause(
     to_ts: str | int | None,
     include: dict[str, list[str]] | None,
     exclude: dict[str, list[str]] | None,
+    country: str | None,
     query: str | None,
     path: list[dict[str, str]] | None = None,
 ) -> tuple[str, list[Any], str]:
@@ -219,6 +226,11 @@ def _build_record_where_clause(
     if to_val is not None:
         where_parts.append("ar.date_begin <= ?")
         params.append(to_val)
+
+    country_filter = (country or "").strip().lower()
+    if country_filter:
+        where_parts.append("LOWER(COALESCE(rec.country_name, '')) LIKE ?")
+        params.append(f"%{country_filter}%")
 
     if include:
         for field, values in include.items():
@@ -431,7 +443,7 @@ def list_forensic_reports(
     from_val = _parse_ts(from_ts)
     to_val = _parse_ts(to_ts)
     page = max(1, page)
-    page_size = _cap_page_size(page_size)
+    page_size = _normalize_search_page_size(page_size)
     offset = (page - 1) * page_size
 
     sort_col = "created_at" if sort_by in ("created_at", "arrival_time") else "created_at"
@@ -594,7 +606,6 @@ def _search_record_rows(
     page: int,
     page_size: int,
 ) -> dict[str, Any]:
-    offset = (page - 1) * page_size
     total = conn.execute(
         f"""SELECT COUNT(*) FROM aggregate_report_records rec
             JOIN aggregate_reports ar ON rec.aggregate_report_id = ar.id
@@ -602,6 +613,8 @@ def _search_record_rows(
             WHERE {where_sql}""",
         params,
     ).fetchone()[0]
+    effective_page_size = max(total, 1) if page_size == 0 else page_size
+    offset = 0 if page_size == 0 else (page - 1) * effective_page_size
     cur = conn.execute(
         f"""SELECT rec.id, rec.aggregate_report_id, rec.source_ip, rec.resolved_name, rec.resolved_name_domain, rec.country_code, rec.country_name, rec.geo_provider, rec.count,
                    rec.disposition, rec.dkim_result, rec.spf_result, rec.dkim_alignment, rec.spf_alignment, rec.dmarc_alignment,
@@ -613,10 +626,10 @@ def _search_record_rows(
             WHERE {where_sql}
             ORDER BY ar.date_begin DESC, rec.count DESC
             LIMIT ? OFFSET ?""",
-        params + [page_size, offset],
+        params + [effective_page_size, offset],
     )
     items = [_build_record_item(row) for row in cur.fetchall()]
-    return {"items": items, "total": total, "page": page, "page_size": page_size}
+    return {"items": items, "total": total, "page": 1 if page_size == 0 else page, "page_size": effective_page_size}
 
 
 def search_grouped_records(
@@ -628,6 +641,7 @@ def search_grouped_records(
     to_ts: str | int | None = None,
     include: dict[str, list[str]] | None = None,
     exclude: dict[str, list[str]] | None = None,
+    country: str | None = None,
     query: str | None = None,
     grouping: list[str] | None = None,
     path: list[dict[str, str]] | None = None,
@@ -669,6 +683,7 @@ def search_grouped_records(
         to_ts=to_ts,
         include=include,
         exclude=exclude,
+        country=country,
         query=query,
         path=current_path,
     )
@@ -691,7 +706,6 @@ def search_grouped_records(
 
         group_field = normalized_grouping[len(current_path)]
         group_expr = ALLOWED_GROUP_FIELDS[group_field]["expr"]
-        offset = (page - 1) * page_size
         total = conn.execute(
             f"""SELECT COUNT(*) FROM (
                     SELECT 1
@@ -703,6 +717,8 @@ def search_grouped_records(
                 ) grouped""",
             params,
         ).fetchone()[0]
+        effective_page_size = max(total, 1) if page_size == 0 else page_size
+        offset = 0 if page_size == 0 else (page - 1) * effective_page_size
         cur = conn.execute(
             f"""SELECT {group_expr} AS group_value,
                        COUNT(*) AS row_count,
@@ -723,7 +739,7 @@ def search_grouped_records(
                 GROUP BY {group_expr}
                 ORDER BY message_count DESC, group_value ASC
                 LIMIT ? OFFSET ?""",
-            params + [page_size, offset],
+            params + [effective_page_size, offset],
         )
         items: list[dict[str, Any]] = []
         for row in cur.fetchall():
@@ -757,8 +773,8 @@ def search_grouped_records(
         return {
             "items": items,
             "total": total,
-            "page": page,
-            "page_size": page_size,
+            "page": 1 if page_size == 0 else page,
+            "page_size": effective_page_size,
             "grouping": normalized_grouping,
             "path": current_path,
             "level_kind": "group",
@@ -776,6 +792,7 @@ def search_records(
     to_ts: str | int | None = None,
     include: dict[str, list[str]] | None = None,
     exclude: dict[str, list[str]] | None = None,
+    country: str | None = None,
     query: str | None = None,
     group_by: str | None = None,
     page: int = 1,
@@ -795,8 +812,7 @@ def search_records(
 
     domain_filter = _resolve_domain_filter(allowed_domains, domains_param)
     page = max(1, page)
-    page_size = _cap_page_size(page_size)
-    offset = (page - 1) * page_size
+    page_size = _normalize_search_page_size(page_size)
     normalized_group_by = _normalize_group_by(group_by)
 
     conn = get_connection(config.database_path)
@@ -807,6 +823,7 @@ def search_records(
             to_ts=to_ts,
             include=include,
             exclude=exclude,
+            country=country,
             query=query,
         )
 
@@ -823,6 +840,8 @@ def search_records(
                     ) grouped""",
                 params,
             ).fetchone()[0]
+            effective_page_size = max(total, 1) if page_size == 0 else page_size
+            offset = 0 if page_size == 0 else (page - 1) * effective_page_size
             cur = conn.execute(
                 f"""SELECT {group_expr} AS group_value,
                            COUNT(*) AS row_count,
@@ -837,7 +856,7 @@ def search_records(
                     GROUP BY {group_expr}
                     ORDER BY min_date_begin DESC, group_value ASC
                     LIMIT ? OFFSET ?""",
-                params + [page_size, offset],
+                params + [effective_page_size, offset],
             )
             items = []
             for row in cur.fetchall():
@@ -856,8 +875,8 @@ def search_records(
             return {
                 "items": items,
                 "total": total,
-                "page": page,
-                "page_size": page_size,
+                "page": 1 if page_size == 0 else page,
+                "page_size": effective_page_size,
                 "group_by": normalized_group_by,
             }
         rows = _search_record_rows(

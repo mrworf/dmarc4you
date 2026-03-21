@@ -1,4 +1,4 @@
-"""Auth service: login (validate, verify, session, audit), logout, get_current_user."""
+"""Auth service: login, logout, current user lookup, and self profile updates."""
 
 import re
 from typing import Any
@@ -14,6 +14,7 @@ from backend.auth.audit import (
     OUTCOME_SUCCESS,
     OUTCOME_FAILURE,
 )
+from backend.storage.sqlite import get_connection
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 ROLE_SUPER_ADMIN = "super-admin"
@@ -108,3 +109,31 @@ def me_response_user(config: Config, user: dict[str, Any]) -> dict[str, Any]:
         "all_domains": all_domains,
         "domain_ids": domain_ids,
     }
+
+
+def update_own_profile(
+    config: Config,
+    current_user: dict[str, Any],
+    *,
+    new_full_name: str | None = None,
+    new_email: str | None = None,
+) -> dict[str, Any]:
+    """Update the signed-in user's optional profile fields and return the fresh user record."""
+    full_name = (new_full_name or "").strip() or None
+    email = (new_email or "").strip() or None
+
+    conn = get_connection(config.database_path)
+    try:
+        conn.execute(
+            "UPDATE users SET full_name = ?, email = ? WHERE id = ? AND disabled_at IS NULL",
+            (full_name, email, current_user["id"]),
+        )
+        conn.commit()
+        updated_user = get_user_by_id(config.database_path, current_user["id"])
+    finally:
+        conn.close()
+
+    if not updated_user:
+        return current_user
+
+    return updated_user

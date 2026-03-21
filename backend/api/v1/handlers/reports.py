@@ -31,6 +31,7 @@ class SearchRequest(BaseModel):
     to_ts: str | int | None = Field(default=None, alias="to")
     include: dict[str, list[str]] | None = None
     exclude: dict[str, list[str]] | None = None
+    country: str = ""
     query: str = ""
     group_by: str | None = None
     page: int = 1
@@ -50,6 +51,7 @@ class GroupedSearchRequest(BaseModel):
     to_ts: str | int | None = Field(default=None, alias="to")
     include: dict[str, list[str]] | None = None
     exclude: dict[str, list[str]] | None = None
+    country: str = ""
     query: str = ""
     grouping: list[str] = []
     path: list[GroupPathPart] = []
@@ -203,6 +205,7 @@ def post_search(
         to_ts=body.to_ts,
         include=body.include,
         exclude=body.exclude,
+        country=body.country or None,
         query=body.query or None,
         group_by=body.group_by,
         page=body.page,
@@ -226,6 +229,7 @@ def post_grouped_search(
             to_ts=body.to_ts,
             include=body.include,
             exclude=body.exclude,
+            country=body.country or None,
             query=body.query or None,
             grouping=body.grouping,
             path=[part.model_dump() for part in body.path],

@@ -49,6 +49,23 @@ Ends current session.
 
 Returns current authenticated user and effective domain visibility.
 
+Response (200): `{ "user": { "id", "username", "role", "full_name", "email" }, "all_domains": true|false, "domain_ids": ["dom_xxx", ...] }`
+
+### `PUT /api/v1/auth/me`
+
+Updates the current authenticated user's optional profile fields.
+
+Request:
+
+```json
+{
+  "full_name": "Jane Admin",
+  "email": "jane@example.com"
+}
+```
+
+Both fields are optional and may be sent as empty strings to clear them. Response matches `GET /api/v1/auth/me`.
+
 ### `GET /api/v1/audit`
 
 List audit log entries. **Super-admin only**; 403 for other roles. Session required; 401 if not authenticated.
@@ -201,6 +218,10 @@ Aggregate search filters also support `dkim_alignment`, `spf_alignment`, and `dm
 
 Free-text `query` matches `source_ip`, `resolved_name`, `resolved_name_domain`, `header_from`, `envelope_from`, `envelope_to`, and `org_name`.
 
+The optional `country` field applies a case-insensitive partial match against enriched `country_name`.
+
+Explorer views may send `page_size: 0` to request all matching rows/groups in a single response.
+
 ### `POST /api/v1/search/grouped`
 
 Hierarchical aggregate search for the dashboard/search explorer.
@@ -218,6 +239,7 @@ Request example:
   "exclude": {
     "disposition": ["none"]
   },
+  "country": "united",
   "query": "google",
   "grouping": ["domain", "org_name", "disposition"],
   "path": [
@@ -236,6 +258,8 @@ Behavior:
 - when `path.length === grouping.length`, the response returns aggregate leaf rows for that branch
 - group nodes include `row_count`, `report_count`, `message_count`, `first_record_date`, `last_record_date`, `dmarc_alignment_summary`, and `disposition_summary`
 - `path` must follow the configured grouping order or the endpoint returns 400
+- `country` uses the same case-insensitive partial match as `POST /api/v1/search`
+- `page_size: 0` returns all matching groups/leaf rows for the current request
 
 ## Domain maintenance endpoints
 
@@ -279,6 +303,12 @@ Auth and visibility:
 - API key auth: requires scope `domains:monitor` and the domain must be bound to the key
 - archived domains remain visible only to `super-admin`
 - history preview includes only saved DNS value changes; unchanged polls update freshness but do not create history entries
+
+`current_state` includes normalized per-record summaries for DMARC, SPF, and DKIM. Each record state now includes:
+
+- `details`: ordered display facts ready for UI rendering (`label`, `values`, `value_type`, `display`)
+- `raw_value`: the observed TXT value, unchanged, for raw-record disclosure
+- `parsed`: machine-readable fields retained for compatibility with existing consumers
 
 ### `GET /api/v1/domains/{domain_id}/monitoring/timeline`
 
@@ -517,7 +547,7 @@ Errors: 403 if user lacks access to the report's domain; 404 if report not found
 
 List dashboards owned by the current user. Session required. For **non–super-admin**, dashboards whose scope includes any **archived** domain are excluded (dormant dashboards); super-admin sees all owned dashboards.
 
-Response: `{ "dashboards": [ { "id", "name", "description", "owner_user_id", "created_at", "updated_at", "domain_ids" }, ... ] }`.
+Response: `{ "dashboards": [ { "id", "name", "description", "owner_user_id", "owner", "created_at", "updated_at", "domain_ids" }, ... ] }`.
 
 ### `POST /api/v1/dashboards`
 
@@ -528,6 +558,10 @@ Request: `{ "name": "...", "description": "...?", "domain_ids": ["dom_xxx", ...]
 ### `GET /api/v1/dashboards/{dashboard_id}`
 
 Get one dashboard with `domain_ids` and `domain_names`. User may view only if they have access to **all** dashboard domains (AGENTS.md). 200 with dashboard; 403 if access denied; 404 if not found.
+
+Dashboard list/detail responses include owner summary metadata:
+
+- `owner`: `{ "id", "username", "full_name", "email" }`
 
 ### `POST /api/v1/dashboards/{dashboard_id}/validate-update`
 

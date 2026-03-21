@@ -20,6 +20,7 @@ import {
 import { apiClient, ApiError } from "@/lib/api/client";
 import {
   addUniqueValue,
+  aggregatePageSizeOptions,
   appendQueryValue,
   aggregateGroupingOptions,
   buildAggregateExplorerContextKey,
@@ -47,6 +48,7 @@ import type {
   GroupedSearchResponse,
   SearchRecordsResponse,
   UpdateDashboardBody,
+  UserSummary,
 } from "@/lib/api/types";
 type AppliedFilterChip = {
   id: string;
@@ -87,6 +89,13 @@ function buildAppliedChips(
   onRemove: (updater: (current: AggregateExplorerState) => AggregateExplorerState) => void,
 ): AppliedFilterChip[] {
   const chips: AppliedFilterChip[] = [];
+  if (state.country) {
+    chips.push({
+      id: "country",
+      label: `Country: ${state.country}`,
+      onRemove: () => onRemove((current) => ({ ...current, country: "" })),
+    });
+  }
   parseQueryTerms(state.query).forEach((term) => {
     chips.push({
       id: `query:${term}`,
@@ -192,6 +201,31 @@ function buildAppliedChips(
   return chips;
 }
 
+function renderDashboardOwner(owner: UserSummary | null | undefined) {
+  if (!owner) {
+    return "Unknown";
+  }
+  if (owner.full_name && owner.email) {
+    return (
+      <>
+        <span>{owner.full_name}</span>
+        {" · "}
+        <a className="inline-link" href={`mailto:${owner.email}`}>
+          {owner.email}
+        </a>
+      </>
+    );
+  }
+  if (owner.email) {
+    return (
+      <a className="inline-link" href={`mailto:${owner.email}`}>
+        {owner.email}
+      </a>
+    );
+  }
+  return owner.full_name || owner.username;
+}
+
 function getDashboardPeriodLabel(state: AggregateExplorerState): string {
   if (state.from && state.to) {
     return `From ${state.from} to ${state.to}`;
@@ -276,7 +310,11 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
   const domainNames = dashboardQuery.data?.domain_names ?? [];
   const searchBody = useMemo(() => buildAggregateSearchBody(currentState, domainNames), [currentState, domainNames]);
   const groupedRootRequest = useMemo(
-    () => buildGroupedSearchBody(currentState, domainNames, { page: currentState.page, pageSize: 20 }),
+    () =>
+      buildGroupedSearchBody(currentState, domainNames, {
+        page: currentState.page,
+        pageSize: currentState.pageSize === "all" ? 0 : currentState.pageSize,
+      }),
     [currentState, domainNames],
   );
   const groupedContextKey = useMemo(() => buildAggregateExplorerContextKey(currentState, domainNames), [currentState, domainNames]);
@@ -357,7 +395,9 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
   function handleQuickFilter(option: SearchQuickFilterOption) {
     updateDraftState((current) => {
       const nextState: AggregateExplorerState = { ...current, page: 1 };
-      if (option.target === "query") {
+      if (option.target === "country") {
+        nextState.country = option.value;
+      } else if (option.target === "query") {
         nextState.query = appendQueryValue(current.query, option.value);
       } else if (option.target === "include_spf") {
         nextState.includeSpf = addUniqueValue(current.includeSpf, option.value);
@@ -403,7 +443,11 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
   async function loadGroupedBranch(path: GroupPathPart[]) {
     return apiClient.post<GroupedSearchResponse>(
       "/api/v1/search/grouped",
-      buildGroupedSearchBody(currentState, domainNames, { path, page: 1, pageSize: 50 }),
+      buildGroupedSearchBody(currentState, domainNames, {
+        path,
+        page: 1,
+        pageSize: currentState.pageSize === "all" ? 0 : currentState.pageSize,
+      }),
     );
   }
 
@@ -523,7 +567,7 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
         <div className="stack" style={{ gap: 10 }}>
           <div>
             <h2 className="section-title">Overview</h2>
-            <p className="section-intro">Track the scope, last update time, and saved description for this dashboard.</p>
+            <p className="section-intro">The essentials for this saved dashboard.</p>
           </div>
           {dashboardQuery.isLoading ? <p className="status-text">Loading dashboard metadata...</p> : null}
           {dashboardQuery.error ? (
@@ -533,18 +577,23 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
           ) : null}
           {dashboard ? (
             <>
-              {dashboard.description ? <p className="status-text">{dashboard.description}</p> : null}
-              <div className="domain-meta">
-                <span>ID {dashboard.id}</span>
-                <span>Owner {dashboard.owner_user_id}</span>
-                <span>Updated {new Date(dashboard.updated_at).toLocaleString()}</span>
-              </div>
-              <div className="pill-row">
-                {dashboard.domain_names?.map((name) => (
-                  <span className="pill" key={name}>
-                    {name}
-                  </span>
-                ))}
+              <div className="detail-grid">
+                <article className="detail-card">
+                  <p className="stat-label">Name</p>
+                  <strong>{dashboard.name}</strong>
+                </article>
+                <article className="detail-card">
+                  <p className="stat-label">Owner</p>
+                  <strong>{renderDashboardOwner(dashboard.owner)}</strong>
+                </article>
+                <article className="detail-card">
+                  <p className="stat-label">Last updated</p>
+                  <strong>{new Date(dashboard.updated_at).toLocaleString()}</strong>
+                </article>
+                <article className="detail-card detail-card-wide">
+                  <p className="stat-label">Description</p>
+                  <strong>{dashboard.description || "No description"}</strong>
+                </article>
               </div>
               {exportError ? <p className="error-text">{exportError}</p> : null}
               {deleteError ? <p className="error-text">{deleteError}</p> : null}
@@ -636,6 +685,17 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
             />
           </label>
           <label className="field-label">
+            Country
+            <input
+              className="field-input"
+              onChange={(event) =>
+                updateDraftState((current) => ({ ...current, country: event.target.value, page: 1 }), "debounced")
+              }
+              placeholder="Filter by country name"
+              value={draftState.country}
+            />
+          </label>
+          <label className="field-label">
             From
             <input
               className="field-input"
@@ -652,6 +712,26 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
               type="date"
               value={draftState.to}
             />
+          </label>
+          <label className="field-label">
+            Records
+            <select
+              className="field-input"
+              onChange={(event) =>
+                updateDraftState((current) => ({
+                  ...current,
+                  page: 1,
+                  pageSize: event.target.value === "all" ? "all" : Number.parseInt(event.target.value, 10),
+                }))
+              }
+              value={String(draftState.pageSize)}
+            >
+              {aggregatePageSizeOptions.map((option) => (
+                <option key={String(option)} value={String(option)}>
+                  {option === "all" ? "All" : option}
+                </option>
+              ))}
+            </select>
           </label>
           <div className="search-toolbar-actions">
             <button className="button-secondary" onClick={() => setIsFiltersOpen(true)} type="button">

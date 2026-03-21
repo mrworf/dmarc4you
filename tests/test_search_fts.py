@@ -79,14 +79,16 @@ def populated_db(test_db, config):
         rec1_id = f"rec_{uuid.uuid4().hex[:8]}"
         conn.execute(
             """INSERT INTO aggregate_report_records 
-               (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, country_code, country_name, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 rec1_id,
                 report_id,
                 "192.0.2.1",
                 "mail.google.com",
                 "google.com",
+                "US",
+                "United States",
                 100,
                 "none",
                 "pass",
@@ -100,14 +102,16 @@ def populated_db(test_db, config):
         rec2_id = f"rec_{uuid.uuid4().hex[:8]}"
         conn.execute(
             """INSERT INTO aggregate_report_records 
-               (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, country_code, country_name, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 rec2_id,
                 report_id,
                 "198.51.100.5",
                 "mx1.malicious.net",
                 "malicious.net",
+                "DE",
+                "Germany",
                 50,
                 "quarantine",
                 "fail",
@@ -128,14 +132,16 @@ def populated_db(test_db, config):
         rec3_id = f"rec_{uuid.uuid4().hex[:8]}"
         conn.execute(
             """INSERT INTO aggregate_report_records 
-               (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, aggregate_report_id, source_ip, resolved_name, resolved_name_domain, country_code, country_name, count, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 rec3_id,
                 report2_id,
                 "10.0.0.1",
                 "mail.microsoft.com",
                 "microsoft.com",
+                "GB",
+                "United Kingdom",
                 25,
                 "none",
                 "pass",
@@ -259,6 +265,19 @@ class TestSearchRecordsFts:
         result = search_records(config, super_admin_user, query="Micro")
         assert result["total"] == 1
         assert result["items"][0]["org_name"] == "Microsoft Corp"
+
+    def test_search_by_country_name_filter(self, populated_db, config, super_admin_user):
+        """Country filters match partial names case-insensitively."""
+        result = search_records(config, super_admin_user, country="united")
+        assert result["total"] == 2
+        assert {item["country_name"] for item in result["items"]} == {"United States", "United Kingdom"}
+
+    def test_search_page_size_zero_returns_all_matches(self, populated_db, config, super_admin_user):
+        """A page_size of 0 is treated as all matching records for explorer views."""
+        result = search_records(config, super_admin_user, page_size=0)
+        assert result["total"] == 3
+        assert len(result["items"]) == 3
+        assert result["page"] == 1
 
 
 class TestSearchRecordsDomainScoping:

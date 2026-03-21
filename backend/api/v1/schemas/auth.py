@@ -16,6 +16,11 @@ class UserSummary(BaseModel):
     email: str | None = None
 
 
+class UpdateProfileBody(BaseModel):
+    full_name: str | None = None
+    email: str | None = None
+
+
 class AuthLoginResponse(BaseModel):
     user: UserSummary
 

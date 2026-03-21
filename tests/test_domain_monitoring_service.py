@@ -90,7 +90,7 @@ def test_run_monitoring_job_records_initial_snapshot_and_history(monkeypatch) ->
     finally:
         conn.close()
 
-    assert current == (120, None)
+    assert current == (300, None)
     assert history == 1
     assert domain is not None and domain[0] is not None and domain[1] is not None and domain[2] == 0
 
@@ -229,6 +229,75 @@ def test_classify_timeline_change_marks_degraded_and_improved_cases() -> None:
     assert any(change["direction"] == "degraded" for change in degraded_changes)
     assert improved_direction == "improved"
     assert any(change["direction"] == "improved" for change in improved_changes)
+
+
+def test_dmarc_details_include_report_destinations_and_alignment_labels() -> None:
+    parsed = {
+        "p": "reject",
+        "sp": "quarantine",
+        "pct": "50",
+        "rua": "mailto:aggregate@example.com,mailto:second@example.com!10m",
+        "ruf": "mailto:forensic@example.com",
+        "adkim": "s",
+        "aspf": "r",
+    }
+
+    summary, explanation = domain_monitoring_service._summarize_dmarc(parsed)
+    details = domain_monitoring_service._build_dmarc_details(parsed)
+
+    assert summary == "Reject unauthenticated mail. Applies to 50% of mail."
+    assert explanation == "DMARC tells receivers how to handle messages that fail domain authentication checks."
+    assert parsed["rua_destinations"] == "aggregate@example.com,second@example.com"
+    assert parsed["ruf_destinations"] == "forensic@example.com"
+    assert parsed["adkim_label"] == "Strict alignment"
+    assert parsed["aspf_label"] == "Relaxed alignment"
+    assert details[3]["label"] == "Aggregate reports (rua)"
+    assert details[3]["values"] == ["aggregate@example.com", "second@example.com"]
+    assert details[4]["label"] == "Failure reports (ruf)"
+    assert details[4]["values"] == ["forensic@example.com"]
+    assert details[5]["values"] == ["Strict alignment"]
+    assert details[6]["values"] == ["Relaxed alignment"]
+
+
+def test_spf_details_classify_mechanisms_for_readable_rendering() -> None:
+    parsed, summary, explanation = domain_monitoring_service._summarize_spf(
+        "v=spf1 ip4:192.0.2.10 ip6:2001:db8::/32 a mx include:_spf.mail.example exists:%{i}.spf.example -all",
+        "example.com",
+    )
+    details = domain_monitoring_service._build_spf_details(parsed, "example.com")
+
+    assert summary == "Reject unauthorized senders. 5 sender rule(s) configured."
+    assert explanation == "SPF defines which servers are allowed to send email as example.com."
+    assert parsed["allowed_senders"] == [
+        "192.0.2.10",
+        "2001:db8::/32",
+        "A/AAAA records for example.com",
+        "MX hosts for example.com",
+    ]
+    assert parsed["referenced_services"] == ["_spf.mail.example"]
+    assert parsed["other_mechanisms"] == ["Exists rule: %{i}.spf.example"]
+    assert details[0]["values"] == ["Reject unauthorized senders"]
+    assert details[1]["label"] == "Allowed senders"
+    assert details[1]["values"] == [
+        "192.0.2.10",
+        "2001:db8::/32",
+        "A/AAAA records for example.com",
+        "MX hosts for example.com",
+    ]
+    assert details[2]["label"] == "Referenced services"
+    assert details[2]["values"] == ["_spf.mail.example"]
+    assert details[3]["label"] == "Other mechanisms"
+    assert details[3]["values"] == ["Exists rule: %{i}.spf.example"]
+
+
+def test_spf_details_report_when_no_explicit_senders_are_listed() -> None:
+    parsed, summary, _ = domain_monitoring_service._summarize_spf("v=spf1 -all", "example.com")
+    details = domain_monitoring_service._build_spf_details(parsed, "example.com")
+
+    assert summary == "Reject unauthorized senders. 0 sender rule(s) configured."
+    assert parsed["allowed_senders"] == []
+    assert parsed["referenced_services"] == []
+    assert details[1]["values"] == ["No explicit addresses or hosts are allowed to send email as example.com."]
 
 
 def test_timeout_does_not_update_last_checked_or_create_history(monkeypatch) -> None:

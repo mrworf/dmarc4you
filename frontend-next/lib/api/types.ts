@@ -8,6 +8,11 @@ export type UserSummary = {
   email: string | null;
 };
 
+export type UpdateProfileBody = {
+  full_name?: string | null;
+  email?: string | null;
+};
+
 export type AuthMeResponse = {
   user: UserSummary;
   all_domains: boolean;
@@ -101,6 +106,14 @@ export type DomainMonitoringRecordState = {
   explanation?: string | null;
   summary?: string | null;
   ttl_seconds?: number | null;
+  details?: DomainMonitoringDetailItem[];
+};
+
+export type DomainMonitoringDetailItem = {
+  label: string;
+  values: string[];
+  value_type?: "text" | "email" | string;
+  display?: "inline" | "list" | string;
 };
 
 export type DomainMonitoringCurrentState = {
@@ -149,6 +162,7 @@ export type DashboardSummary = {
   name: string;
   description: string;
   owner_user_id: string;
+  owner?: UserSummary | null;
   created_at: string;
   updated_at: string;
   domain_ids: string[];
@@ -370,6 +384,7 @@ export type SearchRecordsBody = {
   to?: string | number;
   include?: Record<string, string[]>;
   exclude?: Record<string, string[]>;
+  country?: string;
   query?: string;
   group_by?: string;
   page?: number;
@@ -387,6 +402,7 @@ export type GroupedSearchBody = {
   to?: string | number;
   include?: Record<string, string[]>;
   exclude?: Record<string, string[]>;
+  country?: string;
   query?: string;
   grouping: string[];
   path?: GroupPathPart[];

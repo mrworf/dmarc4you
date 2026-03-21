@@ -789,6 +789,13 @@ def test_domain_monitoring_settings_and_detail_flow(domain_app_client, monkeypat
     assert detail["current_state"]["dmarc"]["status"] == "ok"
     assert detail["current_state"]["spf"]["status"] == "ok"
     assert len(detail["current_state"]["dkim"]) == 2
+    assert detail["current_state"]["dmarc"]["details"][0]["label"] == "Policy"
+    assert detail["current_state"]["dmarc"]["details"][3]["values"] == ["dmarc@monitoring-example.com"]
+    assert detail["current_state"]["spf"]["details"][0]["label"] == "Default handling"
+    assert detail["current_state"]["spf"]["details"][2]["label"] == "Referenced services"
+    assert detail["current_state"]["spf"]["details"][2]["values"] == ["_spf.monitoring-example.com"]
+    assert detail["current_state"]["dkim"][0]["details"][0]["label"] == "Selector"
+    assert detail["current_state"]["dkim"][0]["details"][1]["values"] == ["Yes"]
     assert len(detail["history"]) == 1
 
 

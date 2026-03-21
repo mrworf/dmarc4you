@@ -902,25 +902,102 @@ def _parse_tag_value_record(record: str | None) -> dict[str, str]:
     return parsed
 
 
+def _detail_item(
+    label: str,
+    values: list[str] | None,
+    *,
+    value_type: str = "text",
+    display: str = "inline",
+) -> dict[str, Any]:
+    normalized_values = [str(value).strip() for value in (values or []) if str(value).strip()]
+    return {
+        "label": label,
+        "values": normalized_values,
+        "value_type": value_type,
+        "display": display,
+    }
+
+
+def _policy_label(policy: str | None) -> str:
+    value = (policy or "none").strip().lower()
+    if value == "reject":
+        return "Reject unauthenticated mail"
+    if value == "quarantine":
+        return "Quarantine suspicious mail"
+    return "Monitor only"
+
+
+def _subdomain_policy_label(policy: str | None) -> str:
+    value = (policy or "none").strip().lower()
+    if value == "reject":
+        return "Reject unauthenticated subdomain mail"
+    if value == "quarantine":
+        return "Quarantine suspicious subdomain mail"
+    return "Monitor only for subdomains"
+
+
+def _alignment_mode_label(mode: str | None) -> str:
+    value = (mode or "r").strip().lower()
+    if value == "s":
+        return "Strict alignment"
+    return "Relaxed alignment"
+
+
+def _parse_mailto_destinations(value: str | None) -> list[str]:
+    destinations: list[str] = []
+    for item in (value or "").split(","):
+        normalized = item.strip()
+        if not normalized:
+            continue
+        if normalized.lower().startswith("mailto:"):
+            normalized = normalized[7:]
+        normalized = normalized.split("!", 1)[0].strip()
+        if normalized:
+            destinations.append(normalized)
+    return destinations
+
+
 def _summarize_dmarc(parsed: dict[str, str]) -> tuple[str, str]:
     policy = parsed.get("p", "none") or "none"
     sub_policy = parsed.get("sp") or policy
     pct = parsed.get("pct", "100") or "100"
     adkim = parsed.get("adkim", "r") or "r"
     aspf = parsed.get("aspf", "r") or "r"
-    summary = f"DMARC policy {policy}, subdomain policy {sub_policy}, applied to {pct}% of mail."
-    explanation = (
-        f"DMARC is configured to {policy} mail that fails alignment checks. "
-        f"Subdomains use {sub_policy}. Alignment is DKIM={adkim} and SPF={aspf}. "
-        f"Aggregate reports {'are' if parsed.get('rua') else 'are not'} configured."
-    )
+    rua_destinations = _parse_mailto_destinations(parsed.get("rua"))
+    ruf_destinations = _parse_mailto_destinations(parsed.get("ruf"))
+    summary = f"{_policy_label(policy)}. Applies to {pct}% of mail."
+    explanation = "DMARC tells receivers how to handle messages that fail domain authentication checks."
+    parsed["rua_destinations"] = ",".join(rua_destinations)
+    parsed["ruf_destinations"] = ",".join(ruf_destinations)
+    parsed["adkim_label"] = _alignment_mode_label(adkim)
+    parsed["aspf_label"] = _alignment_mode_label(aspf)
     return summary, explanation
 
 
-def _summarize_spf(record: str | None) -> tuple[dict[str, Any], str, str]:
+def _strip_spf_qualifier(token: str) -> str:
+    if token[:1] in {"+", "-", "~", "?"}:
+        return token[1:]
+    return token
+
+
+def _describe_a_mechanism(mechanism: str, domain_name: str) -> str:
+    if mechanism == "a":
+        return f"A/AAAA records for {domain_name}"
+    _, host = mechanism.split(":", 1)
+    return f"A/AAAA records for {host}"
+
+
+def _describe_mx_mechanism(mechanism: str, domain_name: str) -> str:
+    if mechanism == "mx":
+        return f"MX hosts for {domain_name}"
+    _, host = mechanism.split(":", 1)
+    return f"MX hosts for {host}"
+
+
+def _summarize_spf(record: str | None, domain_name: str) -> tuple[dict[str, Any], str, str]:
     value = record or ""
     mechanisms = [part for part in value.split() if part and not part.lower().startswith("v=spf1")]
-    includes = [part for part in mechanisms if part.startswith(("include:", "ip4:", "ip6:", "a", "mx", "exists:"))]
+    includes = [part for part in mechanisms if _strip_spf_qualifier(part).startswith(("include:", "ip4:", "ip6:", "a", "mx", "exists:"))]
     qualifier = "neutral"
     if value.strip().endswith("-all"):
         qualifier = "fail"
@@ -930,13 +1007,44 @@ def _summarize_spf(record: str | None) -> tuple[dict[str, Any], str, str]:
         qualifier = "neutral"
     elif value.strip().endswith("+all"):
         qualifier = "allow_all"
-    summary = f"SPF ends with {qualifier} and explicitly allows {len(includes)} mechanism(s)."
-    explanation = (
-        f"SPF lists the systems that may send mail as this domain. "
-        f"This record currently allows mail through {', '.join(includes[:5]) or 'no explicit sender mechanisms'} "
-        f"and ends with {qualifier} handling for everything else."
-    )
-    return {"qualifier": qualifier, "includes": includes[:10]}, summary, explanation
+
+    allowed_senders: list[str] = []
+    referenced_services: list[str] = []
+    other_mechanisms: list[str] = []
+    for token in mechanisms:
+        mechanism = _strip_spf_qualifier(token).lower()
+        if mechanism.startswith("ip4:") or mechanism.startswith("ip6:"):
+            allowed_senders.append(mechanism.split(":", 1)[1])
+        elif mechanism == "a" or mechanism.startswith("a:"):
+            allowed_senders.append(_describe_a_mechanism(mechanism, domain_name))
+        elif mechanism == "mx" or mechanism.startswith("mx:"):
+            allowed_senders.append(_describe_mx_mechanism(mechanism, domain_name))
+        elif mechanism.startswith("include:"):
+            referenced_services.append(mechanism.split(":", 1)[1])
+        elif mechanism.startswith("exists:"):
+            other_mechanisms.append(f"Exists rule: {mechanism.split(':', 1)[1]}")
+        elif mechanism.endswith("all"):
+            continue
+        else:
+            other_mechanisms.append(mechanism)
+
+    qualifier_label = {
+        "fail": "Reject unauthorized senders",
+        "softfail": "Mark unauthorized senders as suspicious",
+        "neutral": "No strong instruction for unauthorized senders",
+        "allow_all": "Allow all senders",
+    }.get(qualifier, "No strong instruction for unauthorized senders")
+    sender_rule_count = len(allowed_senders) + len(referenced_services)
+    summary = f"{qualifier_label}. {sender_rule_count} sender rule(s) configured."
+    explanation = f"SPF defines which servers are allowed to send email as {domain_name}."
+    return {
+        "qualifier": qualifier,
+        "qualifier_label": qualifier_label,
+        "includes": includes[:10],
+        "allowed_senders": allowed_senders[:10],
+        "referenced_services": referenced_services[:10],
+        "other_mechanisms": other_mechanisms[:10],
+    }, summary, explanation
 
 
 def _summarize_dkim(selector: str, record: str | None) -> tuple[dict[str, Any], str, str]:
@@ -944,11 +1052,65 @@ def _summarize_dkim(selector: str, record: str | None) -> tuple[dict[str, Any], 
     key_type = parsed.get("k", "rsa") or "rsa"
     has_key = bool(parsed.get("p"))
     summary = f"Selector {selector} is {'present' if has_key else 'missing'}."
-    explanation = (
-        f"DKIM selector {selector} {'publishes' if has_key else 'does not publish'} a DNS public key. "
-        f"Key type is {key_type}."
-    )
+    explanation = f"DKIM publishes a public key receivers can use to verify signed mail for selector {selector}."
     return {"selector": selector, "key_type": key_type, "has_key": has_key}, summary, explanation
+
+
+def _build_dmarc_details(parsed: dict[str, str]) -> list[dict[str, Any]]:
+    policy = parsed.get("p", "none") or "none"
+    sub_policy = parsed.get("sp") or policy
+    pct = parsed.get("pct", "100") or "100"
+    rua_destinations = _parse_mailto_destinations(parsed.get("rua"))
+    ruf_destinations = _parse_mailto_destinations(parsed.get("ruf"))
+    return [
+        _detail_item("Policy", [_policy_label(policy)]),
+        _detail_item("Subdomain policy", [_subdomain_policy_label(sub_policy)]),
+        _detail_item("Applies to", [f"{pct}% of mail"]),
+        _detail_item(
+            "Aggregate reports (rua)",
+            rua_destinations or ["Not configured"],
+            value_type="email",
+            display="list" if rua_destinations else "inline",
+        ),
+        _detail_item(
+            "Failure reports (ruf)",
+            ruf_destinations or ["Not configured"],
+            value_type="email",
+            display="list" if ruf_destinations else "inline",
+        ),
+        _detail_item("DKIM alignment", [_alignment_mode_label(parsed.get("adkim"))]),
+        _detail_item("SPF alignment", [_alignment_mode_label(parsed.get("aspf"))]),
+    ]
+
+
+def _build_spf_details(parsed: dict[str, Any], domain_name: str) -> list[dict[str, Any]]:
+    allowed_senders = [str(value) for value in parsed.get("allowed_senders") or []]
+    referenced_services = [str(value) for value in parsed.get("referenced_services") or []]
+    other_mechanisms = [str(value) for value in parsed.get("other_mechanisms") or []]
+    details = [
+        _detail_item("Default handling", [str(parsed.get("qualifier_label") or "No strong instruction for unauthorized senders")]),
+        _detail_item(
+            "Allowed senders",
+            allowed_senders or [f"No explicit addresses or hosts are allowed to send email as {domain_name}."],
+            display="list",
+        ),
+    ]
+    if referenced_services:
+        details.append(_detail_item("Referenced services", referenced_services, display="list"))
+    if other_mechanisms:
+        details.append(_detail_item("Other mechanisms", other_mechanisms, display="list"))
+    return details
+
+
+def _build_dkim_details(parsed: dict[str, Any]) -> list[dict[str, Any]]:
+    selector = str(parsed.get("selector") or "")
+    key_type = str(parsed.get("key_type") or "rsa").upper()
+    has_key = bool(parsed.get("has_key"))
+    return [
+        _detail_item("Selector", [selector]),
+        _detail_item("Key published", ["Yes" if has_key else "No"]),
+        _detail_item("Key type", [key_type]),
+    ]
 
 
 def _build_state_for_domain(config: Config, *, domain_name: str, selectors: list[str]) -> tuple[str, dict[str, Any] | None, int | None, str | None]:
@@ -967,7 +1129,7 @@ def _build_state_for_domain(config: Config, *, domain_name: str, selectors: list
     dmarc_summary, dmarc_explanation = _summarize_dmarc(dmarc_tags)
 
     spf_record = _first_record_matching_prefix(spf_records, "v=spf1")
-    spf_parsed, spf_summary, spf_explanation = _summarize_spf(spf_record)
+    spf_parsed, spf_summary, spf_explanation = _summarize_spf(spf_record, domain_name)
 
     dkim_states = []
     dkim_records_raw = []
@@ -988,6 +1150,7 @@ def _build_state_for_domain(config: Config, *, domain_name: str, selectors: list
             "summary": summary,
             "explanation": explanation,
             "ttl_seconds": ttl,
+            "details": _build_dkim_details(parsed),
         }
         dkim_states.append(dkim_record_state)
         dkim_records_raw.append({"selector": selector, "host": host, "raw_value": record, "ttl_seconds": ttl})
@@ -1004,6 +1167,7 @@ def _build_state_for_domain(config: Config, *, domain_name: str, selectors: list
             "summary": dmarc_summary,
             "explanation": dmarc_explanation,
             "ttl_seconds": dmarc_ttl,
+            "details": _build_dmarc_details(dmarc_tags),
         },
         "spf": {
             "status": DNS_RESULT_OK if spf_record else (DNS_RESULT_ERROR if spf_result_type == DNS_RESULT_ERROR else DNS_RESULT_MISSING),
@@ -1013,6 +1177,7 @@ def _build_state_for_domain(config: Config, *, domain_name: str, selectors: list
             "summary": spf_summary,
             "explanation": spf_explanation,
             "ttl_seconds": spf_ttl,
+            "details": _build_spf_details(spf_parsed, domain_name),
         },
         "dkim": dkim_states,
     }

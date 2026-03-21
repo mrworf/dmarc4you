@@ -93,6 +93,13 @@ class DomainMonitoringSettingsBody(BaseModel):
     dkim_selectors: list[str] = []
 
 
+class DomainMonitoringDetailItem(BaseModel):
+    label: str
+    values: list[str] = []
+    value_type: str = "text"
+    display: str = "inline"
+
+
 class DomainMonitoringRecordState(BaseModel):
     status: str
     host: str
@@ -101,6 +108,7 @@ class DomainMonitoringRecordState(BaseModel):
     explanation: str | None = None
     summary: str | None = None
     ttl_seconds: int | None = None
+    details: list[DomainMonitoringDetailItem] = []
 
 
 class DomainMonitoringCurrentState(BaseModel):

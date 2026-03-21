@@ -1,11 +1,13 @@
 "use client";
 
+import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 
+import { apiClient, ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/context";
-import type { UserRole } from "@/lib/api/types";
+import type { AuthMeResponse, DomainsResponse, UpdateProfileBody, UserRole } from "@/lib/api/types";
 
 type AppShellProps = {
   title: string;
@@ -34,15 +36,76 @@ const navItems: NavItem[] = [
 export function AppShell({ title, description, children, actions }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { logout, user } = useAuth();
+  const { allDomains, domainIds, logout, refresh, user } = useAuth();
   const [isNavOpen, setIsNavOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
 
   async function handleLogout() {
     await logout();
     router.replace("/login");
   }
 
+  useEffect(() => {
+    if (!isProfileOpen) {
+      return;
+    }
+
+    setFullName(user?.full_name ?? "");
+    setEmail(user?.email ?? "");
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsProfileOpen(false);
+      }
+    }
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isProfileOpen, user]);
+
+  const profileDomainsQuery = useQuery({
+    queryKey: ["profile-domains"],
+    queryFn: () => apiClient.get<DomainsResponse>("/api/v1/domains"),
+    enabled: isProfileOpen && !!user && !allDomains,
+  });
+
+  const updateProfile = useMutation({
+    mutationFn: (body: UpdateProfileBody) => apiClient.put<AuthMeResponse>("/api/v1/auth/me", body),
+    onSuccess: async () => {
+      await refresh();
+      setIsProfileOpen(false);
+    },
+  });
+
+  const visibleDomainNames = useMemo(() => {
+    if (allDomains) {
+      return [];
+    }
+    const visibleDomains = profileDomainsQuery.data?.domains ?? [];
+    if (visibleDomains.length) {
+      return visibleDomains.map((domain) => domain.name);
+    }
+    return domainIds;
+  }, [allDomains, domainIds, profileDomainsQuery.data?.domains]);
+
+  async function handleProfileSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await updateProfile.mutateAsync({
+      full_name: fullName.trim() || null,
+      email: email.trim() || null,
+    });
+  }
+
   const visibleItems = navItems.filter((item) => !item.roles || (user && item.roles.includes(user.role)));
+  const profileName = user?.full_name?.trim() || user?.username || "Account";
+  const profileError = updateProfile.error instanceof ApiError ? updateProfile.error.message : null;
 
   return (
     <main className="app-frame app-frame-app app-shell-layout">
@@ -59,17 +122,17 @@ export function AppShell({ title, description, children, actions }: AppShellProp
       {isNavOpen ? <div className="nav-scrim" onClick={() => setIsNavOpen(false)} role="presentation" /> : null}
       <aside className="surface-card sidebar" data-open={isNavOpen}>
         <div className="stack">
-          <p className="eyebrow">DMARCWatch</p>
-          <h1 style={{ margin: 0, fontSize: "1.8rem" }}>Operations console</h1>
+          <div className="sidebar-brand">
+            <p className="eyebrow">DMARCWatch</p>
+          </div>
           {user ? (
-            <>
-              <span className="pill">{user.role}</span>
-              <div className="status-text">
-              <strong style={{ color: "var(--ink)" }}>{user.username}</strong>
-                <br />
-                {user.email ?? "Local account"}
-              </div>
-            </>
+            <button className="profile-trigger" onClick={() => setIsProfileOpen(true)} type="button">
+              <span className="profile-name">{profileName}</span>
+              <span className="profile-meta">
+                @{user.username} · {user.role}
+              </span>
+              <span className="profile-meta">{user.email ?? "Local account"}</span>
+            </button>
           ) : null}
         </div>
         <nav className="nav-links">
@@ -91,18 +154,91 @@ export function AppShell({ title, description, children, actions }: AppShellProp
         </button>
       </aside>
       <section className="content-grid">
-        <header className="hero-card stack">
-          <div className="stack" style={{ gap: 8 }}>
-            <p className="eyebrow">Workspace</p>
-            <h2 className="page-title" style={{ fontSize: "clamp(2rem, 3vw, 3rem)" }}>
-              {title}
-            </h2>
-            <p className="lede">{description}</p>
+        <header className="hero-card page-hero">
+          <div className="page-header-copy">
+            <h2 className="page-title page-title-compact">{title}</h2>
+            <p className="lede page-header-description">{description}</p>
           </div>
           {actions}
         </header>
         {children}
       </section>
+      {isProfileOpen && user ? (
+        <div className="modal-backdrop" onClick={() => setIsProfileOpen(false)} role="presentation">
+          <div
+            aria-modal="true"
+            className="modal-card surface-card profile-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="modal-header">
+              <div className="stack" style={{ gap: 8 }}>
+                <p className="eyebrow">Profile</p>
+                <h2 style={{ margin: 0 }}>My profile</h2>
+                <p className="status-text" style={{ margin: 0 }}>
+                  Update your full name and email. Username, role, and domain access stay read-only here.
+                </p>
+              </div>
+              <button aria-label="Close profile" className="icon-button" onClick={() => setIsProfileOpen(false)} type="button">
+                ×
+              </button>
+            </div>
+            <form className="stack" onSubmit={handleProfileSave}>
+              <div className="detail-grid">
+                <label className="field-label detail-card detail-card-wide">
+                  Full name
+                  <input className="field-input" onChange={(event) => setFullName(event.target.value)} value={fullName} />
+                </label>
+                <label className="field-label detail-card detail-card-wide">
+                  Email
+                  <input className="field-input" onChange={(event) => setEmail(event.target.value)} type="email" value={email} />
+                </label>
+                <article className="detail-card">
+                  <p className="stat-label">Role</p>
+                  <strong>{user.role}</strong>
+                </article>
+                <article className="detail-card">
+                  <p className="stat-label">Username</p>
+                  <strong>@{user.username}</strong>
+                </article>
+                {!allDomains ? (
+                  <article className="detail-card detail-card-wide">
+                    <p className="stat-label">Domains</p>
+                    {profileDomainsQuery.isLoading ? <span className="status-text">Loading domains...</span> : null}
+                    {profileDomainsQuery.error ? (
+                      <span className="error-text">
+                        {profileDomainsQuery.error instanceof Error ? profileDomainsQuery.error.message : "Failed to load domains"}
+                      </span>
+                    ) : null}
+                    {!profileDomainsQuery.isLoading && !profileDomainsQuery.error ? (
+                      visibleDomainNames.length ? (
+                        <div className="pill-row profile-domain-list">
+                          {visibleDomainNames.map((domainName) => (
+                            <span className="pill" key={domainName}>
+                              {domainName}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="status-text">No domains assigned.</span>
+                      )
+                    ) : null}
+                  </article>
+                ) : null}
+              </div>
+              {profileError ? <p className="error-text">{profileError}</p> : null}
+              <div className="dialog-actions">
+                <button className="button-secondary" onClick={() => setIsProfileOpen(false)} type="button">
+                  Cancel
+                </button>
+                <button className="button-primary" disabled={updateProfile.isPending} type="submit">
+                  {updateProfile.isPending ? "Saving..." : "Save profile"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

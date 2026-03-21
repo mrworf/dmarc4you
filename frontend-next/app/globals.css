@@ -77,7 +77,7 @@ button {
 }
 
 .hero-card {
-  padding: 32px;
+  padding: 24px;
 }
 
 .surface-card {
@@ -160,6 +160,8 @@ button {
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
   font-size: 0.9rem;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .timeline-list {
@@ -318,6 +320,32 @@ button {
   align-content: start;
 }
 
+.sidebar-brand {
+  display: grid;
+  gap: 4px;
+}
+
+.profile-trigger {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  text-align: left;
+}
+
+.profile-name {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.profile-meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .nav-links {
   display: grid;
   gap: 8px;
@@ -344,6 +372,33 @@ button {
   display: grid;
   gap: 20px;
   min-width: 0;
+}
+
+.page-hero {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.page-header-copy {
+  flex: 1 1 680px;
+  display: grid;
+  gap: 8px 24px;
+  align-items: start;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(280px, 1.1fr);
+}
+
+.page-title-compact {
+  font-size: clamp(1.9rem, 2.8vw, 2.8rem);
+  line-height: 1.02;
+}
+
+.page-header-description {
+  margin: 0;
+  max-width: none;
+  padding-top: 4px;
 }
 
 .panel-grid {
@@ -449,6 +504,17 @@ button {
   align-items: center;
   gap: 8px;
   position: relative;
+}
+
+.country-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.country-flag {
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .cell-primary-action {
@@ -841,6 +907,14 @@ button {
   width: min(560px, 100%);
 }
 
+.profile-dialog {
+  width: min(760px, 100%);
+}
+
+.profile-domain-list {
+  margin-top: 6px;
+}
+
 .dialog-actions {
   display: flex;
   gap: 12px;
@@ -922,6 +996,145 @@ button {
   color: var(--muted);
   font-size: 0.9rem;
   line-height: 1.5;
+}
+
+.monitoring-card-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.monitoring-record-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.monitoring-record-card-empty {
+  align-content: start;
+  background: rgba(255, 255, 255, 0.76);
+  border-style: dashed;
+}
+
+.monitoring-record-header {
+  display: grid;
+  gap: 8px;
+}
+
+.monitoring-record-title {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.monitoring-record-subtitle,
+.monitoring-record-summary,
+.monitoring-record-note {
+  margin: 0;
+}
+
+.monitoring-record-subtitle,
+.monitoring-record-note {
+  color: var(--muted);
+}
+
+.monitoring-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.monitoring-status-ok {
+  background: rgba(15, 118, 110, 0.12);
+  color: #0b766d;
+}
+
+.monitoring-status-missing {
+  background: rgba(180, 83, 9, 0.14);
+  color: #b45309;
+}
+
+.monitoring-status-error {
+  background: rgba(166, 27, 27, 0.12);
+  color: var(--danger);
+}
+
+.monitoring-detail-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.monitoring-detail-row {
+  display: grid;
+  gap: 6px;
+}
+
+.monitoring-detail-label {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.monitoring-detail-values {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.monitoring-detail-bullets {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.monitoring-raw-disclosure {
+  display: grid;
+  gap: 10px;
+}
+
+.monitoring-raw-disclosure summary {
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-weight: 700;
+  list-style: none;
+}
+
+.monitoring-raw-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.monitoring-toggle-group {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.monitoring-toggle-button {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(16, 35, 61, 0.04);
+  color: var(--ink);
+  font-weight: 700;
+  padding: 14px 16px;
+  text-align: left;
+}
+
+.monitoring-toggle-button-active {
+  border-color: rgba(15, 118, 110, 0.34);
+  background: rgba(15, 118, 110, 0.12);
+  color: #0b766d;
+  box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.12);
 }
 
 .selection-list {
@@ -1046,6 +1259,10 @@ button {
 @media (max-width: 900px) {
   .auth-shell,
   .app-shell-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header-copy {
     grid-template-columns: 1fr;
   }
 
