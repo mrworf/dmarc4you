@@ -40,6 +40,18 @@ async function openAnyDashboardDetail(page: Page): Promise<void> {
   await firstDetailLink.click();
 }
 
+async function openDashboardFilters(page: Page): Promise<Locator> {
+  await page.getByRole("button", { name: "Filters" }).click();
+  const filtersPanel = page.locator('[role="dialog"]').filter({ has: page.getByRole("heading", { name: "Filters" }) });
+  await expect(filtersPanel).toBeVisible();
+  return filtersPanel;
+}
+
+function expectBoundingBox(value: Box | null, label: string): Box {
+  expect(value, `${label} should have a bounding box`).not.toBeNull();
+  return value as Box;
+}
+
 async function getVisibleColumnOrder(page: Page): Promise<string[]> {
   return page.locator(".slideover-panel [data-column-value]").evaluateAll((elements) =>
     elements.map((element) => element.getAttribute("data-column-value") ?? ""),
@@ -87,7 +99,8 @@ test.describe("frontend-next critical happy paths", () => {
     await createdLink.click();
 
     await page.waitForURL(/\/dashboards\/[^/?#]+/);
-    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Results" })).toBeVisible();
+    await expect(page.getByLabel("Search", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Edit dashboard" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Export YAML" })).toBeVisible();
   });
@@ -96,40 +109,90 @@ test.describe("frontend-next critical happy paths", () => {
     await loginAsSuperAdmin(page);
     await openAnyDashboardDetail(page);
 
-    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    const overviewSection = page.locator("section.surface-card").filter({ has: page.getByLabel("Search", { exact: true }) });
+    await expect(overviewSection).toBeVisible();
     const marker = await installNoReloadMarker(page);
-    await page.getByLabel("Search", { exact: true }).fill("192.0.2.21");
+    await overviewSection.getByLabel("Search", { exact: true }).fill("192.0.2.21");
     await expect(page).toHaveURL(/query=192\.0\.2\.21/);
     await expectNoReload(page, marker);
     await expect(page.getByText("Search: 192.0.2.21")).toBeVisible();
+    const resultsSection = page.locator("section.surface-card").filter({ has: page.getByRole("heading", { name: "Results" }) });
+    await expect(resultsSection.locator(".results-header-copy").getByText("Search: 192.0.2.21")).toBeVisible();
 
     await page.reload();
 
-    await expect(page.getByLabel("Search", { exact: true })).toHaveValue("192.0.2.21");
+    await expect(overviewSection.getByLabel("Search", { exact: true })).toHaveValue("192.0.2.21");
     await expect(page.getByText("Search: 192.0.2.21")).toBeVisible();
+  });
+
+  test("dashboard detail moves controls into results and removes the old summary cards", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await openAnyDashboardDetail(page);
+
+    const hero = page.locator("header.page-hero");
+    const overviewSection = page.locator("section.surface-card").filter({ has: page.getByLabel("Search", { exact: true }) });
+    await expect(page.getByRole("heading", { name: "Results" })).toBeVisible();
+    await expect(page.locator(".stat-card")).toHaveCount(0);
+    await expect(page.getByText(/Dashboard period:/)).toHaveCount(0);
+    await expect(page.getByText("Review live results, update dashboard settings, and manage access for this view.")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Overview" })).toHaveCount(0);
+    await expect(page.getByText("The essentials for this saved dashboard.")).toHaveCount(0);
+    await expect(overviewSection.getByLabel("Search", { exact: true })).toBeVisible();
+    await expect(overviewSection.locator(".field-label-inline")).toBeVisible();
+
+    const titleBox = expectBoundingBox(await hero.locator(".page-title-text").boundingBox(), "dashboard title");
+    const descriptionBox = expectBoundingBox(await hero.locator(".page-title-detail").boundingBox(), "dashboard description");
+    const actionsBox = expectBoundingBox(await hero.locator(".dashboard-hero-actions").boundingBox(), "dashboard actions");
+    expect(Math.abs(descriptionBox.y - titleBox.y)).toBeLessThan(24);
+    expect(actionsBox.y).toBeGreaterThan(titleBox.y + titleBox.height - 2);
+
+    const searchLabelBox = expectBoundingBox(await overviewSection.locator(".field-label-inline > span").boundingBox(), "search label");
+    const searchInputBox = expectBoundingBox(await overviewSection.getByLabel("Search", { exact: true }).boundingBox(), "search input");
+    expect(Math.abs(searchLabelBox.y - searchInputBox.y)).toBeLessThan(16);
+    expect(searchInputBox.x).toBeGreaterThan(searchLabelBox.x + searchLabelBox.width);
+
+    const resultsSection = page.locator("section.surface-card").filter({ has: page.getByRole("heading", { name: "Results" }) });
+    await expect(resultsSection.getByRole("button", { name: "Range" })).toBeVisible();
+    await expect(resultsSection.getByLabel("Range start")).toBeVisible();
+    await expect(resultsSection.getByLabel("Range end")).toBeVisible();
+    await expect(resultsSection.getByRole("button", { name: "Filters" })).toBeVisible();
+    await expect(resultsSection.locator(".pagination-controls").getByLabel("Records")).toBeVisible();
+
+    const rangeButtonBox = expectBoundingBox(await resultsSection.getByRole("button", { name: "Range" }).boundingBox(), "range button");
+    const rangeStartBox = expectBoundingBox(await resultsSection.getByLabel("Range start").boundingBox(), "range start");
+    const filtersButtonBox = expectBoundingBox(await resultsSection.getByRole("button", { name: "Filters" }).boundingBox(), "filters button");
+    expect(Math.abs(rangeButtonBox.y - rangeStartBox.y)).toBeLessThan(16);
+    expect(Math.abs(filtersButtonBox.y - rangeStartBox.y)).toBeLessThan(16);
+    await expect(resultsSection.locator(".results-header-controls")).toBeVisible();
+
+    const filtersPanel = await openDashboardFilters(page);
+    await expect(filtersPanel.getByText("Country", { exact: true })).toBeVisible();
+    await expect(filtersPanel.getByText("Grouping", { exact: true })).toBeVisible();
+    await expect(filtersPanel.getByLabel("Add grouping")).toBeVisible();
   });
 
   test("dashboard detail grouping updates immediately across multiple levels", async ({ page }) => {
     await loginAsSuperAdmin(page);
     await openAnyDashboardDetail(page);
 
-    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Results" })).toBeVisible();
     const marker = await installNoReloadMarker(page);
+    const filtersPanel = await openDashboardFilters(page);
 
-    await page.getByRole("button", { name: "Add level" }).click();
+    await filtersPanel.getByRole("button", { name: "Add level" }).click();
     await expect(page).toHaveURL(/grouping=domain/);
     await expectNoReload(page, marker);
 
-    await page.getByLabel("Add grouping").selectOption("disposition");
-    await page.getByRole("button", { name: "Add level" }).click();
+    await filtersPanel.getByLabel("Add grouping").selectOption("disposition");
+    await filtersPanel.getByRole("button", { name: "Add level" }).click();
     await expect(page).toHaveURL(/grouping=domain(?:%2C|,)disposition/);
     await expectNoReload(page, marker);
 
-    await page.getByRole("button", { name: "Move Domain later" }).click();
+    await filtersPanel.getByRole("button", { name: "Move Domain later" }).click();
     await expect(page).toHaveURL(/grouping=disposition(?:%2C|,)domain/);
     await expectNoReload(page, marker);
 
-    await page.getByRole("button", { name: "Remove Disposition" }).click();
+    await filtersPanel.getByRole("button", { name: "Remove Disposition" }).click();
     await expect(page).toHaveURL(/grouping=domain/);
     await expectNoReload(page, marker);
   });
@@ -138,11 +201,12 @@ test.describe("frontend-next critical happy paths", () => {
     await loginAsSuperAdmin(page);
     await openAnyDashboardDetail(page);
 
-    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Results" })).toBeVisible();
     const marker = await installNoReloadMarker(page);
+    const filtersPanel = await openDashboardFilters(page);
 
-    await page.getByLabel("Add grouping").selectOption("source_ip");
-    await page.getByRole("button", { name: "Add level" }).click();
+    await filtersPanel.getByLabel("Add grouping").selectOption("source_ip");
+    await filtersPanel.getByRole("button", { name: "Add level" }).click();
 
     const firstToggle = page.locator(".group-toggle").first();
     await expect(firstToggle).toBeVisible();
@@ -163,19 +227,20 @@ test.describe("frontend-next critical happy paths", () => {
     await loginAsSuperAdmin(page);
     await openAnyDashboardDetail(page);
 
-    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Results" })).toBeVisible();
     const marker = await installNoReloadMarker(page);
+    const filtersPanel = await openDashboardFilters(page);
 
-    await page.getByRole("button", { name: "Add level" }).click();
-    await page.getByLabel("Add grouping").selectOption("disposition");
-    await page.getByRole("button", { name: "Add level" }).click();
+    await filtersPanel.getByRole("button", { name: "Add level" }).click();
+    await filtersPanel.getByLabel("Add grouping").selectOption("disposition");
+    await filtersPanel.getByRole("button", { name: "Add level" }).click();
 
     const firstToggle = page.locator(".group-toggle").first();
     await expect(firstToggle).toBeVisible();
     await firstToggle.click();
     await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
 
-    await page.getByRole("button", { name: "Remove Disposition" }).click();
+    await filtersPanel.getByRole("button", { name: "Remove Disposition" }).click();
 
     await expectNoReload(page, marker);
     await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
@@ -186,42 +251,100 @@ test.describe("frontend-next critical happy paths", () => {
     await loginAsSuperAdmin(page);
     await openAnyDashboardDetail(page);
 
-    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Results" })).toBeVisible();
 
-    await page.getByLabel("Search", { exact: true }).fill("192.0.2.21");
+    const overviewSection = page.locator("section.surface-card").filter({ has: page.getByLabel("Search", { exact: true }) });
+    await overviewSection.getByLabel("Search", { exact: true }).fill("192.0.2.21");
     const orgButton = page.getByRole("button", { name: "Google Workspace", exact: true }).first();
     await expect(orgButton).toBeVisible();
     await orgButton.click();
 
-    await expect(page.getByLabel("Search", { exact: true })).toHaveValue('192.0.2.21 "Google Workspace"');
+    await expect(overviewSection.getByLabel("Search", { exact: true })).toHaveValue('192.0.2.21 "Google Workspace"');
     await expect(page.getByText("Search: 192.0.2.21")).toBeVisible();
     await expect(page.getByText("Search: Google Workspace")).toBeVisible();
     await expect(page).toHaveURL(/query=192\.0\.2\.21(?:\+|%20)%22Google(?:\+|%20)Workspace%22/);
 
     await page.getByRole("button", { name: "Remove Search: Google Workspace" }).click();
 
-    await expect(page.getByLabel("Search", { exact: true })).toHaveValue("192.0.2.21");
+    await expect(overviewSection.getByLabel("Search", { exact: true })).toHaveValue("192.0.2.21");
     await expect(page.getByText("Search: Google Workspace")).toHaveCount(0);
     await expect(page.getByText("Search: 192.0.2.21")).toBeVisible();
     await expect(page).toHaveURL(/query=192\.0\.2\.21/);
   });
 
-  test("dashboard grouped view hides redundant bar counts and shows one dashboard-wide period summary", async ({ page }) => {
+  test("dashboard grouped view hides redundant bar counts without showing a dashboard period banner", async ({ page }) => {
     await loginAsSuperAdmin(page);
     await openAnyDashboardDetail(page);
 
-    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Results" })).toBeVisible();
 
     const fromValue = process.env.DMARC_E2E_SEARCH_FROM ?? "2025-01-01";
     const toValue = process.env.DMARC_E2E_SEARCH_TO ?? "2025-12-31";
-    await page.getByLabel("From", { exact: true }).fill(fromValue);
-    await page.getByLabel("To", { exact: true }).fill(toValue);
-    await page.getByRole("button", { name: "Add level" }).click();
+    await page.getByLabel("Range start").fill(fromValue);
+    await page.getByLabel("Range end").fill(toValue);
+    const filtersPanel = await openDashboardFilters(page);
+    await filtersPanel.getByRole("button", { name: "Add level" }).click();
 
     await expect(page.locator(".grouped-data-table")).toBeVisible();
-    await expect(page.getByText(`Dashboard period: From ${fromValue} to ${toValue}`)).toBeVisible();
+    await expect(page.getByText(/Dashboard period:/)).toHaveCount(0);
     await expect(page.locator(".grouped-data-table thead").getByText("Period")).toHaveCount(0);
     await expect(page.locator(".grouped-data-table .summary-bar-count")).toHaveCount(0);
+  });
+
+  test("dashboard range presets prefill the date inputs without reloading", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await openAnyDashboardDetail(page);
+
+    const marker = await installNoReloadMarker(page);
+    await page.getByRole("button", { name: "Range" }).click();
+    await page.getByRole("menuitem", { name: "Last 30 days" }).click();
+
+    await expect(page.getByLabel("Range start")).not.toHaveValue("");
+    await expect(page.getByLabel("Range end")).not.toHaveValue("");
+    await expect(page).toHaveURL(/from=\d{4}-\d{2}-\d{2}/);
+    await expect(page).toHaveURL(/to=\d{4}-\d{2}-\d{2}/);
+    await expectNoReload(page, marker);
+
+    await page.getByRole("button", { name: "Range" }).click();
+    await page.getByRole("menuitem", { name: "Show All" }).click();
+    await expect(page.getByLabel("Range start")).toHaveValue("");
+    await expect(page.getByLabel("Range end")).toHaveValue("");
+    await expect(page).not.toHaveURL(/(?:\?|&)from=/);
+    await expect(page).not.toHaveURL(/(?:\?|&)to=/);
+  });
+
+  test("dashboard detail hover menu supports include, exclude, and group actions", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await openAnyDashboardDetail(page);
+
+    const firstDispositionButton = page
+      .locator(".data-table tbody tr .cell-primary-action")
+      .filter({ has: page.locator(".status-pill-disposition-none, .status-pill-disposition-quarantine, .status-pill-disposition-reject") })
+      .first();
+    await expect(firstDispositionButton).toBeVisible();
+    const dispositionText = (await firstDispositionButton.textContent())?.trim() ?? "";
+
+    await firstDispositionButton.click();
+    await expect(page.getByText(`Disposition: ${dispositionText}`)).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`include_disposition=${dispositionText.toLowerCase()}`));
+    await page.getByRole("button", { name: `Remove Disposition: ${dispositionText}` }).click();
+
+    await firstDispositionButton.hover();
+    const hoverMenu = page.getByRole("menu", { name: `${dispositionText} actions` });
+    const excludeAction = hoverMenu.getByRole("menuitem", { name: "Exclude" });
+    await expect(excludeAction).toBeVisible();
+    await excludeAction.click();
+    await expect(page.getByText(`Not disposition: ${dispositionText}`)).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`exclude_disposition=${dispositionText.toLowerCase()}`));
+    await page.getByRole("button", { name: `Remove Not disposition: ${dispositionText}` }).click();
+
+    await firstDispositionButton.hover();
+    const groupAction = hoverMenu.getByRole("menuitem", { name: "Group" });
+    await expect(groupAction).toBeVisible();
+    await groupAction.click();
+    await expect(page).toHaveURL(/grouping=disposition/);
+    await expect(page.locator(".grouped-data-table")).toBeVisible();
+    await expect(page.locator(".cell-exclude-trigger")).toHaveCount(0);
   });
 
   test("dashboard detail edit supports live drag reordering and persists visible columns", async ({ page }) => {
@@ -271,17 +394,28 @@ test.describe("frontend-next critical happy paths", () => {
     await loginAsSuperAdmin(page);
     await openAnyDashboardDetail(page);
 
-    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Results" })).toBeVisible();
 
     await page.setViewportSize({ width: 1440, height: 1100 });
     const standardWidth = await page.locator("main.app-frame-app").evaluate((element) => element.getBoundingClientRect().width);
 
     await page.setViewportSize({ width: 2200, height: 1100 });
-    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Results" })).toBeVisible();
     const wideWidth = await page.locator("main.app-frame-app").evaluate((element) => element.getBoundingClientRect().width);
 
     expect(wideWidth).toBeGreaterThan(standardWidth + 500);
     expect(wideWidth).toBeGreaterThan(2000);
+  });
+
+  test("aggregate search keeps its existing range labels and does not use dashboard overview search placement", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await page.goto("/search");
+
+    await expect(page.getByRole("heading", { name: "Search", exact: true })).toBeVisible();
+    await expect(page.getByLabel("From", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("To", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Range" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Overview" })).toHaveCount(0);
   });
 
   test("upload route submits XML and links to the ingest job detail", async ({ page }) => {
@@ -336,3 +470,9 @@ test.describe("frontend-next critical happy paths", () => {
     await expect(page.getByText("Raw secret")).toBeVisible();
   });
 });
+type Box = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};

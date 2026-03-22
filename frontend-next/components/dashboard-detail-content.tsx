@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
@@ -61,6 +61,16 @@ const resultOptions = ["pass", "fail"];
 const dispositionOptions = ["none", "quarantine", "reject"];
 const dmarcAlignmentOptions = ["pass", "fail", "unknown"];
 const alignmentModeOptions = ["strict", "relaxed", "none", "unknown"];
+const rangePresetOptions = [
+  { id: "show-all", label: "Show All" },
+  { id: "last-7-days", label: "Last 7 days" },
+  { id: "last-30-days", label: "Last 30 days" },
+  { id: "last-90-days", label: "Last 90 days" },
+  { id: "last-365-days", label: "Last 365 days" },
+  { id: "year-to-date", label: "Year-to-date" },
+] as const;
+
+type RangePresetId = (typeof rangePresetOptions)[number]["id"];
 
 function parseDashboardState(searchParams: URLSearchParams): AggregateExplorerState {
   return parseAggregateExplorerState(searchParams, { includeDomains: false });
@@ -103,20 +113,6 @@ function buildAppliedChips(
       onRemove: () => onRemove((current) => ({ ...current, query: removeQueryTerm(current.query, term) })),
     });
   });
-  if (state.from) {
-    chips.push({
-      id: "from",
-      label: `From: ${state.from}`,
-      onRemove: () => onRemove((current) => ({ ...current, from: "" })),
-    });
-  }
-  if (state.to) {
-    chips.push({
-      id: "to",
-      label: `To: ${state.to}`,
-      onRemove: () => onRemove((current) => ({ ...current, to: "" })),
-    });
-  }
 
   appendFacetChips(chips, "SPF", "include-spf", state.includeSpf, (value) =>
     onRemove((current) => ({ ...current, includeSpf: removeValue(current.includeSpf, value) })),
@@ -226,19 +222,6 @@ function renderDashboardOwner(owner: UserSummary | null | undefined) {
   return owner.full_name || owner.username;
 }
 
-function getDashboardPeriodLabel(state: AggregateExplorerState): string {
-  if (state.from && state.to) {
-    return `From ${state.from} to ${state.to}`;
-  }
-  if (state.from) {
-    return `From ${state.from}`;
-  }
-  if (state.to) {
-    return `Through ${state.to}`;
-  }
-  return "All time";
-}
-
 function renderMultiValueToggles(values: string[], selectedValues: string[], onToggle: (value: string) => void) {
   return (
     <div className="checkbox-grid">
@@ -250,6 +233,36 @@ function renderMultiValueToggles(values: string[], selectedValues: string[], onT
       ))}
     </div>
   );
+}
+
+function formatLocalDate(value: Date): string {
+  const localDate = new Date(value);
+  localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
+  return localDate.toISOString().slice(0, 10);
+}
+
+function getRangePresetDates(preset: RangePresetId): { from: string; to: string } {
+  if (preset === "show-all") {
+    return { from: "", to: "" };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const fromDate = new Date(today);
+
+  if (preset === "year-to-date") {
+    fromDate.setMonth(0, 1);
+    return { from: formatLocalDate(fromDate), to: formatLocalDate(today) };
+  }
+
+  const daysByPreset: Record<Exclude<RangePresetId, "show-all" | "year-to-date">, number> = {
+    "last-7-days": 7,
+    "last-30-days": 30,
+    "last-90-days": 90,
+    "last-365-days": 365,
+  };
+  fromDate.setDate(today.getDate() - (daysByPreset[preset] - 1));
+  return { from: formatLocalDate(fromDate), to: formatLocalDate(today) };
 }
 
 export function DashboardDetailContent({ dashboardId }: { dashboardId: string }) {
@@ -278,10 +291,12 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
   const [isOwnershipOpen, setIsOwnershipOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [isRangeMenuOpen, setIsRangeMenuOpen] = useState(false);
   const [isScopeConfirmOpen, setIsScopeConfirmOpen] = useState(false);
   const [groupToAdd, setGroupToAdd] = useState(aggregateGroupingOptions[0]?.value ?? "domain");
   const [validateMessage, setValidateMessage] = useState<DashboardValidateUpdateResponse | null>(null);
   const [pendingUpdateValues, setPendingUpdateValues] = useState<UpdateDashboardBody | null>(null);
+  const rangeMenuRef = useRef<HTMLDivElement | null>(null);
   const availableGroupingOptions = useMemo(
     () => getAvailableAggregateGroupingOptions(draftState.grouping),
     [draftState.grouping],
@@ -296,6 +311,31 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
       setGroupToAdd(selectedGroupingValue);
     }
   }, [groupToAdd, selectedGroupingValue]);
+
+  useEffect(() => {
+    if (!isRangeMenuOpen) {
+      return undefined;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (rangeMenuRef.current && !rangeMenuRef.current.contains(event.target as Node)) {
+        setIsRangeMenuOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsRangeMenuOpen(false);
+      }
+    }
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isRangeMenuOpen]);
 
   const dashboardQuery = useQuery({
     queryKey: ["dashboard", dashboardId],
@@ -336,7 +376,6 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
   const isGroupedMode = currentState.grouping.length > 0;
   const isGroupedInitialLoading = isGroupedMode && groupedSearchQuery.isPending && !groupedSearchQuery.data;
   const isGroupedRefreshing = isGroupedMode && groupedSearchQuery.isFetching && !!groupedSearchQuery.data;
-  const dashboardPeriodLabel = getDashboardPeriodLabel(currentState);
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.page_size)) : 1;
   const appliedChips = buildAppliedChips(currentState, (updater) => {
     updateDraftState((current) => ({ ...updater(current), page: 1 }));
@@ -440,6 +479,20 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
     });
   }
 
+  function handleGroupField(field: string) {
+    updateDraftState((current) => ({
+      ...current,
+      grouping: !field || current.grouping.includes(field) || current.grouping.length >= 4 ? current.grouping : [...current.grouping, field],
+      page: 1,
+    }));
+  }
+
+  function applyRangePreset(preset: RangePresetId) {
+    const { from, to } = getRangePresetDates(preset);
+    updateDraftState((current) => ({ ...current, from, page: 1, to }));
+    setIsRangeMenuOpen(false);
+  }
+
   async function loadGroupedBranch(path: GroupPathPart[]) {
     return apiClient.post<GroupedSearchResponse>(
       "/api/v1/search/grouped",
@@ -504,10 +557,18 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
 
   return (
     <AppShell
-      title={dashboard?.name ?? "Dashboard detail"}
-      description="Review live results, update dashboard settings, and manage access for this view."
+      title={
+        dashboard?.description ? (
+          <>
+            <span className="page-title-text">{dashboard.name}</span>
+            <span className="page-title-detail">{dashboard.description}</span>
+          </>
+        ) : (
+          dashboard?.name ?? "Dashboard detail"
+        )
+      }
       actions={
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div className="dashboard-hero-actions">
           <Link className="button-secondary inline-link-button" href="/dashboards">
             Back to dashboards
           </Link>
@@ -548,27 +609,8 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
         </div>
       }
     >
-      <section className="panel-grid">
-        <article className="stat-card">
-          <p className="stat-label">Domains in scope</p>
-          <p className="stat-value">{dashboard?.domain_ids.length ?? 0}</p>
-        </article>
-        <article className="stat-card">
-          <p className="stat-label">Results shown</p>
-          <p className="stat-value">{result?.items.length ?? 0}</p>
-        </article>
-        <article className="stat-card">
-          <p className="stat-label">Total matches</p>
-          <p className="stat-value">{result?.total ?? 0}</p>
-        </article>
-      </section>
-
       <section className="surface-card stack">
         <div className="stack" style={{ gap: 10 }}>
-          <div>
-            <h2 className="section-title">Overview</h2>
-            <p className="section-intro">The essentials for this saved dashboard.</p>
-          </div>
           {dashboardQuery.isLoading ? <p className="status-text">Loading dashboard metadata...</p> : null}
           {dashboardQuery.error ? (
             <p className="error-text">
@@ -579,10 +621,6 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
             <>
               <div className="detail-grid">
                 <article className="detail-card">
-                  <p className="stat-label">Name</p>
-                  <strong>{dashboard.name}</strong>
-                </article>
-                <article className="detail-card">
                   <p className="stat-label">Owner</p>
                   <strong>{renderDashboardOwner(dashboard.owner)}</strong>
                 </article>
@@ -590,10 +628,17 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
                   <p className="stat-label">Last updated</p>
                   <strong>{new Date(dashboard.updated_at).toLocaleString()}</strong>
                 </article>
-                <article className="detail-card detail-card-wide">
-                  <p className="stat-label">Description</p>
-                  <strong>{dashboard.description || "No description"}</strong>
-                </article>
+                <label className="field-label field-label-inline detail-card detail-card-wide">
+                  <span>Search</span>
+                  <input
+                    className="field-input"
+                    onChange={(event) =>
+                      updateDraftState((current) => ({ ...current, page: 1, query: event.target.value }), "debounced")
+                    }
+                    placeholder="IP, org, host, or address"
+                    value={draftState.query}
+                  />
+                </label>
               </div>
               {exportError ? <p className="error-text">{exportError}</p> : null}
               {deleteError ? <p className="error-text">{deleteError}</p> : null}
@@ -668,209 +713,76 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
       ) : null}
 
       <section className="surface-card stack">
-        <form
-          className="search-toolbar"
-          onSubmit={(event) => {
-            event.preventDefault();
-            applyFilters();
-          }}
-        >
-          <label className="field-label">
-            Search
+        <div className="section-heading">
+          <div className="results-header-copy">
+            <h2 className="section-title">Results</h2>
+            {appliedChips.length ? (
+              <div className="results-chip-area">
+                <div className="filter-chip-row">
+                  <button className="button-secondary button-secondary-compact" onClick={resetFilters} type="button">
+                    Clear all
+                  </button>
+                  {appliedChips.map((chip) => (
+                    <span className={`filter-chip${chip.tone === "exclude" ? " filter-chip-exclude" : ""}`} key={chip.id}>
+                      <span>{chip.label}</span>
+                      <button aria-label={`Remove ${chip.label}`} className="filter-chip-remove" onClick={chip.onRemove} type="button">
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <div className="section-actions live-results-actions results-header-controls">
+            <div className="range-control" ref={rangeMenuRef}>
+              <button
+                aria-expanded={isRangeMenuOpen}
+                aria-haspopup="menu"
+                className="button-secondary range-trigger"
+                onClick={() => setIsRangeMenuOpen((current) => !current)}
+                type="button"
+              >
+                Range
+              </button>
+              {isRangeMenuOpen ? (
+                <div aria-label="Range presets" className="range-menu" role="menu">
+                  {rangePresetOptions.map((preset) => (
+                    <button
+                      className="button-secondary range-menu-option"
+                      key={preset.id}
+                      onClick={() => applyRangePreset(preset.id)}
+                      role="menuitem"
+                      type="button"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <input
-              className="field-input"
-              onChange={(event) => updateDraftState((current) => ({ ...current, page: 1, query: event.target.value }), "debounced")}
-              placeholder="IP, org, host, or address"
-              value={draftState.query}
-            />
-          </label>
-          <label className="field-label">
-            Country
-            <input
-              className="field-input"
-              onChange={(event) =>
-                updateDraftState((current) => ({ ...current, country: event.target.value, page: 1 }), "debounced")
-              }
-              placeholder="Filter by country name"
-              value={draftState.country}
-            />
-          </label>
-          <label className="field-label">
-            From
-            <input
-              className="field-input"
+              aria-label="Range start"
+              className="field-input live-results-date-input"
               onChange={(event) => updateDraftState((current) => ({ ...current, from: event.target.value, page: 1 }), "debounced")}
               type="date"
               value={draftState.from}
             />
-          </label>
-          <label className="field-label">
-            To
+            <span aria-hidden="true" className="range-separator">
+              -
+            </span>
             <input
-              className="field-input"
+              aria-label="Range end"
+              className="field-input live-results-date-input"
               onChange={(event) => updateDraftState((current) => ({ ...current, page: 1, to: event.target.value }), "debounced")}
               type="date"
               value={draftState.to}
             />
-          </label>
-          <label className="field-label">
-            Records
-            <select
-              className="field-input"
-              onChange={(event) =>
-                updateDraftState((current) => ({
-                  ...current,
-                  page: 1,
-                  pageSize: event.target.value === "all" ? "all" : Number.parseInt(event.target.value, 10),
-                }))
-              }
-              value={String(draftState.pageSize)}
-            >
-              {aggregatePageSizeOptions.map((option) => (
-                <option key={String(option)} value={String(option)}>
-                  {option === "all" ? "All" : option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="search-toolbar-actions">
             <button className="button-secondary" onClick={() => setIsFiltersOpen(true)} type="button">
-              More filters
-            </button>
-            <button className="button-secondary" onClick={resetFilters} type="button">
-              Reset
-            </button>
-          </div>
-        </form>
-
-        <div className="stack" style={{ gap: 12 }}>
-            <div className="section-heading">
-              <div className="stack" style={{ gap: 6 }}>
-                <h2 className="section-title">Grouping</h2>
-                <p className="section-intro">Build up to four grouping levels. Group changes update the results and URL immediately.</p>
-              </div>
-            </div>
-            <div className="filter-chip-row">
-              {draftState.grouping.length ? (
-                draftState.grouping.map((field, index) => {
-                  const label = aggregateGroupingOptions.find((option) => option.value === field)?.label ?? field;
-                  return (
-                    <span className="filter-chip" key={field}>
-                      <span>{`${index + 1}. ${label}`}</span>
-                    <button
-                      aria-label={`Move ${label} earlier`}
-                      className="filter-chip-remove"
-                      disabled={index === 0}
-                      onClick={() =>
-                        updateDraftState((current) => {
-                          const next = [...current.grouping];
-                          [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                          return { ...current, grouping: next, page: 1 };
-                        })
-                      }
-                      type="button"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      aria-label={`Move ${label} later`}
-                      className="filter-chip-remove"
-                      disabled={index === draftState.grouping.length - 1}
-                      onClick={() =>
-                        updateDraftState((current) => {
-                          const next = [...current.grouping];
-                          [next[index], next[index + 1]] = [next[index + 1], next[index]];
-                          return { ...current, grouping: next, page: 1 };
-                        })
-                      }
-                      type="button"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      aria-label={`Remove ${label}`}
-                      className="filter-chip-remove"
-                      onClick={() =>
-                        updateDraftState((current) => ({
-                          ...current,
-                          grouping: current.grouping.filter((item) => item !== field),
-                          page: 1,
-                        }))
-                      }
-                      type="button"
-                    >
-                      ×
-                    </button>
-                  </span>
-                );
-              })
-            ) : (
-              <span className="status-text">No grouping selected.</span>
-            )}
-          </div>
-          <div className="search-toolbar-actions">
-            <label className="field-label">
-              Add grouping
-              <select
-                className="field-input"
-                disabled={!availableGroupingOptions.length}
-                onChange={(event) => setGroupToAdd(event.target.value)}
-                value={selectedGroupingValue}
-              >
-                {availableGroupingOptions.length ? (
-                  availableGroupingOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">No levels available</option>
-                )}
-              </select>
-            </label>
-            <button
-              className="button-secondary"
-              disabled={!selectedGroupingValue || draftState.grouping.length >= 4}
-              onClick={() =>
-                updateDraftState((current) => ({
-                  ...current,
-                  grouping: current.grouping.length >= 4 || !selectedGroupingValue ? current.grouping : [...current.grouping, selectedGroupingValue],
-                  page: 1,
-                }))
-              }
-              type="button"
-            >
-              Add level
+              Filters
             </button>
           </div>
         </div>
-      </section>
-
-      <section className="surface-card stack">
-        <div className="section-heading">
-          <div className="stack" style={{ gap: 8 }}>
-            <h2 className="section-title">Live results</h2>
-            <p className="section-intro">Review the current aggregate records for the domains in this dashboard.</p>
-            <p className="status-text">{`Dashboard period: ${dashboardPeriodLabel}`}</p>
-          </div>
-          {appliedChips.length ? (
-            <button className="button-secondary" onClick={resetFilters} type="button">
-              Clear all
-            </button>
-          ) : null}
-        </div>
-        {appliedChips.length ? (
-          <div className="filter-chip-row">
-            {appliedChips.map((chip) => (
-              <span className={`filter-chip${chip.tone === "exclude" ? " filter-chip-exclude" : ""}`} key={chip.id}>
-                <span>{chip.label}</span>
-                <button aria-label={`Remove ${chip.label}`} className="filter-chip-remove" onClick={chip.onRemove} type="button">
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        ) : null}
         {dashboard && !domainNames.length ? <p className="status-text">This dashboard has no domains in scope.</p> : null}
         {currentState.grouping.length ? (
           isGroupedInitialLoading ? <p className="status-text">Loading live dashboard results...</p> : null
@@ -885,6 +797,7 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
         ) : null}
         {result && !currentState.grouping.length ? (
           <AggregateSearchResultsTable
+            dashboardActionMenu={{ grouping: currentState.grouping, onGroupField: handleGroupField }}
             emptyMessage="No matching records yet for this dashboard scope."
             onQuickFilter={handleQuickFilter}
             onViewReport={setSelectedAggregateReportId}
@@ -895,6 +808,7 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
         {result && currentState.grouping.length ? (
           <GroupedAggregateResultsTable
             contextKey={groupedContextKey}
+            dashboardActionMenu={{ grouping: currentState.grouping, onGroupField: handleGroupField }}
             emptyMessage="No grouped dashboard results yet for this scope."
             grouping={currentState.grouping}
             initialResult={result as GroupedSearchResponse}
@@ -908,10 +822,33 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
         ) : null}
         {result ? (
           <div className="pagination-row">
-            <span className="status-text">
-              Page {result.page} of {totalPages}
-            </span>
-            <div style={{ display: "flex", gap: 12 }}>
+            <div className="search-toolbar-meta pagination-status-group">
+              <span className="status-text">
+                Page {result.page} of {totalPages}
+              </span>
+            </div>
+            <div className="pagination-controls">
+              <label className="field-label pagination-records-field pagination-records-field-inline">
+                <span>Records</span>
+                <select
+                  aria-label="Records"
+                  className="field-input"
+                  onChange={(event) =>
+                    updateDraftState((current) => ({
+                      ...current,
+                      page: 1,
+                      pageSize: event.target.value === "all" ? "all" : Number.parseInt(event.target.value, 10),
+                    }))
+                  }
+                  value={String(draftState.pageSize)}
+                >
+                  {aggregatePageSizeOptions.map((option) => (
+                    <option key={String(option)} value={String(option)}>
+                      {option === "all" ? "All" : option}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button className="button-secondary" disabled={currentState.page <= 1} onClick={() => goToPage(Math.max(1, currentState.page - 1))} type="button">
                 Previous
               </button>
@@ -923,10 +860,10 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
         ) : null}
       </section>
       <SlideOverPanel
-        description="Refine the dashboard with include/exclude facets. Changes apply instantly and stay in the URL."
+        description="Refine the dashboard with date-adjacent controls, grouping, and include/exclude facets. Changes apply instantly and stay in the URL."
         onClose={() => setIsFiltersOpen(false)}
         open={isFiltersOpen}
-        title="More filters"
+        title="Filters"
       >
         <form
           className="stack"
@@ -935,6 +872,110 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
             applyFilters();
           }}
         >
+          <div className="stack" style={{ gap: 10 }}>
+            <p className="stat-label">Country</p>
+            <input
+              className="field-input"
+              onChange={(event) =>
+                updateDraftState((current) => ({ ...current, country: event.target.value, page: 1 }), "debounced")
+              }
+              placeholder="Filter by country name"
+              value={draftState.country}
+            />
+          </div>
+          <div className="stack" style={{ gap: 12 }}>
+            <div className="stack" style={{ gap: 6 }}>
+              <p className="stat-label">Grouping</p>
+              <p className="section-intro">Build up to four grouping levels. Group changes update the results and URL immediately.</p>
+            </div>
+            <div className="filter-chip-row">
+              {draftState.grouping.length ? (
+                draftState.grouping.map((field, index) => {
+                  const label = aggregateGroupingOptions.find((option) => option.value === field)?.label ?? field;
+                  return (
+                    <span className="filter-chip" key={field}>
+                      <span>{`${index + 1}. ${label}`}</span>
+                      <button
+                        aria-label={`Move ${label} earlier`}
+                        className="filter-chip-remove"
+                        disabled={index === 0}
+                        onClick={() =>
+                          updateDraftState((current) => {
+                            const next = [...current.grouping];
+                            [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                            return { ...current, grouping: next, page: 1 };
+                          })
+                        }
+                        type="button"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        aria-label={`Move ${label} later`}
+                        className="filter-chip-remove"
+                        disabled={index === draftState.grouping.length - 1}
+                        onClick={() =>
+                          updateDraftState((current) => {
+                            const next = [...current.grouping];
+                            [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                            return { ...current, grouping: next, page: 1 };
+                          })
+                        }
+                        type="button"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        aria-label={`Remove ${label}`}
+                        className="filter-chip-remove"
+                        onClick={() =>
+                          updateDraftState((current) => ({
+                            ...current,
+                            grouping: current.grouping.filter((item) => item !== field),
+                            page: 1,
+                          }))
+                        }
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })
+              ) : (
+                <span className="status-text">No grouping selected.</span>
+              )}
+            </div>
+            <div className="search-toolbar-actions">
+              <label className="field-label">
+                Add grouping
+                <select
+                  className="field-input"
+                  disabled={!availableGroupingOptions.length}
+                  onChange={(event) => setGroupToAdd(event.target.value)}
+                  value={selectedGroupingValue}
+                >
+                  {availableGroupingOptions.length ? (
+                    availableGroupingOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">No levels available</option>
+                  )}
+                </select>
+              </label>
+              <button
+                className="button-secondary"
+                disabled={!selectedGroupingValue || draftState.grouping.length >= 4}
+                onClick={() => handleGroupField(selectedGroupingValue)}
+                type="button"
+              >
+                Add level
+              </button>
+            </div>
+          </div>
           <div className="stack" style={{ gap: 10 }}>
             <p className="stat-label">Include SPF</p>
             {renderMultiValueToggles(resultOptions, draftState.includeSpf, (value) =>

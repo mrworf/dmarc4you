@@ -81,6 +81,21 @@ Dashboard detail pages support temporary aggregate grouping by:
 
 Grouping is URL-state only in v1 and is not saved with the dashboard definition.
 
+Dashboard detail `Results` owns the temporary controls for aggregate exploration:
+
+- free-text search lives in the dashboard metadata card instead of its own toolbar card, with the label inline to the left of the input
+- the `Results` header uses a `Range` control with quick presets that prefill the existing `from` / `to` date fields
+- advanced controls open from a `Filters` action inside `Results`
+- the `Filters` panel includes country filtering, grouping management, and include/exclude facet toggles
+- active filter chips sit in the left side of the `Results` header directly beneath the title, while the range controls stay on a single row at the right on larger screens
+- records-per-page lives beside the previous/next pagination controls in the `Results` footer
+
+Dashboard aggregate tables also support a dashboard-only hover action menu:
+
+- clicking a filterable value still performs the primary action immediately
+- hovering long enough reveals `Include`, `Exclude`, and when applicable `Group`
+- this hover menu is specific to dashboard `Live results`; the global search page keeps its existing interaction model
+
 ## Dashboard visible fields
 
 - each dashboard persists an ordered `visible_columns` list for aggregate result tables

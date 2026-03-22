@@ -3,17 +3,17 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { apiClient, ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/context";
 import type { AuthMeResponse, DomainsResponse, UpdateProfileBody, UserRole } from "@/lib/api/types";
 
 type AppShellProps = {
-  title: string;
-  description: string;
-  children: React.ReactNode;
-  actions?: React.ReactNode;
+  title: ReactNode;
+  description?: ReactNode;
+  children: ReactNode;
+  actions?: ReactNode;
 };
 
 type NavItem = {
@@ -155,9 +155,9 @@ export function AppShell({ title, description, children, actions }: AppShellProp
       </aside>
       <section className="content-grid">
         <header className="hero-card page-hero">
-          <div className="page-header-copy">
+          <div className={`page-header-copy${description ? "" : " page-header-copy-single"}`}>
             <h2 className="page-title page-title-compact">{title}</h2>
-            <p className="lede page-header-description">{description}</p>
+            {description ? <p className="lede page-header-description">{description}</p> : null}
           </div>
           {actions}
         </header>

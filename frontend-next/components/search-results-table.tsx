@@ -1,4 +1,5 @@
-import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type {
   AggregateSearchResult,
@@ -38,6 +39,13 @@ export type SearchQuickFilterOption = {
 type QuickFilterActions = {
   includeAction?: SearchQuickFilterOption;
   excludeAction?: SearchQuickFilterOption;
+  groupField?: string;
+};
+
+type DashboardActionMenuConfig = {
+  grouping: string[];
+  hoverDelayMs?: number;
+  onGroupField: (field: string) => void;
 };
 
 type BranchState = {
@@ -130,8 +138,16 @@ function pruneBranchesForExpandedPaths(
   );
 }
 
+function canShowGroupAction(
+  groupField: string | undefined,
+  dashboardActionMenu: DashboardActionMenuConfig | undefined,
+): groupField is string {
+  return !!groupField && !!dashboardActionMenu && dashboardActionMenu.grouping.length < 4 && !dashboardActionMenu.grouping.includes(groupField);
+}
+
 function CellValueWithActions({
   actions,
+  dashboardActionMenu,
   textValue,
   value,
   onQuickFilter,
@@ -139,14 +155,107 @@ function CellValueWithActions({
   textValue?: string;
   value: ReactNode;
   actions: QuickFilterActions;
+  dashboardActionMenu?: DashboardActionMenuConfig;
   onQuickFilter?: (option: SearchQuickFilterOption) => void;
 }) {
   const includeAction = actions.includeAction;
   const excludeAction = actions.excludeAction;
+  const groupField = canShowGroupAction(actions.groupField, dashboardActionMenu) ? actions.groupField : undefined;
   const actionLabel = textValue ?? (typeof value === "string" ? value : "value");
+  const hoverDelayMs = dashboardActionMenu?.hoverDelayMs ?? 250;
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
+  const hoverTimerRef = useRef<number | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
+
+  const clearHoverTimer = useCallback(() => {
+    if (hoverTimerRef.current !== null) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }, []);
+
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  const closeMenu = useCallback(() => {
+    clearHoverTimer();
+    clearCloseTimer();
+    setMenuPosition(null);
+    setIsMenuOpen(false);
+  }, [clearCloseTimer, clearHoverTimer]);
+
+  const hasDashboardMenuActions = !!dashboardActionMenu && (!!includeAction || !!excludeAction || !!groupField);
+
+  useEffect(() => {
+    if (!isMenuOpen) {
+      return undefined;
+    }
+
+    const handleScroll = () => {
+      closeMenu();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeMenu();
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeMenu, isMenuOpen]);
+
+  useEffect(() => {
+    return () => {
+      clearHoverTimer();
+      clearCloseTimer();
+    };
+  }, [clearCloseTimer, clearHoverTimer]);
+
+  function scheduleOpenMenu(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!hasDashboardMenuActions) {
+      return;
+    }
+    clearCloseTimer();
+    clearHoverTimer();
+    const wrapperRect = event.currentTarget.getBoundingClientRect();
+    hoverTimerRef.current = window.setTimeout(() => {
+      setMenuPosition({
+        left: wrapperRect.left + wrapperRect.width / 2,
+        top: wrapperRect.bottom + 10,
+      });
+      setIsMenuOpen(true);
+      hoverTimerRef.current = null;
+    }, hoverDelayMs);
+  }
+
+  function scheduleCloseMenu() {
+    if (!hasDashboardMenuActions) {
+      return;
+    }
+    clearHoverTimer();
+    clearCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => {
+      setIsMenuOpen(false);
+      closeTimerRef.current = null;
+    }, 500);
+  }
 
   return (
-    <div className="cell-value-wrap">
+    <div
+      className={`cell-value-wrap${isMenuOpen ? " is-menu-open" : ""}`}
+      onPointerEnter={scheduleOpenMenu}
+      onPointerLeave={scheduleCloseMenu}
+    >
       {includeAction && onQuickFilter ? (
         <button
           className="button-link cell-primary-action"
@@ -161,7 +270,7 @@ function CellValueWithActions({
       ) : (
         <span>{value}</span>
       )}
-      {excludeAction && onQuickFilter ? (
+      {excludeAction && onQuickFilter && !dashboardActionMenu ? (
         <button
           aria-label={`Exclude ${actionLabel}`}
           className="cell-exclude-trigger"
@@ -174,6 +283,66 @@ function CellValueWithActions({
           -
         </button>
       ) : null}
+      {hasDashboardMenuActions && isMenuOpen && menuPosition && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              aria-label={`${actionLabel} actions`}
+              className="cell-hover-menu is-open"
+              onPointerEnter={() => {
+                clearCloseTimer();
+                clearHoverTimer();
+                setIsMenuOpen(true);
+              }}
+              onPointerLeave={scheduleCloseMenu}
+              role="menu"
+              style={{ left: `${menuPosition.left}px`, top: `${menuPosition.top}px` }}
+            >
+              {includeAction && onQuickFilter ? (
+                <button
+                  className="button-secondary cell-hover-menu-button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onQuickFilter(includeAction);
+                    closeMenu();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  Include
+                </button>
+              ) : null}
+              {excludeAction && onQuickFilter ? (
+                <button
+                  className="button-secondary cell-hover-menu-button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onQuickFilter(excludeAction);
+                    closeMenu();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  Exclude
+                </button>
+              ) : null}
+              {groupField && dashboardActionMenu ? (
+                <button
+                  className="button-secondary cell-hover-menu-button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    dashboardActionMenu.onGroupField(groupField);
+                    closeMenu();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  Group
+                </button>
+              ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -191,6 +360,7 @@ function getStatusQuickFilterActions(column: string, value: string): QuickFilter
       return {
         includeAction: { label: "Include disposition", target: "include_disposition", value },
         excludeAction: { label: "Exclude disposition", target: "exclude_disposition", value },
+        groupField: "disposition",
       };
     case "dkim_result":
       return {
@@ -206,16 +376,19 @@ function getStatusQuickFilterActions(column: string, value: string): QuickFilter
       return {
         includeAction: { label: "Include DMARC alignment", target: "include_dmarc_alignment", value },
         excludeAction: { label: "Exclude DMARC alignment", target: "exclude_dmarc_alignment", value },
+        groupField: "dmarc_alignment",
       };
     case "dkim_alignment":
       return {
         includeAction: { label: "Include DKIM alignment", target: "include_dkim_alignment", value },
         excludeAction: { label: "Exclude DKIM alignment", target: "exclude_dkim_alignment", value },
+        groupField: "dkim_alignment",
       };
     case "spf_alignment":
       return {
         includeAction: { label: "Include SPF alignment", target: "include_spf_alignment", value },
         excludeAction: { label: "Exclude SPF alignment", target: "exclude_spf_alignment", value },
+        groupField: "spf_alignment",
       };
     default:
       return {};
@@ -226,6 +399,7 @@ function renderStatusPillCell(
   column: string,
   itemValue: string | null,
   tone: string,
+  dashboardActionMenu?: DashboardActionMenuConfig,
   onQuickFilter?: (option: SearchQuickFilterOption) => void,
 ) {
   if (!itemValue) {
@@ -234,6 +408,7 @@ function renderStatusPillCell(
   return (
     <CellValueWithActions
       actions={getStatusQuickFilterActions(column, itemValue)}
+      dashboardActionMenu={dashboardActionMenu}
       onQuickFilter={onQuickFilter}
       textValue={itemValue}
       value={<StatusPill tone={tone} value={itemValue} />}
@@ -272,35 +447,46 @@ function getGroupQuickFilterActions(field: string, value: string): QuickFilterAc
   if (field === "domain") {
     return {
       includeAction: { label: "Limit to domain", target: "domains", value },
+      groupField: "domain",
     };
   }
   if (field === "disposition") {
     return {
       includeAction: { label: "Include disposition", target: "include_disposition", value },
       excludeAction: { label: "Exclude disposition", target: "exclude_disposition", value },
+      groupField: "disposition",
     };
   }
   if (field === "dmarc_alignment") {
     return {
       includeAction: { label: "Include DMARC alignment", target: "include_dmarc_alignment", value },
       excludeAction: { label: "Exclude DMARC alignment", target: "exclude_dmarc_alignment", value },
+      groupField: "dmarc_alignment",
     };
   }
   if (field === "dkim_alignment") {
     return {
       includeAction: { label: "Include DKIM alignment", target: "include_dkim_alignment", value },
       excludeAction: { label: "Exclude DKIM alignment", target: "exclude_dkim_alignment", value },
+      groupField: "dkim_alignment",
     };
   }
   if (field === "spf_alignment") {
     return {
       includeAction: { label: "Include SPF alignment", target: "include_spf_alignment", value },
       excludeAction: { label: "Exclude SPF alignment", target: "exclude_spf_alignment", value },
+      groupField: "spf_alignment",
     };
   }
   if (field === "source_ip" || field === "resolved_name_domain" || field === "org_name") {
     return {
       includeAction: { label: "Include in search", target: "query", value },
+      groupField: field,
+    };
+  }
+  if (field === "record_date") {
+    return {
+      groupField: "record_date",
     };
   }
   return {};
@@ -309,12 +495,14 @@ function getGroupQuickFilterActions(field: string, value: string): QuickFilterAc
 function getAggregateQuickFilterActions(column: string, item: AggregateSearchResult): QuickFilterActions {
   switch (column) {
     case "source_ip":
-      return item.source_ip ? { includeAction: { label: "Include in search", target: "query", value: item.source_ip } } : {};
+      return item.source_ip
+        ? { includeAction: { label: "Include in search", target: "query", value: item.source_ip }, groupField: "source_ip" }
+        : {};
     case "resolved_name":
       return item.resolved_name ? { includeAction: { label: "Include in search", target: "query", value: item.resolved_name } } : {};
     case "resolved_name_domain":
       return item.resolved_name_domain && item.resolved_name_domain !== item.resolved_name
-        ? { includeAction: { label: "Include in search", target: "query", value: item.resolved_name_domain } }
+        ? { includeAction: { label: "Include in search", target: "query", value: item.resolved_name_domain }, groupField: "resolved_name_domain" }
         : {};
     case "disposition":
       return item.disposition ? getStatusQuickFilterActions(column, item.disposition) : {};
@@ -329,9 +517,13 @@ function getAggregateQuickFilterActions(column: string, item: AggregateSearchRes
     case "spf_alignment":
       return item.spf_alignment ? getStatusQuickFilterActions(column, item.spf_alignment) : {};
     case "domain":
-      return item.domain ? { includeAction: { label: "Limit to domain", target: "domains", value: item.domain } } : {};
+      return item.domain ? { includeAction: { label: "Limit to domain", target: "domains", value: item.domain }, groupField: "domain" } : {};
     case "org_name":
-      return item.org_name ? { includeAction: { label: "Include in search", target: "query", value: item.org_name } } : {};
+      return item.org_name
+        ? { includeAction: { label: "Include in search", target: "query", value: item.org_name }, groupField: "org_name" }
+        : {};
+    case "record_date":
+      return item.record_date ? { groupField: "record_date" } : {};
     case "country_code":
     case "country_name":
       return item.country_name
@@ -343,12 +535,14 @@ function getAggregateQuickFilterActions(column: string, item: AggregateSearchRes
 }
 
 export function AggregateSearchResultsTable({
+  dashboardActionMenu,
   emptyMessage,
   onViewReport,
   onQuickFilter,
   result,
   visibleColumns,
 }: {
+  dashboardActionMenu?: DashboardActionMenuConfig;
   emptyMessage: string;
   onViewReport?: (reportId: string) => void;
   onQuickFilter?: (option: SearchQuickFilterOption) => void;
@@ -429,7 +623,7 @@ export function AggregateSearchResultsTable({
             return (
               <tr key={item.id}>
                 {columns.map((column) => (
-                  <td key={column}>{renderAggregateCell(column, item, onQuickFilter)}</td>
+                  <td key={column}>{renderAggregateCell(column, item, dashboardActionMenu, onQuickFilter)}</td>
                 ))}
                 <td>
                   {onViewReport ? (
@@ -451,6 +645,7 @@ export function AggregateSearchResultsTable({
 
 export function GroupedAggregateResultsTable({
   contextKey,
+  dashboardActionMenu,
   emptyMessage,
   grouping,
   initialResult,
@@ -462,6 +657,7 @@ export function GroupedAggregateResultsTable({
   visibleColumns,
 }: {
   contextKey: string;
+  dashboardActionMenu?: DashboardActionMenuConfig;
   emptyMessage: string;
   grouping: string[];
   initialResult: GroupedSearchResponse;
@@ -659,6 +855,7 @@ export function GroupedAggregateResultsTable({
                   <div className="group-kicker">{getAggregateFieldLabel(item.field)}</div>
                   <CellValueWithActions
                     actions={getGroupQuickFilterActions(item.field, item.value)}
+                    dashboardActionMenu={dashboardActionMenu}
                     onQuickFilter={onQuickFilter}
                     value={item.label}
                   />
@@ -717,6 +914,7 @@ export function GroupedAggregateResultsTable({
               <td colSpan={groupedColumnCount}>
                 <div className="group-leaf-wrap" style={{ paddingLeft: (depth + 1) * 18 }}>
                   <AggregateSearchResultsTable
+                    dashboardActionMenu={dashboardActionMenu}
                     emptyMessage="No leaf rows."
                     onQuickFilter={onQuickFilter}
                     onViewReport={onViewReport}
@@ -794,24 +992,35 @@ export function GroupedAggregateResultsTable({
 function renderAggregateCell(
   column: string,
   item: AggregateSearchResult,
+  dashboardActionMenu?: DashboardActionMenuConfig,
   onQuickFilter?: (option: SearchQuickFilterOption) => void,
 ) {
   switch (column) {
     case "record_date":
-      return item.record_date ?? "n/a";
+      return item.record_date ? (
+        <CellValueWithActions
+          actions={getAggregateQuickFilterActions(column, item)}
+          dashboardActionMenu={dashboardActionMenu}
+          onQuickFilter={onQuickFilter}
+          value={item.record_date}
+        />
+      ) : (
+        "n/a"
+      );
     case "source_ip":
-      return <CellValueWithActions actions={getAggregateQuickFilterActions(column, item)} onQuickFilter={onQuickFilter} value={item.source_ip ?? "n/a"} />;
+      return <CellValueWithActions actions={getAggregateQuickFilterActions(column, item)} dashboardActionMenu={dashboardActionMenu} onQuickFilter={onQuickFilter} value={item.source_ip ?? "n/a"} />;
     case "resolved_name":
-      return <CellValueWithActions actions={getAggregateQuickFilterActions(column, item)} onQuickFilter={onQuickFilter} value={item.resolved_name ?? "n/a"} />;
+      return <CellValueWithActions actions={getAggregateQuickFilterActions(column, item)} dashboardActionMenu={dashboardActionMenu} onQuickFilter={onQuickFilter} value={item.resolved_name ?? "n/a"} />;
     case "resolved_name_domain":
       if (!item.resolved_name_domain || item.resolved_name_domain === item.resolved_name) {
         return "n/a";
       }
-      return <CellValueWithActions actions={getAggregateQuickFilterActions(column, item)} onQuickFilter={onQuickFilter} value={item.resolved_name_domain ?? "n/a"} />;
+      return <CellValueWithActions actions={getAggregateQuickFilterActions(column, item)} dashboardActionMenu={dashboardActionMenu} onQuickFilter={onQuickFilter} value={item.resolved_name_domain ?? "n/a"} />;
     case "country_code":
       return (
         <CellValueWithActions
           actions={getAggregateQuickFilterActions(column, item)}
+          dashboardActionMenu={dashboardActionMenu}
           onQuickFilter={onQuickFilter}
           textValue={item.country_name ?? item.country_code ?? undefined}
           value={renderCountryLabel(item.country_code, item.country_name)}
@@ -821,6 +1030,7 @@ function renderAggregateCell(
       return (
         <CellValueWithActions
           actions={getAggregateQuickFilterActions(column, item)}
+          dashboardActionMenu={dashboardActionMenu}
           onQuickFilter={onQuickFilter}
           textValue={item.country_name ?? undefined}
           value={renderCountryLabel(item.country_code, item.country_name)}
@@ -829,21 +1039,21 @@ function renderAggregateCell(
     case "count":
       return item.count;
     case "disposition":
-      return renderStatusPillCell(column, item.disposition, `disposition-${item.disposition ?? ""}`, onQuickFilter);
+      return renderStatusPillCell(column, item.disposition, `disposition-${item.disposition ?? ""}`, dashboardActionMenu, onQuickFilter);
     case "dkim_result":
-      return renderStatusPillCell(column, item.dkim_result, `result-${item.dkim_result ?? ""}`, onQuickFilter);
+      return renderStatusPillCell(column, item.dkim_result, `result-${item.dkim_result ?? ""}`, dashboardActionMenu, onQuickFilter);
     case "spf_result":
-      return renderStatusPillCell(column, item.spf_result, `result-${item.spf_result ?? ""}`, onQuickFilter);
+      return renderStatusPillCell(column, item.spf_result, `result-${item.spf_result ?? ""}`, dashboardActionMenu, onQuickFilter);
     case "dmarc_alignment":
-      return renderStatusPillCell(column, item.dmarc_alignment, `dmarc-${item.dmarc_alignment ?? ""}`, onQuickFilter);
+      return renderStatusPillCell(column, item.dmarc_alignment, `dmarc-${item.dmarc_alignment ?? ""}`, dashboardActionMenu, onQuickFilter);
     case "dkim_alignment":
-      return renderStatusPillCell(column, item.dkim_alignment, `alignment-${item.dkim_alignment ?? ""}`, onQuickFilter);
+      return renderStatusPillCell(column, item.dkim_alignment, `alignment-${item.dkim_alignment ?? ""}`, dashboardActionMenu, onQuickFilter);
     case "spf_alignment":
-      return renderStatusPillCell(column, item.spf_alignment, `alignment-${item.spf_alignment ?? ""}`, onQuickFilter);
+      return renderStatusPillCell(column, item.spf_alignment, `alignment-${item.spf_alignment ?? ""}`, dashboardActionMenu, onQuickFilter);
     case "domain":
-      return <CellValueWithActions actions={getAggregateQuickFilterActions(column, item)} onQuickFilter={onQuickFilter} value={item.domain} />;
+      return <CellValueWithActions actions={getAggregateQuickFilterActions(column, item)} dashboardActionMenu={dashboardActionMenu} onQuickFilter={onQuickFilter} value={item.domain} />;
     case "org_name":
-      return <CellValueWithActions actions={getAggregateQuickFilterActions(column, item)} onQuickFilter={onQuickFilter} value={item.org_name ?? "n/a"} />;
+      return <CellValueWithActions actions={getAggregateQuickFilterActions(column, item)} dashboardActionMenu={dashboardActionMenu} onQuickFilter={onQuickFilter} value={item.org_name ?? "n/a"} />;
     case "header_from":
       return item.header_from ?? "n/a";
     case "envelope_from":

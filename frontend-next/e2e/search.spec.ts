@@ -110,6 +110,25 @@ test.describe("frontend-next search coverage", () => {
     await expectNoReload(page, marker);
   });
 
+  test("aggregate search keeps the existing quick-filter interaction without dashboard hover menus", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await page.goto("/search");
+
+    await expect(page.getByRole("heading", { name: "Search", exact: true })).toBeVisible();
+    const configuredDomain = process.env.DMARC_E2E_SEARCH_DOMAIN;
+    if (configuredDomain) {
+      await page.getByLabel(configuredDomain, { exact: true }).check();
+    } else {
+      await page.locator(".search-domain-grid input[type='checkbox']").first().check();
+    }
+
+    const dispositionButton = page.locator(".data-table tbody tr").first().locator("td:nth-child(5) .cell-primary-action");
+    await expect(dispositionButton).toBeVisible();
+    await dispositionButton.hover();
+    await expect(page.locator(".cell-exclude-trigger").first()).toBeVisible();
+    await expect(page.locator(".cell-hover-menu.is-open")).toHaveCount(0);
+  });
+
   test("aggregate search keeps grouped branches open during live filter refresh", async ({ page }) => {
     await loginAsSuperAdmin(page);
     await page.goto("/search");
