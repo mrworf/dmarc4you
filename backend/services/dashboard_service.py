@@ -21,6 +21,7 @@ from backend.policies.dashboard_policy import (
     can_be_shared_with,
 )
 from backend.services.dashboard_columns import normalize_visible_columns
+from backend.services.dashboard_chart_settings import normalize_chart_y_axis
 
 DASHBOARD_ID_PREFIX = "dash_"
 
@@ -47,6 +48,7 @@ def create_dashboard(
     description: str,
     domain_ids: list[str],
     visible_columns: list[str],
+    chart_y_axis: str | None,
     owner_user_id: str,
     current_user: dict[str, Any],
 ) -> tuple[str, dict[str, Any] | None]:
@@ -62,11 +64,12 @@ def create_dashboard(
     dashboard_id = f"{DASHBOARD_ID_PREFIX}{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
     normalized_visible_columns = normalize_visible_columns(visible_columns)
+    normalized_chart_y_axis = normalize_chart_y_axis(chart_y_axis)
     conn = get_connection(config.database_path)
     try:
         conn.execute(
-            """INSERT INTO dashboards (id, name, description, owner_user_id, created_by_user_id, created_at, updated_at, is_dormant, dormant_reason, visible_columns_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)""",
+            """INSERT INTO dashboards (id, name, description, owner_user_id, created_by_user_id, created_at, updated_at, is_dormant, dormant_reason, visible_columns_json, chart_y_axis)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)""",
             (
                 dashboard_id,
                 name,
@@ -76,6 +79,7 @@ def create_dashboard(
                 now,
                 now,
                 json.dumps(normalized_visible_columns),
+                normalized_chart_y_axis,
             ),
         )
         for domain_id in domain_ids:
@@ -91,7 +95,7 @@ def create_dashboard(
 
 def _build_dashboard_dict(conn, dashboard_id: str) -> dict[str, Any] | None:
     cur = conn.execute(
-        "SELECT id, name, description, owner_user_id, created_by_user_id, created_at, updated_at, visible_columns_json FROM dashboards WHERE id = ?",
+        "SELECT id, name, description, owner_user_id, created_by_user_id, created_at, updated_at, visible_columns_json, chart_y_axis FROM dashboards WHERE id = ?",
         (dashboard_id,),
     )
     row = cur.fetchone()
@@ -117,6 +121,7 @@ def _build_dashboard_dict(conn, dashboard_id: str) -> dict[str, Any] | None:
         "created_at": row[5],
         "updated_at": row[6],
         "visible_columns": normalize_visible_columns(_load_json_list(row[7])),
+        "chart_y_axis": normalize_chart_y_axis(row[8]),
         "domain_ids": domain_ids,
         "domain_names": domain_names,
     }
@@ -132,12 +137,12 @@ def list_dashboards(config: Config, current_user: dict[str, Any]) -> list[dict[s
         user_id = current_user.get("id") or ""
         if current_user.get("role") == ROLE_SUPER_ADMIN:
             cur = conn.execute(
-                "SELECT id, name, description, owner_user_id, created_at, updated_at, visible_columns_json FROM dashboards WHERE owner_user_id = ? ORDER BY updated_at DESC",
+                "SELECT id, name, description, owner_user_id, created_at, updated_at, visible_columns_json, chart_y_axis FROM dashboards WHERE owner_user_id = ? ORDER BY updated_at DESC",
                 (user_id,),
             )
         else:
             cur = conn.execute(
-                """SELECT id, name, description, owner_user_id, created_at, updated_at, visible_columns_json FROM dashboards
+                """SELECT id, name, description, owner_user_id, created_at, updated_at, visible_columns_json, chart_y_axis FROM dashboards
                    WHERE owner_user_id = ? AND id NOT IN (
                      SELECT s.dashboard_id FROM dashboard_domain_scope s
                      INNER JOIN domains d ON d.id = s.domain_id
@@ -162,6 +167,7 @@ def list_dashboards(config: Config, current_user: dict[str, Any]) -> list[dict[s
                 "created_at": row[4],
                 "updated_at": row[5],
                 "visible_columns": normalize_visible_columns(_load_json_list(row[6])),
+                "chart_y_axis": normalize_chart_y_axis(row[7]),
                 "domain_ids": domain_ids,
             })
         return out
@@ -208,6 +214,7 @@ def export_dashboard_yaml(
         "description": dashboard.get("description") or "",
         "domains": dashboard.get("domain_names") or [],
         "visible_columns": dashboard.get("visible_columns") or [],
+        "chart_y_axis": dashboard.get("chart_y_axis") or "message_count",
     }
     return yaml.safe_dump(payload, default_flow_style=False, sort_keys=False), None
 
@@ -246,6 +253,9 @@ def import_dashboard_yaml(
         visible_columns = []
     if not isinstance(visible_columns, list) or not all(isinstance(column, str) for column in visible_columns):
         return "invalid", None
+    chart_y_axis = data.get("chart_y_axis")
+    if chart_y_axis is not None and not isinstance(chart_y_axis, str):
+        return "invalid", None
     if not isinstance(domain_remap, dict):
         return "invalid", None
     for d in domains:
@@ -256,7 +266,7 @@ def import_dashboard_yaml(
     if not can_create_dashboard_with_domains(domain_ids, allowed):
         return "forbidden", None
     code, dashboard = create_dashboard(
-        config, name, description, domain_ids, visible_columns, current_user["id"], current_user
+        config, name, description, domain_ids, visible_columns, chart_y_axis, current_user["id"], current_user
     )
     if code != "ok" or not dashboard:
         return "forbidden", None
@@ -270,6 +280,7 @@ def update_dashboard(
     description: str | None,
     domain_ids: list[str] | None,
     visible_columns: list[str] | None,
+    chart_y_axis: str | None,
     current_user: dict[str, Any],
 ) -> tuple[str, dict[str, Any] | None]:
     """
@@ -279,7 +290,7 @@ def update_dashboard(
     conn = get_connection(config.database_path)
     try:
         cur = conn.execute(
-            "SELECT id, name, description, owner_user_id, visible_columns_json FROM dashboards WHERE id = ?",
+            "SELECT id, name, description, owner_user_id, visible_columns_json, chart_y_axis FROM dashboards WHERE id = ?",
             (dashboard_id,),
         )
         row = cur.fetchone()
@@ -297,6 +308,7 @@ def update_dashboard(
             "owner_user_id": row[3],
             "domain_ids": existing_domain_ids,
             "visible_columns": normalize_visible_columns(_load_json_list(row[4])),
+            "chart_y_axis": normalize_chart_y_axis(row[5]),
         }
         allowed = [d["id"] for d in list_domains(config, current_user)]
         if not can_edit_dashboard(current_user, dashboard, allowed):
@@ -307,6 +319,7 @@ def update_dashboard(
         new_visible_columns = normalize_visible_columns(
             visible_columns if visible_columns is not None else dashboard["visible_columns"]
         )
+        new_chart_y_axis = normalize_chart_y_axis(chart_y_axis if chart_y_axis is not None else dashboard["chart_y_axis"])
         if not new_name:
             return "invalid", None
         if not new_domain_ids:
@@ -315,8 +328,8 @@ def update_dashboard(
             return "forbidden", None
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
-            "UPDATE dashboards SET name = ?, description = ?, updated_at = ?, visible_columns_json = ? WHERE id = ?",
-            (new_name, new_description, now, json.dumps(new_visible_columns), dashboard_id),
+            "UPDATE dashboards SET name = ?, description = ?, updated_at = ?, visible_columns_json = ?, chart_y_axis = ? WHERE id = ?",
+            (new_name, new_description, now, json.dumps(new_visible_columns), new_chart_y_axis, dashboard_id),
         )
         if set(new_domain_ids) != set(existing_domain_ids):
             conn.execute(

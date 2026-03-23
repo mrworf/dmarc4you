@@ -168,6 +168,7 @@ export type DashboardSummary = {
   domain_ids: string[];
   domain_names?: string[] | null;
   visible_columns: string[];
+  chart_y_axis: "message_count" | "row_count" | "report_count";
 };
 
 export type DashboardsResponse = {
@@ -179,6 +180,7 @@ export type CreateDashboardBody = {
   description?: string;
   domain_ids: string[];
   visible_columns?: string[];
+  chart_y_axis?: "message_count" | "row_count" | "report_count";
 };
 
 export type UpdateDashboardBody = {
@@ -186,6 +188,7 @@ export type UpdateDashboardBody = {
   description?: string;
   domain_ids?: string[];
   visible_columns?: string[];
+  chart_y_axis?: "message_count" | "row_count" | "report_count";
 };
 
 export type DashboardDetailResponse = DashboardSummary;
@@ -389,6 +392,42 @@ export type SearchRecordsBody = {
   group_by?: string;
   page?: number;
   page_size?: number;
+};
+
+export type SearchTimeSeriesBody = {
+  domains?: string[];
+  from?: string | number;
+  to?: string | number;
+  include?: Record<string, string[]>;
+  exclude?: Record<string, string[]>;
+  country?: string;
+  query?: string;
+  y_axis?: "message_count" | "row_count" | "report_count";
+};
+
+export type SearchTimeSeriesBucket = {
+  date: string;
+  spf: {
+    pass: number;
+    fail: number;
+    unknown: number;
+  };
+  dkim: {
+    pass: number;
+    fail: number;
+    unknown: number;
+  };
+  dmarc: {
+    pass: number;
+    fail: number;
+    unknown: number;
+  };
+};
+
+export type SearchTimeSeriesResponse = {
+  buckets: SearchTimeSeriesBucket[];
+  series_order: string[];
+  y_axis: "message_count" | "row_count" | "report_count";
 };
 
 export type GroupPathPart = {

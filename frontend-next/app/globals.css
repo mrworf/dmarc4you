@@ -840,6 +840,35 @@ button {
   flex-wrap: wrap;
 }
 
+.dashboard-chart-canvas {
+  width: 100%;
+  min-height: 320px;
+}
+
+.dashboard-chart-canvas-expanded {
+  min-height: 520px;
+}
+
+.chart-modal-card {
+  width: min(1680px, 100%);
+}
+
+.chart-modal-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.chart-hover-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.chart-hover-card-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
 .search-domain-picker {
   display: grid;
   gap: 10px;

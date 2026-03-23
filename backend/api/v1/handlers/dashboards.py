@@ -22,6 +22,7 @@ class UpdateDashboardBody(BaseModel):
     description: str | None = None
     domain_ids: list[str] | None = None
     visible_columns: list[str] | None = None
+    chart_y_axis: str | None = None
 
 
 class TransferOwnershipBody(BaseModel):
@@ -64,6 +65,7 @@ def post_dashboard(
         body.description or "",
         body.domain_ids or [],
         body.visible_columns or [],
+        body.chart_y_axis,
         current_user["id"],
         current_user,
     )
@@ -140,6 +142,7 @@ def put_dashboard(
         body.description,
         body.domain_ids,
         body.visible_columns,
+        body.chart_y_axis,
         current_user,
     )
     if code == "not_found":

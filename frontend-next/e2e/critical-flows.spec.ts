@@ -22,7 +22,7 @@ function uniqueSuffix(): string {
 }
 
 async function selectFirstDomainOption(page: Page): Promise<void> {
-  const firstDomainCheckbox = page.locator("input[type='checkbox']").first();
+  const firstDomainCheckbox = page.locator("input[name='domain_ids'][type='checkbox']").first();
   await expect(firstDomainCheckbox).toBeVisible();
   await firstDomainCheckbox.check();
 }
@@ -105,6 +105,35 @@ test.describe("frontend-next critical happy paths", () => {
     await expect(page.getByRole("button", { name: "Export YAML" })).toBeVisible();
   });
 
+  test("dashboard create and edit flows persist the saved chart y axis", async ({ page }) => {
+    const dashboardName = `pw-chart-dashboard-${uniqueSuffix()}`;
+
+    await loginAsSuperAdmin(page);
+    await page.goto("/dashboards");
+
+    await page.getByRole("button", { name: "Create dashboard" }).first().click();
+    await page.getByRole("textbox", { name: "Name", exact: true }).fill(dashboardName);
+    await page.getByLabel("Description").fill("Dashboard chart persistence coverage.");
+    await page.getByLabel("Chart Y axis").selectOption("report_count");
+    await selectFirstDomainOption(page);
+    await page.getByRole("button", { name: "Create dashboard" }).last().click();
+
+    const createdLink = page.getByRole("link", { name: dashboardName });
+    await expect(createdLink).toBeVisible();
+    await createdLink.click();
+    await page.waitForURL(/\/dashboards\/[^/?#]+/);
+    await expect(page.getByRole("heading", { name: "Trend" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Edit dashboard" }).click();
+    await expect(page.getByLabel("Chart Y axis")).toHaveValue("report_count");
+    await page.getByLabel("Chart Y axis").selectOption("row_count");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByRole("heading", { name: "Edit dashboard" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Edit dashboard" }).click();
+    await expect(page.getByLabel("Chart Y axis")).toHaveValue("row_count");
+  });
+
   test("dashboard detail updates filters without reloading and keeps state in the URL", async ({ page }) => {
     await loginAsSuperAdmin(page);
     await openAnyDashboardDetail(page);
@@ -169,6 +198,66 @@ test.describe("frontend-next critical happy paths", () => {
     await expect(filtersPanel.getByText("Country", { exact: true })).toBeVisible();
     await expect(filtersPanel.getByText("Grouping", { exact: true })).toBeVisible();
     await expect(filtersPanel.getByLabel("Add grouping")).toBeVisible();
+  });
+
+  test("dashboard detail shows the chart above results and expands with hover details", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await openAnyDashboardDetail(page);
+
+    const trendSection = page.locator("section.surface-card").filter({ has: page.getByRole("heading", { name: "Trend" }) });
+    const resultsSection = page.locator("section.surface-card").filter({ has: page.getByRole("heading", { name: "Results" }) });
+    await expect(trendSection).toBeVisible();
+    await expect(resultsSection).toBeVisible();
+
+    const trendBox = expectBoundingBox(await trendSection.boundingBox(), "trend section");
+    const resultsBox = expectBoundingBox(await resultsSection.boundingBox(), "results section");
+    expect(trendBox.y).toBeLessThan(resultsBox.y);
+
+    const chart = trendSection.getByRole("img", { name: "Dashboard trend chart" }).first();
+    await expect(chart).toBeVisible();
+    await trendSection.getByRole("button", { name: "Expand" }).click();
+
+    const modal = page.getByRole("dialog");
+    await expect(modal.getByRole("heading", { name: "Trend" })).toBeVisible();
+    await expect(modal.getByText("Hovered point")).toBeVisible();
+    await expect(modal.getByText("Hover any point in the chart to inspect the values for that date.")).toBeVisible();
+
+    const expandedChart = modal.getByRole("img", { name: "Dashboard trend chart" });
+    const chartBox = expectBoundingBox(await expandedChart.boundingBox(), "expanded chart");
+    await page.mouse.move(chartBox.x + chartBox.width * 0.5, chartBox.y + chartBox.height * 0.45);
+
+    await expect(modal.getByText("Hover any point in the chart to inspect the values for that date.")).toHaveCount(0);
+    await expect(modal.locator(".chart-hover-card-grid .stat-label").filter({ hasText: /^Date$/ })).toBeVisible();
+    await expect(modal.locator(".chart-hover-card-grid .stat-label").filter({ hasText: /^SPF$/ })).toBeVisible();
+    await expect(modal.locator(".chart-hover-card-grid .stat-label").filter({ hasText: /^DKIM$/ })).toBeVisible();
+    await expect(modal.locator(".chart-hover-card-grid .stat-label").filter({ hasText: /^DMARC$/ })).toBeVisible();
+  });
+
+  test("dashboard chart stays visible across refresh, reload, and dashboard controls", async ({ page }) => {
+    await loginAsSuperAdmin(page);
+    await openAnyDashboardDetail(page);
+
+    const trendSection = page.locator("section.surface-card").filter({ has: page.getByRole("heading", { name: "Trend" }) });
+    const chart = trendSection.getByRole("img", { name: "Dashboard trend chart" }).first();
+    await expect(chart).toBeVisible();
+    await expect(trendSection.getByText("No chart data yet for the current dashboard filters.")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Range" }).click();
+    await expect(chart).toBeVisible();
+    await expect(trendSection.getByText("No chart data yet for the current dashboard filters.")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Filters" }).click();
+    await expect(chart).toBeVisible();
+    await expect(trendSection.getByText("No chart data yet for the current dashboard filters.")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await expect(chart).toBeVisible();
+    await expect(trendSection.getByText("No chart data yet for the current dashboard filters.")).toHaveCount(0);
+
+    await page.reload();
+    await expect(trendSection.getByRole("img", { name: "Dashboard trend chart" }).first()).toBeVisible();
+    await expect(trendSection.getByText("No chart data yet for the current dashboard filters.")).toHaveCount(0);
   });
 
   test("dashboard detail grouping updates immediately across multiple levels", async ({ page }) => {

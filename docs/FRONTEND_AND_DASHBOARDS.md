@@ -89,6 +89,11 @@ Dashboard detail `Results` owns the temporary controls for aggregate exploration
 - the `Filters` panel includes country filtering, grouping management, and include/exclude facet toggles
 - active filter chips sit in the left side of the `Results` header directly beneath the title, while the range controls stay on a single row at the right on larger screens
 - records-per-page lives beside the previous/next pagination controls in the `Results` footer
+- dashboard detail also renders a `Trend` card directly above `Results`
+- the chart always uses time on the X axis and a saved dashboard `chart_y_axis` setting on the Y axis
+- the saved chart Y-axis is chosen only in dashboard create/edit forms, not from the live filter controls
+- the chart summarizes SPF, DKIM, and DMARC outcomes together for the current dashboard filter scope and refreshes whenever the dashboard results scope changes
+- the chart supports hover inspection, a larger modal view with persistent hover detail cards, and drag-to-select range updates that write back into the dashboard `from` / `to` filters
 
 Dashboard aggregate tables also support a dashboard-only hover action menu:
 
@@ -104,6 +109,13 @@ Dashboard aggregate tables also support a dashboard-only hover action menu:
 - aggregate dashboards and search can expose DMARC alignment columns (`dmarc_alignment`, `dkim_alignment`, `spf_alignment`) alongside raw SPF/DKIM results
 - viewers inherit the saved column layout
 - if no custom layout is stored, the backend applies a sensible DMARC analysis default
+
+## Dashboard chart settings
+
+- each dashboard persists a `chart_y_axis` setting
+- supported Y-axis modes are `message_count`, `row_count`, and `report_count`
+- the backend chart endpoint ignores pagination and table grouping so the visualization always reflects the underlying filtered record set over time
+- temporary chart legend visibility and expanded-modal state are viewer-local UI state and are not saved with the dashboard definition
 
 ## Manager behavior
 

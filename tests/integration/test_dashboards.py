@@ -56,6 +56,22 @@ def test_post_dashboard_creates_with_owner(dashboard_app_client) -> None:
     assert data["domain_ids"] == [domain_id]
     assert "domain_names" in data
     assert "example.com" in data["domain_names"]
+    assert data["chart_y_axis"] == "message_count"
+
+
+def test_post_dashboard_accepts_chart_y_axis(dashboard_app_client) -> None:
+    client, password, config = dashboard_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    conn = get_connection(config.database_path)
+    cur = conn.execute("SELECT id FROM domains WHERE name = 'example.com' LIMIT 1")
+    domain_id = cur.fetchone()[0]
+    conn.close()
+    r = client.post(
+        "/api/v1/dashboards",
+        json={"name": "Metric Dashboard", "description": "Rows", "domain_ids": [domain_id], "chart_y_axis": "row_count"},
+    )
+    assert r.status_code == 201
+    assert r.json()["chart_y_axis"] == "row_count"
 
 
 def test_get_dashboards_list_only_owned(dashboard_app_client) -> None:
@@ -88,6 +104,7 @@ def test_get_dashboard_by_id_200_with_domain_ids(dashboard_app_client) -> None:
     assert r.json()["domain_ids"] == [domain_id]
     assert r.json()["domain_names"] == ["example.com"]
     assert r.json()["owner"]["username"] == "admin"
+    assert r.json()["chart_y_axis"] == "message_count"
 
 
 def test_dashboards_openapi_contract_includes_list_and_create_models() -> None:
@@ -373,6 +390,7 @@ def test_put_dashboard_as_owner(dashboard_app_client) -> None:
     assert data["name"] == "Updated Name"
     assert data["description"] == "New Desc"
     assert set(data["domain_ids"]) == {domain_id, other_domain_id}
+    assert data["chart_y_axis"] == "message_count"
 
 
 def test_put_dashboard_partial_update(dashboard_app_client) -> None:
@@ -391,6 +409,24 @@ def test_put_dashboard_partial_update(dashboard_app_client) -> None:
     assert data["name"] == "New Name Only"
     assert data["description"] == "Keep Me"
     assert data["domain_ids"] == [domain_id]
+
+
+def test_put_dashboard_updates_chart_y_axis(dashboard_app_client) -> None:
+    client, password, config = dashboard_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    conn = get_connection(config.database_path)
+    cur = conn.execute("SELECT id FROM domains WHERE name = 'example.com' LIMIT 1")
+    domain_id = cur.fetchone()[0]
+    conn.close()
+    cr = client.post("/api/v1/dashboards", json={"name": "Original", "description": "Keep Me", "domain_ids": [domain_id]})
+    dash_id = cr.json()["id"]
+    r = client.put(f"/api/v1/dashboards/{dash_id}", json={"chart_y_axis": "report_count"})
+    assert r.status_code == 200
+    assert r.json()["chart_y_axis"] == "report_count"
+
+    refreshed = client.get(f"/api/v1/dashboards/{dash_id}")
+    assert refreshed.status_code == 200
+    assert refreshed.json()["chart_y_axis"] == "report_count"
 
 
 def test_put_dashboard_forbidden_viewer(dashboard_app_client, temp_db_path: str) -> None:

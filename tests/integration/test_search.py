@@ -406,6 +406,34 @@ def test_post_grouped_search_rejects_invalid_path_order(search_records_client) -
     assert r.status_code == 400
 
 
+def test_post_timeseries_returns_daily_auth_family_buckets(search_records_client) -> None:
+    client, _ = search_records_client
+    r = client.post("/api/v1/search/timeseries", json={"y_axis": "message_count"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["y_axis"] == "message_count"
+    assert data["series_order"] == [
+        "spf_pass",
+        "spf_fail",
+        "spf_unknown",
+        "dkim_pass",
+        "dkim_fail",
+        "dkim_unknown",
+        "dmarc_pass",
+        "dmarc_fail",
+        "dmarc_unknown",
+    ]
+    assert len(data["buckets"]) == 1
+    bucket = data["buckets"][0]
+    assert bucket["date"] == "2025-01-01"
+    assert bucket["spf"]["pass"] == 10
+    assert bucket["spf"]["fail"] == 3
+    assert bucket["dkim"]["pass"] == 10
+    assert bucket["dkim"]["fail"] == 3
+    assert bucket["dmarc"]["pass"] == 10
+    assert bucket["dmarc"]["fail"] == 3
+
+
 def test_post_search_domain_scoping(search_records_client, temp_db_path: str) -> None:
     """Viewer without domain assignment sees no records."""
     client, config = search_records_client

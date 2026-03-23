@@ -5,6 +5,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import type { DomainSummary } from "@/lib/api/types";
+import { dashboardChartYAxisOptions, defaultDashboardChartYAxis } from "@/lib/dashboard-chart-options";
 import { dashboardColumnOptions, defaultVisibleColumns } from "@/lib/dashboard-columns";
 
 const createDashboardSchema = z.object({
@@ -12,6 +13,7 @@ const createDashboardSchema = z.object({
   description: z.string().optional(),
   domain_ids: z.array(z.string()).min(1, "Select at least one domain"),
   visible_columns: z.array(z.string()).min(1, "Select at least one visible field"),
+  chart_y_axis: z.enum(["message_count", "row_count", "report_count"]),
 });
 
 export type CreateDashboardValues = z.infer<typeof createDashboardSchema>;
@@ -36,6 +38,7 @@ export function CreateDashboardForm({
       description: "",
       domain_ids: [],
       visible_columns: defaultVisibleColumns,
+      chart_y_axis: defaultDashboardChartYAxis,
     },
   });
 
@@ -89,6 +92,16 @@ export function CreateDashboardForm({
         ))}
         {errors.visible_columns ? <span className="error-text">{errors.visible_columns.message}</span> : null}
       </div>
+      <label className="field-label">
+        Chart Y axis
+        <select className="field-input" {...register("chart_y_axis")}>
+          {dashboardChartYAxisOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
       <button className="button-primary" disabled={isSubmitting || !domains.length} type="submit">
         {isSubmitting ? "Creating..." : "Create dashboard"}
       </button>

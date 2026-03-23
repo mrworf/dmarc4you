@@ -6,6 +6,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import type { DashboardDetailResponse, DomainSummary } from "@/lib/api/types";
+import { dashboardChartYAxisOptions, defaultDashboardChartYAxis } from "@/lib/dashboard-chart-options";
 import { dashboardColumnOptions, defaultVisibleColumns } from "@/lib/dashboard-columns";
 
 const editDashboardSchema = z.object({
@@ -13,6 +14,7 @@ const editDashboardSchema = z.object({
   description: z.string().optional(),
   domain_ids: z.array(z.string()).min(1, "Select at least one domain"),
   visible_columns: z.array(z.string()).min(1, "Select at least one visible field"),
+  chart_y_axis: z.enum(["message_count", "row_count", "report_count"]),
 });
 
 export type EditDashboardValues = z.infer<typeof editDashboardSchema>;
@@ -67,6 +69,7 @@ export function EditDashboardForm({
       description: dashboard.description ?? "",
       domain_ids: dashboard.domain_ids,
       visible_columns: initialVisibleColumns,
+      chart_y_axis: dashboard.chart_y_axis ?? defaultDashboardChartYAxis,
     },
   });
 
@@ -80,6 +83,7 @@ export function EditDashboardForm({
       description: dashboard.description ?? "",
       domain_ids: dashboard.domain_ids,
       visible_columns: dashboard.visible_columns?.length ? dashboard.visible_columns : defaultVisibleColumns,
+      chart_y_axis: dashboard.chart_y_axis ?? defaultDashboardChartYAxis,
     });
     setDraggedColumn(null);
     setHoveredColumn(null);
@@ -272,6 +276,16 @@ export function EditDashboardForm({
           <p className="status-text">All supported fields are already visible.</p>
         )}
       </div>
+      <label className="field-label">
+        Chart Y axis
+        <select className="field-input" {...register("chart_y_axis")}>
+          {dashboardChartYAxisOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <button className="button-primary" disabled={isSubmitting || !domains.length} type="submit">
           {isSubmitting ? "Saving..." : "Save changes"}

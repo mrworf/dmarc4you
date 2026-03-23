@@ -35,12 +35,14 @@ def test_create_dashboard_stores_visible_columns() -> None:
         description="Visibility",
         domain_ids=[domain_id],
         visible_columns=["domain", "source_ip", "dmarc_alignment"],
+        chart_y_axis="row_count",
         owner_user_id=current_user["id"],
         current_user=current_user,
     )
     assert status == "ok"
     assert dashboard is not None
     assert dashboard["visible_columns"] == ["domain", "source_ip", "dmarc_alignment"]
+    assert dashboard["chart_y_axis"] == "row_count"
 
 
 def test_export_import_dashboard_round_trips_visible_columns() -> None:
@@ -51,6 +53,7 @@ def test_export_import_dashboard_round_trips_visible_columns() -> None:
         description="Visibility",
         domain_ids=[domain_id],
         visible_columns=["domain", "source_ip", "dmarc_alignment"],
+        chart_y_axis="report_count",
         owner_user_id=current_user["id"],
         current_user=current_user,
     )
@@ -60,6 +63,7 @@ def test_export_import_dashboard_round_trips_visible_columns() -> None:
     yaml_str, error = dashboard_service.export_dashboard_yaml(config, dashboard["id"], current_user)
     assert error is None
     assert "visible_columns" in (yaml_str or "")
+    assert "chart_y_axis" in (yaml_str or "")
 
     imported_status, imported = dashboard_service.import_dashboard_yaml(
         config,
@@ -70,3 +74,4 @@ def test_export_import_dashboard_round_trips_visible_columns() -> None:
     assert imported_status == "ok"
     assert imported is not None
     assert imported["visible_columns"] == ["domain", "source_ip", "dmarc_alignment"]
+    assert imported["chart_y_axis"] == "report_count"

@@ -8,6 +8,7 @@ class CreateDashboardBody(BaseModel):
     description: str = ""
     domain_ids: list[str] = []
     visible_columns: list[str] = []
+    chart_y_axis: str = "message_count"
 
 
 class DashboardOwnerSummary(BaseModel):
@@ -28,6 +29,7 @@ class DashboardSummary(BaseModel):
     domain_ids: list[str]
     domain_names: list[str] | None = None
     visible_columns: list[str]
+    chart_y_axis: str
 
 
 class DashboardsListResponse(BaseModel):

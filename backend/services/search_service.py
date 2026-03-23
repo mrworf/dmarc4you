@@ -1,6 +1,6 @@
 """Search service: list aggregate reports and records with domain scoping, filters, pagination."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 from typing import Any
 
@@ -8,6 +8,7 @@ from backend.config.schema import Config
 from backend.storage.sqlite import get_connection
 from backend.services.dmarc_alignment import backfill_missing_aggregate_alignment, load_record_auth_results
 from backend.services.domain_service import list_domains
+from backend.services.dashboard_chart_settings import normalize_chart_y_axis
 
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 500
@@ -62,6 +63,13 @@ def _record_date_from_ts(timestamp: int | None) -> str | None:
     if timestamp is None:
         return None
     return datetime.fromtimestamp(timestamp, tz=timezone.utc).date().isoformat()
+
+
+def _date_from_ts(value: str | int | None) -> date | None:
+    timestamp = _parse_ts(value)
+    if timestamp is None:
+        return None
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).date()
 
 
 def _normalize_group_by(group_by: str | None) -> str | None:
@@ -200,6 +208,12 @@ def _resolve_domain_filter(allowed_domains: list[str], domains_param: list[str] 
     return [domain for domain in domains_param if domain in allowed_domains]
 
 
+def _timeseries_metric_expr(metric_expr: str, field_expr: str, value: str | None) -> str:
+    if value is None:
+        return f"COALESCE(SUM(CASE WHEN {field_expr} IS NULL OR {field_expr} = '' OR {field_expr} = 'unknown' THEN {metric_expr} ELSE 0 END), 0)"
+    return f"COALESCE(SUM(CASE WHEN {field_expr} = '{value}' THEN {metric_expr} ELSE 0 END), 0)"
+
+
 def _build_record_where_clause(
     domain_filter: list[str],
     *,
@@ -267,6 +281,139 @@ def _build_record_where_clause(
         params.append(fts_query)
 
     return " AND ".join(where_parts), params, fts_join
+
+
+def search_timeseries_records(
+    config: Config,
+    current_user: dict[str, Any],
+    *,
+    domains_param: list[str] | None = None,
+    from_ts: str | int | None = None,
+    to_ts: str | int | None = None,
+    include: dict[str, list[str]] | None = None,
+    exclude: dict[str, list[str]] | None = None,
+    country: str | None = None,
+    query: str | None = None,
+    y_axis: str | None = None,
+) -> dict[str, Any]:
+    backfill_missing_aggregate_alignment(config.database_path)
+    allowed_domains = _allowed_domain_names(config, current_user)
+    normalized_y_axis = normalize_chart_y_axis(y_axis)
+    if not allowed_domains:
+        return {"buckets": [], "series_order": [], "y_axis": normalized_y_axis}
+
+    domain_filter = _resolve_domain_filter(allowed_domains, domains_param)
+    conn = get_connection(config.database_path)
+    try:
+        where_sql, params, fts_join = _build_record_where_clause(
+            domain_filter,
+            from_ts=from_ts,
+            to_ts=to_ts,
+            include=include,
+            exclude=exclude,
+            country=country,
+            query=query,
+        )
+        metric_expr = {
+            "message_count": "rec.count",
+            "row_count": "1",
+            "report_count": "1",
+        }[normalized_y_axis]
+        count_expr = "COUNT(DISTINCT ar.id)" if normalized_y_axis == "report_count" else "SUM"
+        # Distinct-per-series report counts are handled with COUNT(DISTINCT CASE ...).
+        if normalized_y_axis == "report_count":
+            select_fields = """
+                COALESCE(COUNT(DISTINCT CASE WHEN rec.spf_result = 'pass' THEN ar.id END), 0) AS spf_pass,
+                COALESCE(COUNT(DISTINCT CASE WHEN rec.spf_result = 'fail' THEN ar.id END), 0) AS spf_fail,
+                COALESCE(COUNT(DISTINCT CASE WHEN rec.spf_result IS NULL OR rec.spf_result = '' OR rec.spf_result = 'unknown' THEN ar.id END), 0) AS spf_unknown,
+                COALESCE(COUNT(DISTINCT CASE WHEN rec.dkim_result = 'pass' THEN ar.id END), 0) AS dkim_pass,
+                COALESCE(COUNT(DISTINCT CASE WHEN rec.dkim_result = 'fail' THEN ar.id END), 0) AS dkim_fail,
+                COALESCE(COUNT(DISTINCT CASE WHEN rec.dkim_result IS NULL OR rec.dkim_result = '' OR rec.dkim_result = 'unknown' THEN ar.id END), 0) AS dkim_unknown,
+                COALESCE(COUNT(DISTINCT CASE WHEN rec.dmarc_alignment = 'pass' THEN ar.id END), 0) AS dmarc_pass,
+                COALESCE(COUNT(DISTINCT CASE WHEN rec.dmarc_alignment = 'fail' THEN ar.id END), 0) AS dmarc_fail,
+                COALESCE(COUNT(DISTINCT CASE WHEN rec.dmarc_alignment IS NULL OR rec.dmarc_alignment = '' OR rec.dmarc_alignment = 'unknown' THEN ar.id END), 0) AS dmarc_unknown
+            """
+        else:
+            select_fields = f"""
+                {_timeseries_metric_expr(metric_expr, 'rec.spf_result', 'pass')} AS spf_pass,
+                {_timeseries_metric_expr(metric_expr, 'rec.spf_result', 'fail')} AS spf_fail,
+                {_timeseries_metric_expr(metric_expr, 'rec.spf_result', None)} AS spf_unknown,
+                {_timeseries_metric_expr(metric_expr, 'rec.dkim_result', 'pass')} AS dkim_pass,
+                {_timeseries_metric_expr(metric_expr, 'rec.dkim_result', 'fail')} AS dkim_fail,
+                {_timeseries_metric_expr(metric_expr, 'rec.dkim_result', None)} AS dkim_unknown,
+                {_timeseries_metric_expr(metric_expr, 'rec.dmarc_alignment', 'pass')} AS dmarc_pass,
+                {_timeseries_metric_expr(metric_expr, 'rec.dmarc_alignment', 'fail')} AS dmarc_fail,
+                {_timeseries_metric_expr(metric_expr, 'rec.dmarc_alignment', None)} AS dmarc_unknown
+            """
+
+        cur = conn.execute(
+            f"""SELECT date(ar.date_begin, 'unixepoch') AS bucket_date,
+                       {select_fields}
+                FROM aggregate_report_records rec
+                JOIN aggregate_reports ar ON rec.aggregate_report_id = ar.id
+                {fts_join}
+                WHERE {where_sql}
+                GROUP BY bucket_date
+                ORDER BY bucket_date ASC""",
+            params,
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return {
+                "buckets": [],
+                "series_order": [
+                    "spf_pass",
+                    "spf_fail",
+                    "spf_unknown",
+                    "dkim_pass",
+                    "dkim_fail",
+                    "dkim_unknown",
+                    "dmarc_pass",
+                    "dmarc_fail",
+                    "dmarc_unknown",
+                ],
+                "y_axis": normalized_y_axis,
+            }
+
+        explicit_from = _date_from_ts(from_ts)
+        explicit_to = _date_from_ts(to_ts)
+        start_date = explicit_from or date.fromisoformat(rows[0][0])
+        end_date = explicit_to or date.fromisoformat(rows[-1][0])
+        row_map = {
+            row[0]: row[1:]
+            for row in rows
+        }
+        buckets: list[dict[str, Any]] = []
+        current = start_date
+        while current <= end_date:
+            key = current.isoformat()
+            values = row_map.get(key) or (0, 0, 0, 0, 0, 0, 0, 0, 0)
+            buckets.append(
+                {
+                    "date": key,
+                    "spf": {"pass": values[0], "fail": values[1], "unknown": values[2]},
+                    "dkim": {"pass": values[3], "fail": values[4], "unknown": values[5]},
+                    "dmarc": {"pass": values[6], "fail": values[7], "unknown": values[8]},
+                }
+            )
+            current += timedelta(days=1)
+        return {
+            "buckets": buckets,
+            "series_order": [
+                "spf_pass",
+                "spf_fail",
+                "spf_unknown",
+                "dkim_pass",
+                "dkim_fail",
+                "dkim_unknown",
+                "dmarc_pass",
+                "dmarc_fail",
+                "dmarc_unknown",
+            ],
+            "y_axis": normalized_y_axis,
+        }
+    finally:
+        conn.close()
 
 
 def get_aggregate_report_detail(

@@ -283,6 +283,7 @@ def seed_e2e_environment(
         description="Seeded dashboard for Next.js browser validation.",
         domain_ids=[primary_domain_id],
         visible_columns=[],
+        chart_y_axis="message_count",
         owner_user_id=super_admin_id,
         current_user=super_admin,
     )

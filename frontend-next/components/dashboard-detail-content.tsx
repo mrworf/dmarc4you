@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { DashboardTimeSeriesChart } from "@/components/dashboard-timeseries-chart";
 import { EditDashboardForm, type EditDashboardValues } from "@/components/edit-dashboard-form";
 import { DashboardOwnershipPanel } from "@/components/dashboard-ownership-panel";
 import { DashboardSharingPanel } from "@/components/dashboard-sharing-panel";
@@ -39,6 +40,7 @@ import {
   type AggregateExplorerState,
 } from "@/lib/aggregate-explorer-state";
 import { useAuth } from "@/lib/auth/context";
+import type { DashboardChartYAxis } from "@/lib/dashboard-chart-options";
 import { useAggregateExplorerState } from "@/lib/use-aggregate-explorer-state";
 import type {
   DashboardDetailResponse,
@@ -47,6 +49,7 @@ import type {
   GroupPathPart,
   GroupedSearchResponse,
   SearchRecordsResponse,
+  SearchTimeSeriesResponse,
   UpdateDashboardBody,
   UserSummary,
 } from "@/lib/api/types";
@@ -348,7 +351,15 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
   });
 
   const domainNames = dashboardQuery.data?.domain_names ?? [];
+  const dashboard = dashboardQuery.data;
   const searchBody = useMemo(() => buildAggregateSearchBody(currentState, domainNames), [currentState, domainNames]);
+  const timeSeriesBody = useMemo(
+    () => ({
+      ...buildAggregateSearchBody(currentState, domainNames),
+      y_axis: (dashboard?.chart_y_axis ?? "message_count") as DashboardChartYAxis,
+    }),
+    [currentState, dashboard?.chart_y_axis, domainNames],
+  );
   const groupedRootRequest = useMemo(
     () =>
       buildGroupedSearchBody(currentState, domainNames, {
@@ -363,6 +374,7 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
     queryKey: ["dashboard-search", dashboardId, searchBody],
     queryFn: () => apiClient.post<SearchRecordsResponse>("/api/v1/search", searchBody),
     enabled: domainNames.length > 0 && currentState.grouping.length === 0,
+    placeholderData: keepPreviousData,
   });
   const groupedSearchQuery = useQuery({
     queryKey: ["dashboard-search-grouped", dashboardId, groupedRootRequest],
@@ -370,8 +382,12 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
     enabled: domainNames.length > 0 && currentState.grouping.length > 0,
     placeholderData: keepPreviousData,
   });
-
-  const dashboard = dashboardQuery.data;
+  const timeSeriesQuery = useQuery({
+    queryKey: ["dashboard-search-timeseries", dashboardId, timeSeriesBody],
+    queryFn: () => apiClient.post<SearchTimeSeriesResponse>("/api/v1/search/timeseries", timeSeriesBody),
+    enabled: domainNames.length > 0 && !!dashboard,
+    placeholderData: keepPreviousData,
+  });
   const result = currentState.grouping.length ? groupedSearchQuery.data : flatSearchQuery.data;
   const isGroupedMode = currentState.grouping.length > 0;
   const isGroupedInitialLoading = isGroupedMode && groupedSearchQuery.isPending && !groupedSearchQuery.data;
@@ -493,6 +509,13 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
     setIsRangeMenuOpen(false);
   }
 
+  const handleChartRangeSelect = useCallback(
+    (from: string, to: string) => {
+      commitState((current) => ({ ...current, from, page: 1, to }));
+    },
+    [commitState],
+  );
+
   async function loadGroupedBranch(path: GroupPathPart[]) {
     return apiClient.post<GroupedSearchResponse>(
       "/api/v1/search/grouped",
@@ -554,6 +577,7 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
   const mutationError = updateDashboard.error instanceof ApiError ? updateDashboard.error.message : null;
   const deleteError = deleteDashboard.error instanceof ApiError ? deleteDashboard.error.message : null;
   const exportError = exportDashboard.error instanceof ApiError ? exportDashboard.error.message : null;
+  const timeSeriesError = timeSeriesQuery.error instanceof ApiError ? timeSeriesQuery.error.message : null;
 
   return (
     <AppShell
@@ -601,6 +625,7 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
               dashboardQuery.refetch();
               flatSearchQuery.refetch();
               groupedSearchQuery.refetch();
+              timeSeriesQuery.refetch();
             }}
             type="button"
           >
@@ -711,6 +736,17 @@ export function DashboardDetailContent({ dashboardId }: { dashboardId: string })
           <DashboardOwnershipPanel canTransferOwnership={canTransferOwnership} dashboard={dashboard} />
         </SlideOverPanel>
       ) : null}
+
+      <DashboardTimeSeriesChart
+        data={timeSeriesQuery.data}
+        error={timeSeriesError}
+        from={draftState.from}
+        isFetching={timeSeriesQuery.isFetching}
+        isLoading={timeSeriesQuery.isLoading}
+        onRangeSelect={handleChartRangeSelect}
+        to={draftState.to}
+        yAxis={(dashboard?.chart_y_axis ?? "message_count") as DashboardChartYAxis}
+      />
 
       <section className="surface-card stack">
         <div className="section-heading">

@@ -61,6 +61,19 @@ class GroupedSearchRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class TimeSeriesSearchRequest(BaseModel):
+    domains: list[str] | None = None
+    from_ts: str | int | None = Field(default=None, alias="from")
+    to_ts: str | int | None = Field(default=None, alias="to")
+    include: dict[str, list[str]] | None = None
+    exclude: dict[str, list[str]] | None = None
+    country: str = ""
+    query: str = ""
+    y_axis: str = "message_count"
+
+    model_config = {"populate_by_name": True}
+
+
 @reports_router.get("/aggregate")
 def get_reports_aggregate(
     current_user: dict = Depends(get_current_user),
@@ -238,3 +251,24 @@ def post_grouped_search(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@search_router.post("/timeseries")
+def post_timeseries_search(
+    body: TimeSeriesSearchRequest,
+    current_user: dict = Depends(get_current_user),
+    config: Config = Depends(get_config),
+) -> dict:
+    """POST /api/v1/search/timeseries: aggregate dashboard/search records into daily auth-family trend buckets."""
+    return search_service.search_timeseries_records(
+        config,
+        current_user,
+        domains_param=body.domains,
+        from_ts=body.from_ts,
+        to_ts=body.to_ts,
+        include=body.include,
+        exclude=body.exclude,
+        country=body.country or None,
+        query=body.query or None,
+        y_axis=body.y_axis,
+    )
