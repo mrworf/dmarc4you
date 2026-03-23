@@ -17,6 +17,22 @@ type HoverSnapshot = {
   groups: HoverSeriesGroup[];
 };
 
+const emptyTimeSeriesData: SearchTimeSeriesResponse = {
+  buckets: [],
+  series_order: [
+    "spf_pass",
+    "spf_fail",
+    "spf_unknown",
+    "dkim_pass",
+    "dkim_fail",
+    "dkim_unknown",
+    "dmarc_pass",
+    "dmarc_fail",
+    "dmarc_unknown",
+  ],
+  y_axis: "message_count",
+};
+
 const seriesMeta = [
   { key: "spf_pass", family: "spf", label: "SPF pass", color: "#1f7a45" },
   { key: "spf_fail", family: "spf", label: "SPF fail", color: "#c0392b" },
@@ -367,6 +383,7 @@ export function DashboardTimeSeriesChart({
   }, [data, isFetching]);
 
   const visibleData = data?.buckets.length ? data : isFetching ? lastSuccessfulData : undefined;
+  const chartData = visibleData ?? (data ? { ...data, buckets: [] } : emptyTimeSeriesData);
   const showEmptyState = !isLoading && !isFetching && !error && !!data && !data.buckets.length;
 
   return (
@@ -386,17 +403,15 @@ export function DashboardTimeSeriesChart({
         {showEmptyState ? (
           <p className="status-text">No chart data yet for the current dashboard filters.</p>
         ) : null}
-        {visibleData?.buckets.length ? (
-          <TimeSeriesCanvas
-            className="dashboard-chart-canvas"
-            data={visibleData}
-            from={from}
-            onHoverSnapshot={setHoverSnapshot}
-            onRangeSelect={onRangeSelect}
-            to={to}
-            yAxis={yAxis}
-          />
-        ) : null}
+        <TimeSeriesCanvas
+          className="dashboard-chart-canvas"
+          data={chartData}
+          from={from}
+          onHoverSnapshot={setHoverSnapshot}
+          onRangeSelect={onRangeSelect}
+          to={to}
+          yAxis={yAxis}
+        />
       </section>
       {isExpanded && visibleData?.buckets.length ? (
         <div className="modal-backdrop" onClick={() => setIsExpanded(false)} role="presentation">
