@@ -138,4 +138,3 @@ See [Submitting Reports](docs/SUBMITTING_REPORTS.md) for API, CLI, and browser-u
 | [Security and Audit](docs/SECURITY_AND_AUDIT.md) | Auth, RBAC, and audit behavior |
 | [Domain Lifecycle](docs/DOMAIN_LIFECYCLE.md) | Archive, restore, retention, and purge |
 | [Frontend and Dashboards](docs/FRONTEND_AND_DASHBOARDS.md) | UI and dashboard behavior |
-| [Project History](docs/PROJECT_HISTORY.md) | Migration and implementation-history references |
