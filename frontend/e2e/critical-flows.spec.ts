@@ -80,7 +80,7 @@ async function expectNoReload(page: Page, marker: string): Promise<void> {
     .toBe(marker);
 }
 
-test.describe("frontend-next critical happy paths", () => {
+test.describe("frontend critical happy paths", () => {
   test("dashboards route creates a dashboard and exposes detail actions", async ({ page }) => {
     const dashboardName = `pw-dashboard-${uniqueSuffix()}`;
 
@@ -89,8 +89,10 @@ test.describe("frontend-next critical happy paths", () => {
 
     await expect(page.getByRole("heading", { name: "Dashboards", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Create dashboard" }).first().click();
-    await page.getByLabel("Name").fill(dashboardName);
-    await page.getByLabel("Description").fill("Created by Playwright critical-flow coverage.");
+    await page.getByRole("textbox", { name: "Name", exact: true }).fill(dashboardName);
+    await page.getByRole("textbox", { name: "Description", exact: true }).fill(
+      "Created by Playwright critical-flow coverage.",
+    );
     await selectFirstDomainOption(page);
     await page.getByRole("button", { name: "Create dashboard" }).last().click();
 
@@ -113,8 +115,8 @@ test.describe("frontend-next critical happy paths", () => {
 
     await page.getByRole("button", { name: "Create dashboard" }).first().click();
     await page.getByRole("textbox", { name: "Name", exact: true }).fill(dashboardName);
-    await page.getByLabel("Description").fill("Dashboard chart persistence coverage.");
-    await page.getByLabel("Chart Y axis").selectOption("report_count");
+    await page.getByRole("textbox", { name: "Description", exact: true }).fill("Dashboard chart persistence coverage.");
+    await page.getByRole("combobox", { name: "Chart Y axis", exact: true }).selectOption("report_count");
     await selectFirstDomainOption(page);
     await page.getByRole("button", { name: "Create dashboard" }).last().click();
 
@@ -125,13 +127,13 @@ test.describe("frontend-next critical happy paths", () => {
     await expect(page.getByRole("heading", { name: "Trend" })).toBeVisible();
 
     await page.getByRole("button", { name: "Edit dashboard" }).click();
-    await expect(page.getByLabel("Chart Y axis")).toHaveValue("report_count");
-    await page.getByLabel("Chart Y axis").selectOption("row_count");
+    await expect(page.getByRole("combobox", { name: "Chart Y axis", exact: true })).toHaveValue("report_count");
+    await page.getByRole("combobox", { name: "Chart Y axis", exact: true }).selectOption("row_count");
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByRole("heading", { name: "Edit dashboard" })).toHaveCount(0);
 
     await page.getByRole("button", { name: "Edit dashboard" }).click();
-    await expect(page.getByLabel("Chart Y axis")).toHaveValue("row_count");
+    await expect(page.getByRole("combobox", { name: "Chart Y axis", exact: true })).toHaveValue("row_count");
   });
 
   test("dashboard detail updates filters without reloading and keeps state in the URL", async ({ page }) => {
@@ -296,6 +298,7 @@ test.describe("frontend-next critical happy paths", () => {
 
     await filtersPanel.getByLabel("Add grouping").selectOption("source_ip");
     await filtersPanel.getByRole("button", { name: "Add level" }).click();
+    await page.keyboard.press("Escape");
 
     const firstToggle = page.locator(".group-toggle").first();
     await expect(firstToggle).toBeVisible();
@@ -323,13 +326,16 @@ test.describe("frontend-next critical happy paths", () => {
     await filtersPanel.getByRole("button", { name: "Add level" }).click();
     await filtersPanel.getByLabel("Add grouping").selectOption("disposition");
     await filtersPanel.getByRole("button", { name: "Add level" }).click();
+    await page.keyboard.press("Escape");
 
     const firstToggle = page.locator(".group-toggle").first();
     await expect(firstToggle).toBeVisible();
     await firstToggle.click();
     await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
 
-    await filtersPanel.getByRole("button", { name: "Remove Disposition" }).click();
+    const updatedFiltersPanel = await openDashboardFilters(page);
+    await updatedFiltersPanel.getByRole("button", { name: "Remove Disposition" }).click();
+    await page.keyboard.press("Escape");
 
     await expectNoReload(page, marker);
     await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
@@ -551,9 +557,11 @@ test.describe("frontend-next critical happy paths", () => {
     await expect(page.getByRole("heading", { name: "API Keys" })).toBeVisible();
     await page.getByRole("button", { name: "Create API key" }).first().click();
     await page.getByLabel("Nickname").fill(nickname);
-    await page.getByLabel("Description").fill("Created by Playwright critical-flow coverage.");
+    await page.getByRole("textbox", { name: "Description", exact: true }).fill(
+      "Created by Playwright critical-flow coverage.",
+    );
     await selectFirstDomainOption(page);
-    await page.getByLabel("Description").press("Enter");
+    await page.getByRole("textbox", { name: "Description", exact: true }).press("Enter");
 
     await expect(page.getByText("API key created")).toBeVisible();
     await expect(page.getByText("Raw secret")).toBeVisible();

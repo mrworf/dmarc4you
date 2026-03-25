@@ -6,7 +6,7 @@ function uniqueDomain(): string {
   return `playwright-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.example.com`;
 }
 
-test.describe("frontend-next domain management", () => {
+test.describe("frontend domain management", () => {
   test("super-admin can create, archive, restore, and delete a domain", async ({ page }) => {
     const domainName = uniqueDomain();
 
@@ -26,7 +26,7 @@ test.describe("frontend-next domain management", () => {
     await page.getByRole("button", { name: "Archive domain" }).click();
 
     const archivedRow = page.locator(".domain-row", { hasText: domainName });
-    await expect(archivedRow.getByText("archived")).toBeVisible();
+    await expect(archivedRow.getByText("archived", { exact: true })).toBeVisible();
     await expect(archivedRow.getByText("Retention until")).toBeVisible();
 
     await archivedRow.getByRole("button", { name: "Pause retention" }).click();

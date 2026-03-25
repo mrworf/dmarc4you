@@ -1,16 +1,16 @@
 # DMARCWatch
 
-A self-hosted DMARC analysis platform for ingesting, storing, and reviewing DMARC aggregate and forensic reports.
+DMARCWatch is a self-hosted DMARC analysis platform with a FastAPI backend, a Next.js frontend, SQLite storage in v1, asynchronous ingest jobs, domain-scoped RBAC, and audit logging.
 
-## What It Does
+## Core capabilities
 
-- Ingest DMARC reports asynchronously
-- Normalize aggregate and forensic data for search and dashboards
-- Enforce domain-scoped RBAC and API-key-based ingest
-- Support reverse DNS and optional offline GeoIP enrichment
-- Provide dashboards, search, upload, audit, and domain lifecycle controls
+- Ingest DMARC aggregate and forensic reports from API, CLI, browser upload, XML files, ZIP/GZIP payloads, and MIME email messages.
+- Normalize report data for dashboard views, aggregate exploration, and forensic search.
+- Enforce strict domain scoping for users, dashboards, and API keys.
+- Support optional reverse DNS and offline GeoIP enrichment during ingest.
+- Manage domain archive, restore, retention, and purge workflows.
 
-## Quick Start
+## Quick start
 
 ```bash
 git clone <repository-url>
@@ -21,18 +21,14 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 cp config.example.yaml config.yaml
-# Edit config.yaml and set a real auth.session_secret
-```
-
-Install the Next.js frontend in a second step:
-
-```bash
-cd frontend-next
+cd frontend
 npm install
 cd ..
 ```
 
-Start the backend API:
+Edit `config.yaml` and set a real `auth.session_secret` before using the service outside local development.
+
+Start the backend:
 
 ```bash
 python -m backend.main
@@ -41,64 +37,27 @@ python -m backend.main
 Start the frontend in another terminal:
 
 ```bash
-cd frontend-next
+cd frontend
 npm run dev
 ```
 
-On first startup, the bootstrap admin password is printed to stderr. Save it immediately.
+The backend listens on `http://127.0.0.1:8000` by default and the frontend on `http://127.0.0.1:3000`. On first startup, the bootstrap `admin` password is printed once to the backend console.
 
-Open `http://127.0.0.1:3000` and log in as `admin`.
-
-The backend API runs on `http://127.0.0.1:8000` by default. In production, serve the Next.js frontend and FastAPI behind the same public origin via a reverse proxy.
-
-## Supported Ingest Formats
-
-- XML DMARC reports
-- Gzip-compressed XML (`.gz`, `.gzip`)
-- ZIP archives containing supported report payloads
-- MIME/RFC822 email messages with report attachments
-
-## Core Features
-
-- Asynchronous ingest jobs with per-report outcomes
-- Aggregate and forensic report search
-- Shared dashboards with domain scoping
-- API key management for automated ingest
-- Domain archive, restore, retention, and purge
-- Audit trail for security-sensitive actions
-
-## User Roles
-
-| Role | Description |
-|------|-------------|
-| `super-admin` | Full access to all domains and system settings |
-| `admin` | Manage users and dashboards within assigned domains |
-| `manager` | Create and share dashboards |
-| `viewer` | Read-only access to assigned dashboards |
-
-See [Getting Started](docs/GETTING_STARTED.md) for detailed permissions and first-login guidance.
-
-## Configuration
-
-Copy `config.example.yaml` to `config.yaml` and customize:
+## Configuration highlights
 
 ```yaml
 database:
   path: data/dmarc.db
 
-log:
-  level: INFO
-
 auth:
   session_secret: change-me-in-production
-  session_max_age_days: 7
 
 archive:
   storage_path: null
 
 dns:
   nameservers: []
-  timeout_seconds: 1.0
+  timeout_seconds: 5.0
 
 geoip:
   provider: none
@@ -107,34 +66,23 @@ geoip:
 
 Notes:
 
-- `dns.nameservers` is optional. If unset, the host default resolver is used for reverse DNS.
-- `geoip.provider` supports `none`, `dbip-lite-country`, and `maxmind-geolite2-country`.
-- GeoIP requires a local MMDB file. See [GeoIP Setup](docs/GEOIP_SETUP.md).
-
-All options can be overridden with `DMARC_*` environment variables.
+- `DMARC_*` environment variables can override YAML config values.
+- Store local GeoIP MMDB files under `data/`, for example `data/dbip-country-lite.mmdb`.
+- `archive.storage_path` is optional. Leave it unset to disable raw artifact archival.
 
 ## CLI
 
 ```bash
-# Submit reports
 python -m cli ingest --api-key YOUR_KEY report.xml report.xml.gz report.zip report.eml
-
-# Break-glass admin reset
 python -m cli reset-admin-password [config.yaml]
+python -m cli seed-e2e [config.e2e.yaml] [--cleanup]
 ```
-
-See [Submitting Reports](docs/SUBMITTING_REPORTS.md) for API, CLI, and browser-upload examples.
 
 ## Documentation
 
-| Guide | Description |
-|-------|-------------|
-| [Getting Started](docs/GETTING_STARTED.md) | Installation, configuration, bootstrap login, and role overview |
-| [Submitting Reports](docs/SUBMITTING_REPORTS.md) | API, CLI, and browser upload flows |
-| [API v1](docs/API_V1.md) | REST API reference |
-| [GeoIP Setup](docs/GEOIP_SETUP.md) | How to obtain and configure the MMDB database |
-| [Architecture](docs/ARCHITECTURE.md) | System design overview |
-| [Data Model](docs/DATA_MODEL.md) | Database and normalized ingest model |
-| [Security and Audit](docs/SECURITY_AND_AUDIT.md) | Auth, RBAC, and audit behavior |
-| [Domain Lifecycle](docs/DOMAIN_LIFECYCLE.md) | Archive, restore, retention, and purge |
-| [Frontend and Dashboards](docs/FRONTEND_AND_DASHBOARDS.md) | UI and dashboard behavior |
+- [Getting Started](docs/GETTING_STARTED.md)
+- [Submitting Reports](docs/SUBMITTING_REPORTS.md)
+- [API v1](docs/API_V1.md)
+- [GeoIP Setup](docs/GEOIP_SETUP.md)
+- [Domain Lifecycle](docs/DOMAIN_LIFECYCLE.md)
+- [Security and Audit](docs/SECURITY_AND_AUDIT.md)

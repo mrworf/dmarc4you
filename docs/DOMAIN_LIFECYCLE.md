@@ -1,100 +1,77 @@
 # Domain Lifecycle
 
-## States
-
-A domain can be at least:
+Domains move between two operational states:
 
 - `active`
 - `archived`
 
-## Active state
+## Active domains
 
-In active state:
+When a domain is active:
 
-- domain is visible to authorized actors
-- ingest may proceed if actor/key is authorized
-- dashboards using the domain may be rendered normally
-- normal search/reporting applies
+- authorized users and dashboards can see it
+- ingest is allowed when the user or API key is authorized
+- normal search, dashboard, and reporting behavior applies
 
-## Archive transition
+## Archiving a domain
 
-Only super-admin may archive a domain.
+Only `super-admin` can archive a domain.
 
-Effects of archive:
+Archive effects:
 
-- non-super-admin users lose visibility of the domain
-- ingest for the domain is rejected
-- dashboards referencing the domain become dormant/inaccessible to non-super-admin users
-- the system preserves enough metadata for full restoration
-- archived-domain metrics remain visible to super-admin only
+- non-`super-admin` users lose visibility of the domain
+- ingest for that domain is rejected
+- dashboards that depend on the domain are no longer usable for non-`super-admin` users
+- restorable metadata is retained so assignments and bindings can return on restore
 
-## Archived-domain view
+## Archived-domain retention
 
-Show only high-level information such as:
+Archived domains can have a retention period in days.
 
-- domain name
-- archived date
-- record counts
-- artifact counts or storage usage if available
-- retention state
-- remaining days before deletion
-- scheduled deletion date
-- pause state and pause reason if any
+Behavior:
 
-## Restore
+- countdown begins from the archive state
+- paused time does not count toward expiration
+- retention state survives restarts
+- automatic purge removes the domain when its deadline is reached
 
-Only super-admin may restore.
+Only `super-admin` can:
+
+- set retention
+- pause retention
+- unpause retention
+
+Pause requires a reason.
+
+## Restoring a domain
+
+Only `super-admin` can restore an archived domain.
 
 Restore effects:
 
-- domain becomes active again
+- the domain becomes active again
 - prior user-domain assignments return
-- prior dashboard relationships reactivate
-- prior API key domain bindings return
-- dormant dashboards resume normal access where otherwise valid
+- prior dashboard-domain relationships reactivate
+- prior API key bindings return
 
-## Delete
+## Deleting a domain
 
-Only archived domains may be deleted.
+Only archived domains can be deleted, and deletion is permanent.
 
-Delete means permanent purge of:
+Deletion removes:
 
 - normalized report data
 - archived artifacts
 - archived/restorable assignment metadata
-- dashboard-domain relationships and domain-specific records
+- related dashboard domain links and domain-specific records
 
-Require explicit confirmation in UI/API.
+## Operational endpoints
 
-## Retention
+These lifecycle actions are exposed through the API:
 
-Super-admin may set a retention period for archived domains.
-
-Rules:
-
-- after X days archived, the domain is automatically deleted
-- countdown pauses do not count toward elapsed retention time
-- retention state must survive restart
-
-## Pause / unpause
-
-Pause requires a reason.
-
-While paused:
-
-- automatic deletion countdown stops
-- only restore and unpause actions remain available
-
-On unpause:
-
-- countdown resumes from remaining time
-
-## Scheduler behavior
-
-A retention scheduler should periodically:
-
-- scan archived domains
-- ignore paused ones
-- calculate expirations
-- purge domains that have reached their deadline
-- audit every automatic purge
+- `POST /api/v1/domains/{domain_id}/archive`
+- `POST /api/v1/domains/{domain_id}/restore`
+- `POST /api/v1/domains/{domain_id}/retention`
+- `POST /api/v1/domains/{domain_id}/retention/pause`
+- `POST /api/v1/domains/{domain_id}/retention/unpause`
+- `DELETE /api/v1/domains/{domain_id}`

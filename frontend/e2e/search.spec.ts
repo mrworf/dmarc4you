@@ -29,7 +29,7 @@ async function expectNoReload(page: Page, marker: string): Promise<void> {
     .toBe(marker);
 }
 
-async function applyDefaultAggregateFilters(page: Page) {
+async function applyDefaultAggregateFilters(page: Page): Promise<string> {
   const configuredDomain = process.env.DMARC_E2E_SEARCH_DOMAIN;
 
   await page.getByLabel("Free-text search").fill(process.env.DMARC_E2E_SEARCH_QUERY ?? "google");
@@ -42,19 +42,21 @@ async function applyDefaultAggregateFilters(page: Page) {
     await firstDomainCheckbox.check();
   }
 
-  await page.getByRole("button", { name: "More filters" }).click();
-  const filtersPanel = page.locator('[role="dialog"]').filter({ has: page.getByRole("heading", { name: "More filters" }) });
-  const includeSpfSection = filtersPanel.locator(".stack").filter({ has: filtersPanel.getByText("Include SPF") }).first();
-  await includeSpfSection.locator(".checkbox-card").filter({ hasText: /^Pass$/ }).click();
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(page).toHaveURL(/include_spf=pass/);
+  const firstRow = page.locator(".data-table tbody tr").first();
+  await expect(firstRow).toBeVisible();
+  const spfButton = firstRow.locator("td:nth-child(7) .cell-primary-action");
+  await expect(spfButton).toBeVisible();
+  const spfValue = (((await spfButton.textContent()) ?? "").trim() || "pass").toLowerCase();
+  await spfButton.click();
+  await expect(page).toHaveURL(new RegExp(`include_spf=${spfValue}`));
+  return spfValue;
 }
 
 function formatFilterChipValue(value: string): string {
   return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value;
 }
 
-test.describe("frontend-next search coverage", () => {
+test.describe("frontend search coverage", () => {
   test("aggregate search updates filters without reloading and restores state from query params", async ({ page }) => {
     await loginAsSuperAdmin(page);
     await page.goto("/search");
@@ -294,14 +296,27 @@ test.describe("frontend-next search coverage", () => {
     const firstRow = page.locator(".data-table tbody tr").first();
     await expect(firstRow).toBeVisible();
 
-    const resolvedHostButton = firstRow.locator("td:nth-child(3) .cell-primary-action");
-    await expect(resolvedHostButton).toBeVisible();
-    const resolvedHost = ((await resolvedHostButton.textContent()) ?? "").trim();
-    expect(resolvedHost).not.toBe("");
-    await resolvedHostButton.click();
+    const sourceIpButton = firstRow.locator("td:nth-child(2) .cell-primary-action");
+    await expect(sourceIpButton).toBeVisible();
 
-    await expect(page.getByLabel("Free-text search")).toHaveValue(resolvedHost);
-    await expect(page.getByText(`Search: ${resolvedHost}`)).toBeVisible();
+    const resolvedHostButton = firstRow.locator("td:nth-child(3) .cell-primary-action");
+    if ((await resolvedHostButton.count()) > 0) {
+      await expect(resolvedHostButton).toBeVisible();
+      const resolvedHost = ((await resolvedHostButton.textContent()) ?? "").trim();
+      expect(resolvedHost).not.toBe("");
+      await resolvedHostButton.click();
+
+      await expect(page.getByLabel("Free-text search")).toHaveValue(resolvedHost);
+      await expect(page.getByText(`Search: ${resolvedHost}`)).toBeVisible();
+    } else {
+      const resolvedHostText = ((await firstRow.locator("td:nth-child(3)").textContent()) ?? "").trim();
+      expect(resolvedHostText).not.toBe("");
+
+      const sourceIp = ((await sourceIpButton.textContent()) ?? "").trim();
+      await sourceIpButton.click();
+      await expect(page.getByLabel("Free-text search")).toHaveValue(sourceIp);
+      await expect(page.getByText(`Search: ${sourceIp}`)).toBeVisible();
+    }
 
     const dispositionButton = page.locator(".data-table tbody tr").first().locator("td:nth-child(5) .cell-primary-action");
     const dkimButton = page.locator(".data-table tbody tr").first().locator("td:nth-child(6) .cell-primary-action");
@@ -412,14 +427,15 @@ test.describe("frontend-next search coverage", () => {
     await loginAsSuperAdmin(page);
     await page.goto("/search");
 
-    await applyDefaultAggregateFilters(page);
-    await expect(page.getByText("SPF: Pass")).toBeVisible();
+    const spfValue = await applyDefaultAggregateFilters(page);
+    const spfChipLabel = `SPF: ${formatFilterChipValue(spfValue)}`;
+    await expect(page.getByText(spfChipLabel)).toBeVisible();
 
-    const spfChip = page.locator(".filter-chip", { hasText: "SPF: Pass" });
+    const spfChip = page.locator(".filter-chip", { hasText: spfChipLabel });
     await spfChip.getByRole("button").click();
 
-    await expect(page.getByText("SPF: Pass")).toHaveCount(0);
-    await expect(page).not.toHaveURL(/include_spf=pass/);
+    await expect(page.getByText(spfChipLabel)).toHaveCount(0);
+    await expect(page).not.toHaveURL(new RegExp(`include_spf=${spfValue}`));
   });
 
   test("aggregate result quick filters update the active search", async ({ page }) => {

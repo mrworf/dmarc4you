@@ -1,118 +1,79 @@
 # Security and Audit
 
-## Security posture for v1
+This service is security-sensitive because it manages local identities, domain-scoped authorization, API keys, ingest workflows, and archived report data.
 
-This product is security-sensitive because it handles identity, domain-scoped access, API keys, audit trails, and potentially sensitive email-derived metadata.
+## Authentication
 
-## Authentication requirements
+User auth:
 
-### User auth
+- local username/password only
+- bootstrap `admin` account is created on first startup
+- no self-service password reset or password change flow
+- password resets are admin operations
 
-- local username/password only in v1
-- usernames must match `^[A-Za-z0-9_-]+$`
-- password hashing: prefer Argon2id; bcrypt acceptable fallback
-- no self-service password change/reset in v1
-- only admin/super-admin can reset passwords
-- only another sufficiently privileged user can demote an admin or super-admin
+Break-glass recovery:
 
-### Break-glass
+- `python -m cli reset-admin-password [config.yaml]`
+- local-only workflow
+- prints a newly generated password
 
-Provide a local-only admin CLI command to reset the `admin` password to a newly generated random value and print it locally. It must not be exposed via HTTP.
+Browser session protections:
 
-## Session security
+- HttpOnly session cookie
+- CSRF cookie and backend CSRF enforcement on write requests
+- configurable `Secure` and `SameSite` cookie settings
 
-- secure cookie settings where deployment allows
-- HttpOnly
-- SameSite appropriate for app model
-- CSRF protection for browser-authenticated write endpoints
-- server-side session invalidation on logout/reset
+## Authorization rules
 
-## API key security
+- `super-admin` always has access to all domains.
+- Only `super-admin` can add domains, archive or restore domains, delete archived domains, or change an admin's domain assignments.
+- `admin` can create users up to `admin`, but cannot grant `super-admin`.
+- Dashboard access requires access to all dashboard domains.
+- Viewers cannot own dashboards.
+- Archived domains are hidden from non-`super-admin` users and reject ingest.
 
-- keys are shown once, hashed at rest
-- keys are identified in logs by nickname and internal id, never by raw secret
-- keys are domain-bound and scope-bound
-- invalid, expired, disabled, or insufficient-scope key usage must be logged and audited
+## API keys
 
-## Authorization invariants
+- API keys are not user-bound.
+- Keys are domain-bound and scope-bound.
+- The raw secret is shown only once at creation time.
+- Use `Authorization: Bearer <api-key>` on supported endpoints.
 
-1. Super-admin always has access to all domains.
-2. Admin cannot add domains or grant `super-admin`.
-3. Only super-admin can change an admin's domain assignments.
-4. Dashboard access requires access to all dashboard domains.
-5. Viewers can never own dashboards.
-6. Archived domains are invisible to non-super-admin users.
-7. Archived domains reject ingest even if the actor/key would otherwise be authorized.
-8. External errors must not overexpose sensitive domain-state reasons when the product spec forbids it.
+For ingest automation, the relevant scope is:
 
-## Ingest security
+- `reports:ingest`
 
-- safe XML parsing only
-- decompression limits
-- archive recursion limits
-- attachment count limits
-- total expanded size limits
-- malformed input should fail safely per report
-- dedupe logic should prevent repeated persistence on retries/restarts
+## Audit coverage
 
-## Raw artifact handling
+The system records audit entries for security-relevant actions including:
 
-- archival storage is optional and config-driven
-- use compressed storage when enabled
-- store backend-agnostic references in DB
-- delete artifacts during archived-domain purge
-
-## Audit requirements
-
-Audit at least the following:
-
-- login success/failure
+- login attempts
 - logout
-- user creation/update
-- role changes
-- domain assignment changes
-- API key lifecycle operations
-- ingest submissions and ingest denials
-- dashboard create/edit/rename/delete/share/ownership changes
-- domain archive/restore/delete/retention changes
-- break-glass usage
+- user create, update, delete, and password reset
+- role or domain-assignment changes
+- API key create, update, and delete
+- ingest submissions and denials
+- dashboard create, update, share, ownership transfer, and delete
+- domain archive, restore, retention updates, and deletion
 
-## Login event capture
+Audit log endpoint:
 
-Capture when available:
+- `GET /api/v1/audit`
 
-- actor identity
-- timestamp
-- source IP
-- user-agent
-- success/failure
-
-## API event capture
-
-For API-key-authenticated requests, capture when available:
-
-- API key nickname
-- API key id
-- source IP
-- user-agent
-- endpoint/method
-- outcome
-- domain involved if relevant
+This endpoint is intended for `super-admin`.
 
 ## Logging guidance
 
-User-facing config levels:
+Configured log levels:
 
 - `VERBOSE`
 - `INFO`
 - `WARN`
 - `ERROR`
 
-Internally map `VERBOSE` to Python `DEBUG`.
-
-Do not log:
+Do not treat logs as a place to store secrets. In particular, avoid logging:
 
 - raw passwords
 - raw API keys
-- raw full message bodies by default
-- secrets embedded in config or environment
+- full message bodies by default
+- config secrets copied from the environment

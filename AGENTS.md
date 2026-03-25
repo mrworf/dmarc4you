@@ -4,7 +4,7 @@ This repository builds a **single-organization, self-hosted DMARC analysis platf
 
 ## How to work in this repo
 
-1. **Read before editing.** For any non-trivial task, read `docs/PRODUCT.md`, the relevant focused spec in `docs/`, and `docs/IMPLEMENTATION_PLAN.md` before changing code.
+1. **Read before editing.** For any non-trivial task, read `README.md`, the relevant operator-facing guide in `docs/`, and this file before changing code.
 2. **Plan first for multi-file work.** Prefer a small written plan before coding. Save plans under `.cursor/plans/` when they represent a real implementation step.
 3. **Build thin vertical slices.** Prefer end-to-end increments that include schema, backend service, API, tests, and minimal UI where applicable.
 4. **Do not invent policy.** If a requirement is ambiguous, preserve existing behavior and add a short TODO note instead of silently changing security or RBAC rules.
@@ -39,7 +39,7 @@ backend/
   services/
   policies/
   storage/
-frontend-next/
+frontend/
 cli/
 shared/
 tests/

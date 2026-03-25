@@ -1,278 +1,151 @@
 # Getting Started
 
-This guide covers installation, configuration, first login, and understanding user roles.
+This guide covers local installation, core configuration, first login, and the initial admin setup flow.
 
 ## Prerequisites
 
-- Python 3.12 or later
-- pip (Python package manager)
-- Node.js 22 or later
+- Python 3.12+
+- Node.js 22+
+- `pip`
 
-## Installation
+## Install locally
 
-1. Clone the repository:
+```bash
+git clone <repository-url>
+cd dmarc4you
 
-   ```bash
-   git clone <repository-url>
-   cd dmarc4you
-   ```
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 
-2. Create a virtual environment:
+cp config.example.yaml config.yaml
 
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # Linux/macOS
-   # or: .venv\Scripts\activate  # Windows
-   ```
+cd frontend
+npm install
+cd ..
+```
 
-3. Install dependencies:
+Start the backend:
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+python -m backend.main
+```
 
-4. Create a configuration file:
+Start the frontend in another terminal:
 
-   ```bash
-   cp config.example.yaml config.yaml
-   ```
+```bash
+cd frontend
+npm run dev
+```
 
-5. Edit `config.yaml` (see [Configuration](#configuration) below).
+Default local URLs:
 
-6. Install frontend dependencies:
-
-   ```bash
-   cd frontend-next
-   npm install
-   cd ..
-   ```
-
-7. Start the backend API:
-
-   ```bash
-   python -m backend.main
-   ```
-
-   The backend runs on `http://127.0.0.1:8000` by default.
-
-8. Start the frontend in another terminal:
-
-   ```bash
-   cd frontend-next
-   npm run dev
-   ```
-
-   The frontend runs on `http://127.0.0.1:3000` by default.
+- Frontend: `http://127.0.0.1:3000`
+- Backend API: `http://127.0.0.1:8000`
 
 ## Configuration
 
-Configuration is loaded from `config.yaml` (or the path in `DMARC_CONFIG` env var). All options can be overridden with environment variables.
+Config is loaded from `config.yaml` unless `DMARC_CONFIG` points somewhere else. `DMARC_*` environment variables override YAML values.
 
-| Option | Env Variable | Default | Description |
-|--------|--------------|---------|-------------|
-| `database.path` | `DMARC_DATABASE_PATH` | `data/dmarc.db` | SQLite database file path |
-| `log.level` | `DMARC_LOG_LEVEL` | `INFO` | Log level: `VERBOSE`, `INFO`, `WARN`, `ERROR` |
-| `auth.session_secret` | `DMARC_SESSION_SECRET` | `change-me-in-production` | Secret for signing session cookies |
+| Option | Env var | Default | Notes |
+| --- | --- | --- | --- |
+| `database.path` | `DMARC_DATABASE_PATH` | `data/dmarc.db` | SQLite file path |
+| `log.level` | `DMARC_LOG_LEVEL` | `INFO` | `VERBOSE`, `INFO`, `WARN`, `ERROR` |
+| `server.host` | `DMARC_SERVER_HOST` | `0.0.0.0` | Backend bind host |
+| `server.port` | `DMARC_SERVER_PORT` | `8000` | Backend bind port |
+| `auth.session_secret` | `DMARC_SESSION_SECRET` | `change-me-in-production` | Must be changed outside dev |
 | `auth.session_cookie_name` | `DMARC_SESSION_COOKIE` | `dmarc_session` | Session cookie name |
-| `auth.session_max_age_days` | `DMARC_SESSION_MAX_AGE_DAYS` | `7` | Session lifetime in days |
-| `archive.storage_path` | `DMARC_ARCHIVE_STORAGE_PATH` | `null` | Path for raw artifact archival (optional) |
+| `auth.session_max_age_days` | `DMARC_SESSION_MAX_AGE_DAYS` | `7` | Session lifetime |
+| `auth.session_cookie_secure` | `DMARC_SESSION_COOKIE_SECURE` | `false` | Set true behind HTTPS |
+| `auth.session_cookie_same_site` | `DMARC_SESSION_COOKIE_SAME_SITE` | `lax` | Browser session cookie policy |
+| `auth.csrf_cookie_same_site` | `DMARC_CSRF_COOKIE_SAME_SITE` | `strict` | Browser CSRF cookie policy |
+| `frontend.public_origin` | `DMARC_FRONTEND_PUBLIC_ORIGIN` | `null` | Set when frontend is served separately |
+| `api.public_url` | `DMARC_API_PUBLIC_URL` | `null` | Public backend URL for split-origin setups |
+| `cors.allowed_origins` | `DMARC_CORS_ALLOWED_ORIGINS` | empty | Optional split-origin browser allowlist |
+| `archive.storage_path` | `DMARC_ARCHIVE_STORAGE_PATH` | `null` | Optional raw artifact storage path |
 | `dns.nameservers` | `DMARC_DNS_NAMESERVERS` | empty | Optional PTR resolver override list |
-| `dns.timeout_seconds` | `DMARC_DNS_TIMEOUT_SECONDS` | `1.0` | Reverse DNS timeout in seconds |
-| `geoip.provider` | `DMARC_GEOIP_PROVIDER` | `none` | Offline GeoIP provider |
-| `geoip.database_path` | `DMARC_GEOIP_DATABASE_PATH` | `null` | Local MMDB path for GeoIP |
+| `dns.timeout_seconds` | `DMARC_DNS_TIMEOUT_SECONDS` | `5.0` | Reverse DNS timeout |
+| `dns.monitor_default_interval_seconds` | `DMARC_DNS_MONITOR_DEFAULT_INTERVAL_SECONDS` | `300` | DNS monitoring fallback interval |
+| `geoip.provider` | `DMARC_GEOIP_PROVIDER` | `none` | `none`, `dbip-lite-country`, `maxmind-geolite2-country` |
+| `geoip.database_path` | `DMARC_GEOIP_DATABASE_PATH` | `null` | Local MMDB file, typically under `data/` |
 
-### Production Configuration
+Recommended local GeoIP path examples:
 
-For production deployments:
+- `data/dbip-country-lite.mmdb`
+- `data/GeoLite2-Country.mmdb`
 
-1. **Change `session_secret`** to a secure random value:
+## First login
 
-   ```bash
-   python -c "import secrets; print(secrets.token_hex(32))"
-   ```
+On first startup the backend creates a bootstrap `super-admin` account:
 
-2. **Set up the database path** to a persistent location with proper backups.
+- Username: `admin`
+- Password: printed once to the backend console
 
-3. **Enable artifact archival** by setting `archive.storage_path` if you want to retain raw report files.
+Open the frontend, log in as `admin`, and save the printed password immediately.
 
-4. **Configure GeoIP** only if you want country enrichment. See [GeoIP Setup](GEOIP_SETUP.md).
-
-## First Login
-
-On first startup, the application creates a bootstrap admin account:
-
-- **Username:** `admin`
-- **Password:** Printed to stderr (console) on first boot only
-
-Example startup output:
-
-```
-Bootstrap admin password (save it; shown once): Kj8mNp2xQr4vL6wY
-INFO:     Started server process
-INFO:     Uvicorn running on http://0.0.0.0:8000
-```
-
-**Save this password immediately.** It is not stored and cannot be retrieved.
-
-### Logging In
-
-1. Open `http://127.0.0.1:3000` in your browser.
-2. Enter username `admin` and the bootstrap password.
-3. You are now logged in as a super-admin.
-
-### Password Recovery
-
-If the admin password is lost, use the break-glass CLI command (requires local access to config and database):
+If you lose the password, reset it locally:
 
 ```bash
 python -m cli reset-admin-password
-# or with explicit config path:
 python -m cli reset-admin-password /path/to/config.yaml
 ```
 
-This resets the `admin` user's password and prints the new password to stdout.
+## Roles and access
 
-## User Roles
+| Role | Main capabilities |
+| --- | --- |
+| `super-admin` | Access all domains, add/archive/restore/delete domains, manage retention, create any user, manage admin domain assignments, view audit log |
+| `admin` | Manage users up to `admin` within allowed scope, manage dashboards, create API keys |
+| `manager` | Create dashboards, edit owned dashboards, share dashboards where allowed |
+| `viewer` | Read-only dashboard and search access |
 
-The application has four roles with hierarchical permissions:
+Access rules that matter operationally:
 
-| Role | Description |
-|------|-------------|
-| **super-admin** | Full system access. Can manage all domains, users, and settings. |
-| **admin** | Domain-scoped administrator. Can manage users and dashboards within assigned domains. |
-| **manager** | Can create and share dashboards. Cannot perform admin tasks. |
-| **viewer** | Read-only access to assigned dashboards. |
+- `super-admin` always has access to all domains.
+- Archived domains are visible only to `super-admin`.
+- Dashboard access requires access to every domain attached to the dashboard.
+- API keys are domain-bound and scope-bound, not user-bound.
 
-### Role Permissions
+## Initial admin checklist
 
-| Capability | super-admin | admin | manager | viewer |
-|------------|:-----------:|:-----:|:-------:|:------:|
-| View all domains (including archived) | Y | | | |
-| Add/archive/restore/delete domains | Y | | | |
-| Configure domain retention | Y | | | |
-| Create users (any role) | Y | | | |
-| Create users (up to admin) | Y | Y | | |
-| Manage user domain assignments | Y | own domains | | |
-| Reset user passwords | Y | subordinates | | |
-| Delete users | Y | subordinates | | |
-| Create API keys | Y | Y | | |
-| View audit log | Y | | | |
-| Create dashboards | Y | Y | Y | |
-| Edit/delete own dashboards | Y | Y | Y | |
-| Share dashboards | Y | Y | Y | |
-| Transfer dashboard ownership | Y | Y | | |
-| View assigned dashboards | Y | Y | Y | Y |
-| Use search and filters | Y | Y | Y | Y |
-| Submit reports (UI) | Y | Y | Y | |
+1. Add your monitored domains in the UI.
+2. Create at least one API key with the `reports:ingest` scope.
+3. Create any additional users and assign domains as needed.
+4. Configure report submission using the API, CLI, or browser upload flow.
+5. Create dashboards for the teams that need access.
 
-### Domain Visibility
+## Useful URLs
 
-- **super-admin** sees all domains, including archived ones.
-- **Other roles** see only domains explicitly assigned to them, and only if active (not archived).
-- Dashboard access requires access to **all** domains in the dashboard's scope.
-
-## Initial Setup Checklist
-
-After first login as the bootstrap admin:
-
-1. **Add domains** — Navigate to Domains and add your monitored domains (e.g., `example.com`).
-
-2. **Create API keys** — Navigate to API Keys and create a key for report ingestion:
-   - Assign the key to one or more domains
-   - Grant the `reports:ingest` scope
-   - Use Edit later if you need to change nickname, description, or scopes
-   - Save the key secret (shown once)
-
-3. **Create users** — Navigate to Users to create accounts for your team:
-   - Choose appropriate roles
-   - Optionally fill in full name and email
-   - Assign domains as needed
-   - Share the generated password with each user
-
-4. **Configure report submission** — Set up your mail servers or scripts to send DMARC reports. See [Submitting Reports](SUBMITTING_REPORTS.md).
-
-5. **Create dashboards** — Navigate to Dashboards to create views for monitoring your DMARC data.
-
-## Application URLs
-
-| Path | Description |
-|------|-------------|
-| `/` | Redirect to the signed-in landing route |
-| `/login` | Login page |
+| Path | Purpose |
+| --- | --- |
+| `/login` | Sign in |
 | `/domains` | Domain management |
 | `/dashboards` | Dashboard list |
-| `/search` | Search aggregate/forensic reports |
-| `/upload` | Upload reports via browser |
-| `/ingest-jobs` | View ingest job history |
-| `/users` | User management (admin+) |
-| `/apikeys` | API key management (admin+) |
-| `/audit` | Audit log (super-admin only) |
+| `/search` | Aggregate and forensic search |
+| `/upload` | Browser upload |
+| `/ingest-jobs` | Ingest job history |
+| `/users` | User management |
+| `/apikeys` | API key management |
+| `/audit` | Audit log |
 
-## Next Steps
+## Seeded E2E environment
 
-- [Submitting Reports](SUBMITTING_REPORTS.md) — Learn how to send DMARC reports via API, CLI, or UI
-- [API v1 Specification](API_V1.md) — Full API reference
-- [Security and Audit](SECURITY_AND_AUDIT.md) — Security model and audit requirements
-
-## Seeded E2E Browser Environment
-
-Use this path when you want to run the `frontend-next` Playwright suite against a real seeded FastAPI backend instead of manually preparing data.
-
-Required tools:
-
-- Python 3.12+
-- Node.js 22+
-- project dependencies installed from `requirements.txt`
-- frontend dependencies installed in `frontend-next`
-- Playwright Chromium installed with `cd frontend-next && npx playwright install chromium`
-
-Seed/reset commands:
+For local browser verification against seeded data:
 
 ```bash
-# create or reseed the deterministic browser-test environment
-python -m cli seed-e2e config.e2e.yaml
-
-# remove the seeded database, archive data, and env summary files
-python -m cli seed-e2e config.e2e.yaml --cleanup
+bash scripts/run_seeded_e2e.sh
 ```
 
-The seed command writes:
+Prerequisites:
 
-- `.tmp/e2e/e2e.env` with the browser-harness environment variables
-- `.tmp/e2e/seed-summary.json` with IDs, URLs, credentials, and API key details for debugging
+- backend Python dependencies installed
+- frontend dependencies installed in `frontend`
+- Playwright Chromium installed with `cd frontend && npx playwright install chromium`
 
-Seeded credentials:
-
-| Role | Username | Password |
-|------|----------|----------|
-| super-admin | `admin` | `seed-super-admin-pass` |
-| admin | `e2e-admin` | `seed-admin-pass` |
-| manager | `e2e-manager` | `seed-manager-pass` |
-| viewer | `e2e-viewer` | `seed-viewer-pass` |
-
-Seeded environment URLs:
-
-- Frontend: `http://127.0.0.1:3001`
-- API: `http://127.0.0.1:8001`
-
-One-command local browser run:
-
-```bash
-cd frontend-next
-npm run test:e2e:seeded
-```
-
-That command:
-
-1. reseeds the SQLite database and archive storage using `config.e2e.yaml`
-2. starts FastAPI and Next.js locally on dedicated test ports (`127.0.0.1:8001` and `127.0.0.1:3001`)
-3. runs the full Playwright suite against the live services
-4. cleans up the seeded environment afterward
-
-If the run fails, inspect:
+Useful outputs:
 
 - `.tmp/e2e/backend.log`
 - `.tmp/e2e/frontend.log`
 - `.tmp/e2e/seed-summary.json`
-- `frontend-next/playwright-report/`
-- `frontend-next/test-results/`
+- `frontend/playwright-report/`
+- `frontend/test-results/`

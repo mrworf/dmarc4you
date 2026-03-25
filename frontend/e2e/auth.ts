@@ -56,15 +56,30 @@ export function getSeededCredentials(role: SeededRole) {
 export async function loginAsRole(page: Page, role: SeededRole) {
   const credentials = getSeededCredentials(role);
 
-  await page.goto("/login");
-  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.goto("/login");
+    await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
 
-  await page.getByLabel("Username").fill(credentials.username);
-  await page.getByLabel("Password").fill(credentials.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+    await page.getByLabel("Username").fill(credentials.username);
+    await page.getByLabel("Password").fill(credentials.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
 
-  await page.waitForURL("**/domains");
-  await expect(page.getByRole("heading", { name: "Domains" })).toBeVisible();
+    try {
+      await page.waitForURL("**/domains", { timeout: 10_000 });
+      await expect(page.getByRole("heading", { name: "Domains" })).toBeVisible();
+      return;
+    } catch (error) {
+      const fetchFailure = page.getByText("Failed to fetch", { exact: true });
+      if (attempt === 2) {
+        throw error;
+      }
+
+      if (await fetchFailure.count()) {
+        await page.waitForTimeout(500);
+        continue;
+      }
+    }
+  }
 }
 
 export async function loginAsSuperAdmin(page: Page) {

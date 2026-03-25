@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { hasSeededCredentials, loginAsRole, loginAsSuperAdmin } from "./auth";
 
-test.describe("frontend-next cutover role matrix", () => {
+test.describe("frontend cutover role matrix", () => {
   test("super-admin sees every migrated admin route", async ({ page }) => {
     await loginAsSuperAdmin(page);
 

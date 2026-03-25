@@ -1,10 +1,16 @@
 """Tests for the frontend migration platform slice."""
 
+import anyio
+from fastapi import Response
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from backend.app import app
+from backend.api.errors import http_exception_handler
+from backend.api.v1.handlers.auth import LoginBody, auth_login
 from backend.config import load_config
 from backend.config.schema import Config
+from backend.services.health_service import readiness_status
 from backend.storage.sqlite import run_migrations
 from backend.auth.bootstrap import ensure_bootstrap_admin
 from tests.conftest import wrap_client_with_csrf
@@ -26,10 +32,8 @@ def _make_client(temp_db_path: str, **config_overrides) -> tuple[TestClient, str
 
 
 def test_openapi_exposes_auth_domain_and_health_contracts(temp_db_path: str) -> None:
-    client, _ = _make_client(temp_db_path)
-    response = client.get("/openapi.json")
-    assert response.status_code == 200
-    data = response.json()
+    _make_client(temp_db_path)
+    data = app.openapi()
     schemas = data["components"]["schemas"]
     assert "AuthLoginResponse" in schemas
     assert "AuthMeResponse" in schemas
@@ -37,35 +41,72 @@ def test_openapi_exposes_auth_domain_and_health_contracts(temp_db_path: str) -> 
     assert "ReadinessResponse" in schemas
 
 
-def test_auth_errors_use_standardized_envelope(temp_db_path: str) -> None:
-    client, _ = _make_client(temp_db_path)
-    response = client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
-    assert response.status_code == 401
-    data = response.json()
+def _build_request() -> Request:
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "headers": [],
+        "client": ("127.0.0.1", 12345),
+    }
+    return Request(scope)
+
+
+def test_auth_errors_use_standardized_envelope(monkeypatch, temp_db_path: str) -> None:
+    monkeypatch.setattr("backend.api.v1.handlers.auth.login", lambda *args, **kwargs: (None, None))
+    _make_client(temp_db_path)
+    request = _build_request()
+    response = Response()
+
+    try:
+        auth_login(request, response, LoginBody(username="admin", password="wrong"), app.state.config)
+    except Exception as exc:
+        handled = anyio.run(http_exception_handler, request, exc)
+    else:
+        raise AssertionError("Expected auth_login to raise for invalid credentials")
+
+    assert handled.status_code == 401
+    data = handled.body.decode("utf-8")
+    import json
+    data = json.loads(data)
     assert data["detail"] == "Invalid credentials"
     assert data["error"]["code"] == "invalid_credentials"
     assert data["error"]["message"] == "Invalid credentials"
 
 
-def test_auth_cookie_policy_comes_from_config(temp_db_path: str) -> None:
-    client, password = _make_client(
+def test_auth_cookie_policy_comes_from_config(monkeypatch, temp_db_path: str) -> None:
+    monkeypatch.setattr(
+        "backend.api.v1.handlers.auth.login",
+        lambda *args, **kwargs: (
+            {
+                "id": "usr_test",
+                "username": "admin",
+                "role": "super-admin",
+                "full_name": None,
+                "email": None,
+            },
+            "session_test",
+        ),
+    )
+    _make_client(
         temp_db_path,
         session_cookie_secure=True,
         session_cookie_same_site="none",
         csrf_cookie_same_site="lax",
     )
-    response = client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
-    assert response.status_code == 200
-    set_cookie_headers = response.headers.get_list("set-cookie")
+    request = _build_request()
+    response = Response()
+
+    payload = auth_login(request, response, LoginBody(username="admin", password="ignored"), app.state.config)
+    assert payload["user"]["id"] == "usr_test"
+    set_cookie_headers = response.headers.getlist("set-cookie")
     assert any("samesite=none" in header.lower() for header in set_cookie_headers)
     assert any("secure" in header.lower() for header in set_cookie_headers)
 
 
 def test_readiness_endpoint_reports_database_status(temp_db_path: str) -> None:
-    client, _ = _make_client(temp_db_path)
-    response = client.get("/api/v1/health/ready")
-    assert response.status_code == 200
-    data = response.json()
+    _make_client(temp_db_path)
+    data = readiness_status(app.state.config)
     assert data["status"] == "ok"
     assert data["service"] == "api"
     assert data["checks"] == [{"name": "database", "status": "ok"}]

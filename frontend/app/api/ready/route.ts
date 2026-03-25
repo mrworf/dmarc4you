@@ -8,7 +8,7 @@ export async function GET() {
   return NextResponse.json(
     {
       status: "ok",
-      service: "frontend-next",
+      service: "frontend",
       frontend: {
         mode: getApiBaseUrl() ? "split-origin" : "same-origin",
       },

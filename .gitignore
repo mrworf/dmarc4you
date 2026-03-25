@@ -2,10 +2,10 @@ __pycache__
 venv
 debug.log
 data/
-frontend-next/node_modules/
-frontend-next/.next/
-frontend-next/test-results/
-frontend-next/playwright-report/
+frontend/node_modules/
+frontend/.next/
+frontend/test-results/
+frontend/playwright-report/
 plans.txt
 pw.txt
 data/*.db

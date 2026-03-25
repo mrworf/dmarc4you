@@ -6,6 +6,7 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
   fullyParallel: false,
+  workers: process.env.DMARC_E2E_USE_EXISTING_FRONTEND ? 1 : undefined,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI
     ? [["github"], ["html", { open: "never" }]]

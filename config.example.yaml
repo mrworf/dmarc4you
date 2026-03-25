@@ -82,5 +82,6 @@ geoip:
   provider: none
 
   # Local MMDB path for the configured provider.
+  # Recommended local path: data/dbip-country-lite.mmdb
   # Env: DMARC_GEOIP_DATABASE_PATH
   database_path: null

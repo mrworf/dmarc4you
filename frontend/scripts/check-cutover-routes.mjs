@@ -30,4 +30,4 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-console.log(`Verified ${requiredRoutes.length} migrated cutover routes in frontend-next/app.`);
+console.log(`Verified ${requiredRoutes.length} migrated cutover routes in frontend/app.`);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export the FastAPI OpenAPI contract subset used by frontend-next."""
+"""Export the FastAPI OpenAPI contract subset used by the frontend."""
 
 from __future__ import annotations
 

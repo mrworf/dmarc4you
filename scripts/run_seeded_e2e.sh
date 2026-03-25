@@ -54,7 +54,7 @@ FRONTEND_PORT="${DMARC_E2E_BASE_URL##*:}"
 BACKEND_PID=$!
 
 (
-  cd "${ROOT_DIR}/frontend-next"
+  cd "${ROOT_DIR}/frontend"
   npm run dev -- --hostname 127.0.0.1 --port "${FRONTEND_PORT}" >"${FRONTEND_LOG}" 2>&1
 ) &
 FRONTEND_PID=$!
@@ -79,5 +79,5 @@ while time.time()<deadline:
         time.sleep(1)
 raise SystemExit(1)' "${DMARC_E2E_BASE_URL}/login"
 
-cd "${ROOT_DIR}/frontend-next"
+cd "${ROOT_DIR}/frontend"
 npx playwright test "${PLAYWRIGHT_ARGS[@]}"

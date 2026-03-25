@@ -1,124 +1,86 @@
 # GeoIP Setup
 
-This application supports optional offline GeoIP country enrichment during ingest. When configured, aggregate and forensic records store country metadata derived from the source IP.
+DMARCWatch can enrich report records with country data during ingest using a local MMDB file. GeoIP is optional and fully offline once you have the database file.
 
 ## Supported providers
 
 - `dbip-lite-country`
 - `maxmind-geolite2-country`
 
-Both providers use a local MMDB database file. The application does not download or update these files automatically.
+The application does not download or update these databases for you.
+
+## Recommended local layout
+
+Store MMDB files under `data/`.
+
+Examples:
+
+- `data/dbip-country-lite.mmdb`
+- `data/GeoLite2-Country.mmdb`
 
 ## Configuration
 
-Set the provider and database path in `config.yaml`:
+Example using DB-IP Lite:
 
 ```yaml
 geoip:
   provider: dbip-lite-country
-  database_path: /opt/dmarc4you/geoip/dbip-country-lite.mmdb
+  database_path: data/dbip-country-lite.mmdb
 ```
 
-Or:
+Example using MaxMind GeoLite2 Country:
 
 ```yaml
 geoip:
   provider: maxmind-geolite2-country
-  database_path: /opt/dmarc4you/geoip/GeoLite2-Country.mmdb
+  database_path: data/GeoLite2-Country.mmdb
 ```
 
-If `provider` is `none`, GeoIP enrichment is disabled.
+Set `provider: none` to disable GeoIP enrichment.
 
-## Option 1: DB-IP Lite Country
-
-DB-IP Lite provides a free country-level database. Review their current download and attribution terms before using it in production.
-
-Typical setup flow:
+## DB-IP Lite example
 
 ```bash
-mkdir -p /opt/dmarc4you/geoip
-cd /opt/dmarc4you/geoip
-
-# Download the current MMDB archive from DB-IP
-curl -LO https://download.db-ip.com/free/dbip-country-lite-latest.mmdb.gz
-gunzip dbip-country-lite-latest.mmdb.gz
-mv dbip-country-lite-latest.mmdb dbip-country-lite.mmdb
+mkdir -p data
+curl -L https://download.db-ip.com/free/dbip-country-lite-latest.mmdb.gz \
+  -o data/dbip-country-lite.mmdb.gz
+gunzip -f data/dbip-country-lite.mmdb.gz
+mv data/dbip-country-lite-latest.mmdb data/dbip-country-lite.mmdb
 ```
 
-Then configure:
+Review DB-IP's current terms before using it in production.
 
-```yaml
-geoip:
-  provider: dbip-lite-country
-  database_path: /opt/dmarc4you/geoip/dbip-country-lite.mmdb
-```
-
-## Option 2: MaxMind GeoLite2 Country
-
-MaxMind GeoLite2 requires a free MaxMind account and acceptance of their license terms.
-
-Typical setup flow:
+## MaxMind GeoLite2 example
 
 ```bash
-mkdir -p /opt/dmarc4you/geoip
-cd /opt/dmarc4you/geoip
-
-# Download the GeoLite2 Country archive from MaxMind using your account workflow
+mkdir -p data
 tar -xzf GeoLite2-Country_*.tar.gz
 find . -name 'GeoLite2-Country.mmdb' -print
-cp GeoLite2-Country_*/GeoLite2-Country.mmdb /opt/dmarc4you/geoip/GeoLite2-Country.mmdb
+cp GeoLite2-Country_*/GeoLite2-Country.mmdb data/GeoLite2-Country.mmdb
 ```
 
-Then configure:
+MaxMind requires its own account and license workflow.
 
-```yaml
-geoip:
-  provider: maxmind-geolite2-country
-  database_path: /opt/dmarc4you/geoip/GeoLite2-Country.mmdb
-```
+## Verify it works
 
-## Python dependencies
-
-GeoIP lookups require the optional MMDB reader dependency declared in `requirements.txt`.
-
-If you use a virtual environment:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-## Verification
-
-1. Configure `geoip.provider` and `geoip.database_path`.
-2. Restart the application.
-3. Ingest a report containing a source IP that resolves to a known country.
-4. Open the report detail or dashboard/search results and confirm `country_code` / `country_name` are populated.
+1. Set `geoip.provider` and `geoip.database_path`.
+2. Restart the backend.
+3. Ingest a report with a routable source IP.
+4. Check search or report detail output for populated `country_code`, `country_name`, and `geo_provider` fields.
 
 ## Troubleshooting
 
-### Country fields stay empty
+If country fields stay empty, verify:
 
-Check:
-
-- `geoip.provider` is not `none`
+- the provider is not `none`
 - `geoip.database_path` points to the actual `.mmdb` file
-- the configured provider matches the database you downloaded
-- the optional Python dependencies were installed successfully
+- the file is readable by the backend process
+- the provider matches the MMDB you downloaded
 
-### The file path looks correct but still does not work
-
-Verify the application process can read the MMDB file:
+Quick check:
 
 ```bash
-ls -l /opt/dmarc4you/geoip
+ls -l data/*.mmdb
 ```
 
-### Ingest fails when GeoIP is misconfigured
-
-GeoIP lookup failures should not reject ingest. If reports fail, inspect the ingest job item status and application logs for a different root cause.
-
-### Reverse DNS works but GeoIP does not
-
-Reverse DNS and GeoIP are separate features. Reverse DNS uses DNS resolvers; GeoIP uses the local MMDB file only.
+GeoIP lookup failures do not reject ingest on their own. If ingest fails, inspect the job result or backend logs for the real cause.
