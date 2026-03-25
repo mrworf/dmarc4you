@@ -1,14 +1,52 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 import { isDeepStrictEqual } from "node:util";
 
-const pythonExecutable = process.env.DMARC_CONTRACT_PYTHON ?? "../.venv/bin/python";
 const exportScript = new URL("./export_openapi_contracts.py", import.meta.url);
+const frontendRoot = process.cwd();
+
+function resolvePythonExecutable() {
+  if (process.env.DMARC_CONTRACT_PYTHON) {
+    return process.env.DMARC_CONTRACT_PYTHON;
+  }
+
+  const candidates = [
+    path.resolve(frontendRoot, "../.venv/bin/python"),
+    path.resolve(frontendRoot, "../venv/bin/python"),
+    "python3",
+    "python",
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate.includes(path.sep)) {
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+      continue;
+    }
+
+    return candidate;
+  }
+
+  return "python3";
+}
+
+const pythonExecutable = resolvePythonExecutable();
 
 const pythonResult = spawnSync(pythonExecutable, [exportScript.pathname], {
   cwd: process.cwd(),
   encoding: "utf8",
 });
+
+if (pythonResult.error) {
+  const error = pythonResult.error;
+  process.stderr.write(
+    `Contract fixture export failed while starting ${pythonExecutable}: ${error.code ?? "UNKNOWN"} ${error.message}\n`,
+  );
+  process.exit(pythonResult.status ?? 1);
+}
 
 if (pythonResult.status !== 0) {
   process.stderr.write(pythonResult.stderr || pythonResult.stdout || "Contract fixture export failed.\n");

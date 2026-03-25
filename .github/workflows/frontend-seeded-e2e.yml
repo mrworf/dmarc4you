@@ -40,6 +40,8 @@ jobs:
 
       - name: Check API contracts
         working-directory: frontend
+        env:
+          DMARC_CONTRACT_PYTHON: python3
         run: npm run contracts:check
 
       - name: Build frontend
