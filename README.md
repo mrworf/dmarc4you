@@ -47,6 +47,12 @@ npm run dev
 
 The backend listens on `http://127.0.0.1:8000` by default and the frontend on `http://127.0.0.1:3000`. On first startup, the bootstrap `admin` password is printed once to the backend console.
 
+For contributor and test tooling, also install:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
 ## Verification
 
 Before opening a PR, run the dependency audit gate locally:
@@ -56,6 +62,7 @@ bash scripts/check_dependency_audits.sh
 ```
 
 This checks frontend production dependencies with `npm audit` and backend Python dependencies with `pip-audit`, matching the CI security workflow.
+The Python audit targets runtime dependencies from `requirements.txt`; test-only packages live in `requirements-dev.txt`.
 
 ## Configuration highlights
 

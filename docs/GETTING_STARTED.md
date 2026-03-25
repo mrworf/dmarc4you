@@ -25,6 +25,12 @@ npm install
 cd ..
 ```
 
+For contributor and test tooling, install the dev requirements too:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
 Start the backend:
 
 ```bash
@@ -139,6 +145,7 @@ bash scripts/run_seeded_e2e.sh
 Prerequisites:
 
 - backend Python dependencies installed
+- backend dev/test Python dependencies installed
 - frontend dependencies installed in `frontend`
 - Playwright Chromium installed with `cd frontend && npx playwright install chromium`
 

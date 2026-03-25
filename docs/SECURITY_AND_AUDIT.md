@@ -85,6 +85,8 @@ The repository enforces dependency vulnerability checks in CI for both shipped d
 - frontend production dependencies via `npm audit --omit=dev --audit-level=moderate`
 - backend Python dependencies via `pip-audit -r requirements.txt`
 
+Python test-only packages are intentionally kept out of `requirements.txt` and belong in `requirements-dev.txt` so the audit gate matches shipped/runtime dependencies.
+
 Run the same gate locally before pushing changes:
 
 ```bash
