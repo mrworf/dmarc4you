@@ -1,4 +1,9 @@
 import type { ApiErrorResponse } from "@/lib/api/types";
+import {
+  getRuntimeApiBaseUrl,
+  getRuntimeCsrfCookieName,
+  getRuntimeRequestIdHeaderName,
+} from "@/lib/runtime-config";
 
 type RequestOptions = RequestInit & {
   skipCsrf?: boolean;
@@ -42,11 +47,11 @@ function getCookieValue(name: string): string {
 }
 
 function getApiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
+  return getRuntimeApiBaseUrl();
 }
 
 function getRequestIdHeaderName(): string {
-  return process.env.NEXT_PUBLIC_REQUEST_ID_HEADER_NAME ?? "X-Request-ID";
+  return getRuntimeRequestIdHeaderName();
 }
 
 function createRequestId(): string {
@@ -80,7 +85,7 @@ async function performRequest(path: string, options: RequestOptions = {}): Promi
   requestHeaders.set(requestIdHeaderName, requestId);
 
   if (!skipCsrf && method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
-    const csrf = getCookieValue(process.env.NEXT_PUBLIC_CSRF_COOKIE_NAME ?? "dmarc_csrf");
+    const csrf = getCookieValue(getRuntimeCsrfCookieName());
     if (csrf) {
       requestHeaders.set("X-CSRF-Token", csrf);
     }

@@ -1,0 +1,64 @@
+services:
+  api:
+    image: ghcr.io/${GHCR_OWNER:-ha}/dmarc4you-backend:${DMARC_IMAGE_TAG:-main}
+    restart: unless-stopped
+    env_file:
+      - compose.env
+    environment:
+      DMARC_DATABASE_PATH: /app/data/dmarc.db
+      DMARC_ARCHIVE_STORAGE_PATH: ${DMARC_ARCHIVE_STORAGE_PATH:-}
+      DMARC_GEOIP_DATABASE_PATH: ${DMARC_GEOIP_DATABASE_PATH:-}
+    ports:
+      - "${DMARC_API_PORT:-8000}:8000"
+    volumes:
+      # Uncomment these bind mounts if you prefer host directories over named volumes.
+      # - ./data:/app/data
+      # - ./archive:/app/archive
+      - dmarc_data:/app/data
+      - dmarc_archive:/app/archive
+      - ${DMARC_GEOIP_BIND_PATH:-./data/geoip}:/app/geoip:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import json
+          import urllib.request
+          response = urllib.request.urlopen("http://127.0.0.1:8000/api/v1/health/ready", timeout=5)
+          payload = json.load(response)
+          raise SystemExit(0 if payload.get("status") == "ok" else 1)
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    image: ghcr.io/${GHCR_OWNER:-ha}/dmarc4you-frontend:${DMARC_IMAGE_TAG:-main}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      NEXT_PUBLIC_CSRF_COOKIE_NAME: ${NEXT_PUBLIC_CSRF_COOKIE_NAME:-dmarc_csrf}
+      NEXT_PUBLIC_REQUEST_ID_HEADER_NAME: ${NEXT_PUBLIC_REQUEST_ID_HEADER_NAME:-X-Request-ID}
+    ports:
+      - "${DMARC_WEB_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          fetch("http://127.0.0.1:3000/api/ready", { cache: "no-store" })
+            .then((response) => response.ok ? process.exit(0) : process.exit(1))
+            .catch(() => process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  dmarc_data:
+  dmarc_archive:

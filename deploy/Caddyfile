@@ -1,0 +1,7 @@
+{$DMARC_FRONTEND_HOST} {
+	reverse_proxy web:3000
+}
+
+{$DMARC_API_HOST} {
+	reverse_proxy api:8000
+}

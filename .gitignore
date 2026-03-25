@@ -11,4 +11,5 @@ pw.txt
 data/*.db
 .tmp/
 config.yaml
+compose.env
 *.mmdb

@@ -1,5 +1,11 @@
 # DMARCWatch
 
+[![dependency-audit](https://github.com/mrworf/dmarc4you/actions/workflows/dependency-audit.yml/badge.svg)](https://github.com/mrworf/dmarc4you/actions/workflows/dependency-audit.yml)
+[![frontend-seeded-e2e](https://github.com/mrworf/dmarc4you/actions/workflows/frontend-seeded-e2e.yml/badge.svg)](https://github.com/mrworf/dmarc4you/actions/workflows/frontend-seeded-e2e.yml)
+[![docker-publish](https://github.com/mrworf/dmarc4you/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/mrworf/dmarc4you/actions/workflows/docker-publish.yml)
+[![ghcr-backend](https://img.shields.io/badge/GHCR-backend%20image-2ea44f?logo=docker&logoColor=white)](https://github.com/mrworf/dmarc4you/pkgs/container/dmarc4you-backend)
+[![ghcr-frontend](https://img.shields.io/badge/GHCR-frontend%20image-2ea44f?logo=docker&logoColor=white)](https://github.com/mrworf/dmarc4you/pkgs/container/dmarc4you-frontend)
+
 DMARCWatch is a self-hosted DMARC analysis platform with a FastAPI backend, a Next.js frontend, SQLite storage in v1, asynchronous ingest jobs, domain-scoped RBAC, and audit logging.
 
 > ℹ️ **NOTE** 
@@ -53,6 +59,34 @@ For contributor and test tooling, also install:
 pip install -r requirements-dev.txt
 ```
 
+## Docker quick start
+
+Prebuilt images are published to GitHub Container Registry:
+
+- `ghcr.io/mrworf/dmarc4you-backend`
+- `ghcr.io/mrworf/dmarc4you-frontend`
+
+To run the stack with Docker Compose:
+
+```bash
+cp compose.env.example compose.env
+docker compose --env-file compose.env up -d
+```
+
+The base stack publishes:
+
+- frontend on `http://127.0.0.1:3000`
+- backend API on `http://127.0.0.1:8000`
+
+Important notes:
+
+- Set a real `DMARC_SESSION_SECRET` in `compose.env` before exposing the stack outside local development.
+- The frontend image reads `NEXT_PUBLIC_API_BASE_URL` at runtime so the same GHCR image can be reused across environments.
+- SQLite data persists in the `dmarc_data` volume. Optional raw artifact archival persists in the `dmarc_archive` volume.
+- If you prefer bind mounts, `compose.yaml` includes commented examples for `./data:/app/data` and `./archive:/app/archive`.
+- Optional offline GeoIP databases can be mounted from `./data/geoip` into `/app/geoip`.
+- For HTTPS or a friendlier public entrypoint, start the optional Caddy layer with `docker compose --env-file compose.env -f compose.yaml -f compose.override.proxy.yaml up -d` and set `DMARC_FRONTEND_HOST` / `DMARC_API_HOST` in `compose.env`.
+
 ## Verification
 
 Before opening a PR, run the dependency audit gate locally:
@@ -88,6 +122,7 @@ geoip:
 Notes:
 
 - `DMARC_*` environment variables can override YAML config values.
+- Container deployments can use `compose.env` without a `config.yaml` file.
 - Store local GeoIP MMDB files under `data/`, for example `data/dbip-country-lite.mmdb`.
 - `archive.storage_path` is optional. Leave it unset to disable raw artifact archival.
 

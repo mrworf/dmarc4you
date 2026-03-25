@@ -49,9 +49,54 @@ Default local URLs:
 - Frontend: `http://127.0.0.1:3000`
 - Backend API: `http://127.0.0.1:8000`
 
+## Run with Docker Compose
+
+Prebuilt images are published to GitHub Container Registry:
+
+- `ghcr.io/mrworf/dmarc4you-backend`
+- `ghcr.io/mrworf/dmarc4you-frontend`
+
+Start from the repository root:
+
+```bash
+cp compose.env.example compose.env
+docker compose --env-file compose.env up -d
+```
+
+Default Docker URLs:
+
+- Frontend: `http://127.0.0.1:3000`
+- Backend API: `http://127.0.0.1:8000`
+
+The compose stack uses:
+
+- `dmarc_data` volume for SQLite at `/app/data/dmarc.db`
+- `dmarc_archive` volume for optional artifact archival at `/app/archive`
+- `./data/geoip` bind mount for optional MMDB files at `/app/geoip`
+- commented bind-mount examples in `compose.yaml` if you prefer `./data` and `./archive` on the host
+
+Before exposing the stack beyond local testing:
+
+- set `DMARC_SESSION_SECRET` in `compose.env`
+- set `DMARC_FRONTEND_PUBLIC_ORIGIN`, `DMARC_CORS_ALLOWED_ORIGINS`, and `DMARC_API_PUBLIC_URL` to public URLs
+- set `DMARC_SESSION_COOKIE_SECURE=true` when running behind HTTPS
+
+If you want a bundled reverse proxy for local HTTPS or a cleaner public edge, use:
+
+```bash
+docker compose --env-file compose.env -f compose.yaml -f compose.override.proxy.yaml up -d
+```
+
+Then set:
+
+- `DMARC_FRONTEND_HOST` for the frontend host Caddy should serve
+- `DMARC_API_HOST` for the API host Caddy should serve
+
 ## Configuration
 
 Config is loaded from `config.yaml` unless `DMARC_CONFIG` points somewhere else. `DMARC_*` environment variables override YAML values.
+
+For container deployments, `compose.env` is usually enough and `config.yaml` can be omitted.
 
 | Option | Env var | Default | Notes |
 | --- | --- | --- | --- |
