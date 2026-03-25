@@ -77,3 +77,18 @@ Do not treat logs as a place to store secrets. In particular, avoid logging:
 - raw API keys
 - full message bodies by default
 - config secrets copied from the environment
+
+## Dependency audits
+
+The repository enforces dependency vulnerability checks in CI for both shipped dependency sets:
+
+- frontend production dependencies via `npm audit --omit=dev --audit-level=moderate`
+- backend Python dependencies via `pip-audit -r requirements.txt`
+
+Run the same gate locally before pushing changes:
+
+```bash
+bash scripts/check_dependency_audits.sh
+```
+
+This is a CI security gate rather than a unit test. It is intended to fail when known moderate-or-higher vulnerabilities are present in committed dependencies.
