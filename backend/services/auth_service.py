@@ -1,11 +1,13 @@
 """Auth service: login, logout, current user lookup, and self profile updates."""
 
 import re
+import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from backend.config.schema import Config
-from backend.auth.password import verify_password
-from backend.auth.session import create_session, get_session_user_id, invalidate_session
+from backend.auth.password import hash_password, validate_new_password, verify_password
+from backend.auth.session import create_session, get_session_user_id, invalidate_session, invalidate_user_sessions
 from backend.auth.user_lookup import get_user_by_id, get_user_by_username
 from backend.auth.audit import (
     write_login_event,
@@ -18,6 +20,27 @@ from backend.storage.sqlite import get_connection
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 ROLE_SUPER_ADMIN = "super-admin"
+ACTION_PASSWORD_CHANGE = "password_changed"
+
+
+def _write_password_change_event(
+    database_path: str,
+    actor_user_id: str,
+    summary: str,
+) -> None:
+    event_id = f"aud_{uuid.uuid4().hex[:16]}"
+    timestamp = datetime.now(timezone.utc).isoformat()
+    conn = get_connection(database_path)
+    try:
+        conn.execute(
+            """INSERT INTO audit_log (id, timestamp, actor_type, actor_user_id, actor_api_key_id,
+               action_type, outcome, source_ip, user_agent, summary, metadata_json)
+               VALUES (?, ?, 'user', ?, NULL, ?, 'success', NULL, NULL, ?, NULL)""",
+            (event_id, timestamp, actor_user_id, ACTION_PASSWORD_CHANGE, summary),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def validate_username(username: str) -> bool:
@@ -80,6 +103,7 @@ def login(
         "role": user["role"],
         "full_name": user.get("full_name"),
         "email": user.get("email"),
+        "must_change_password": bool(user.get("must_change_password")),
     }, session_id
 
 
@@ -108,6 +132,7 @@ def me_response_user(config: Config, user: dict[str, Any]) -> dict[str, Any]:
         "user": user,
         "all_domains": all_domains,
         "domain_ids": domain_ids,
+        "password_change_required": bool(user.get("must_change_password")),
     }
 
 
@@ -137,3 +162,39 @@ def update_own_profile(
         return current_user
 
     return updated_user
+
+
+def change_own_password(
+    config: Config,
+    current_user: dict[str, Any],
+    *,
+    current_password: str,
+    new_password: str,
+) -> str:
+    """Change the signed-in user's password and invalidate all of their sessions."""
+    user = get_user_by_username(config.database_path, current_user["username"])
+    if not user or not verify_password(current_password, user["password_hash"]):
+        return "invalid_current_password"
+
+    validation_error = validate_new_password(new_password)
+    if validation_error:
+        return validation_error
+
+    if verify_password(new_password, user["password_hash"]):
+        return "password_reuse"
+
+    conn = get_connection(config.database_path)
+    try:
+        conn.execute(
+            """UPDATE users
+               SET password_hash = ?, must_change_password = 0, password_changed_at = ?
+               WHERE id = ? AND disabled_at IS NULL""",
+            (hash_password(new_password), datetime.now(timezone.utc).isoformat(), current_user["id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    invalidate_user_sessions(config.database_path, current_user["id"])
+    _write_password_change_event(config.database_path, current_user["id"], "changed own password")
+    return "ok"

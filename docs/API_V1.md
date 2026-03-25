@@ -12,6 +12,7 @@ Session endpoints:
 - `POST /auth/logout`
 - `GET /auth/me`
 - `PUT /auth/me`
+- `PUT /auth/password`
 
 API key authentication:
 
@@ -34,6 +35,7 @@ API key authentication:
 | `POST` | `/auth/logout` | End the current browser session |
 | `GET` | `/auth/me` | Return the current user plus domain visibility |
 | `PUT` | `/auth/me` | Update the current user profile fields |
+| `PUT` | `/auth/password` | Change the current user password and force re-login |
 
 Example login body:
 
@@ -43,6 +45,26 @@ Example login body:
   "password": "secret"
 }
 ```
+
+Example login response fields now include:
+
+- `user`
+- `password_change_required`
+
+Password change request:
+
+```json
+{
+  "current_password": "old secret",
+  "new_password": "correct horse battery staple"
+}
+```
+
+Notes:
+
+- generated passwords require a change at next sign-in
+- password changes invalidate all sessions for that user
+- new passwords must be 12-128 characters
 
 ## Domains and domain maintenance
 

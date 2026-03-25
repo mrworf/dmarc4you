@@ -131,8 +131,9 @@ On first startup the backend creates a bootstrap `super-admin` account:
 
 - Username: `admin`
 - Password: printed once to the backend console
+- First sign-in: requires choosing a new password before the app unlocks
 
-Open the frontend, log in as `admin`, and save the printed password immediately.
+Open the frontend, log in as `admin`, and change the printed password immediately.
 
 If you lose the password, reset it locally:
 
@@ -140,6 +141,8 @@ If you lose the password, reset it locally:
 python -m cli reset-admin-password
 python -m cli reset-admin-password /path/to/config.yaml
 ```
+
+Any generated password, including this break-glass reset, is temporary and must be changed at the next sign-in.
 
 ## Roles and access
 

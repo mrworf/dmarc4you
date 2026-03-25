@@ -39,6 +39,7 @@ def test_login_success_returns_user_and_sets_cookie(auth_app_client) -> None:
     assert data["user"]["username"] == "admin"
     assert data["user"]["role"] == "super-admin"
     assert "id" in data["user"]
+    assert data["password_change_required"] is True
     assert "dmarc_session" in response.cookies
 
 
@@ -80,6 +81,7 @@ def test_me_with_valid_session_returns_user_and_domain_visibility(auth_app_clien
     assert data["user"]["role"] == "super-admin"
     assert data["all_domains"] is True
     assert "domain_ids" in data
+    assert data["password_change_required"] is True
 
 
 def test_me_without_session_returns_401(auth_app_client) -> None:
@@ -116,6 +118,62 @@ def test_update_me_updates_optional_profile_fields(auth_app_client) -> None:
     data = response.json()
     assert data["user"]["full_name"] == "Updated Admin"
     assert data["user"]["email"] == "updated@example.com"
+
+
+def test_change_password_requires_current_password(auth_app_client) -> None:
+    client, password = auth_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    response = client.put(
+        "/api/v1/auth/password",
+        json={"current_password": "wrong-password", "new_password": "correct horse battery staple"},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_current_password"
+
+
+def test_change_password_rejects_short_password(auth_app_client) -> None:
+    client, password = auth_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    response = client.put(
+        "/api/v1/auth/password",
+        json={"current_password": password, "new_password": "too short"},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "password_policy_violation"
+
+
+def test_change_password_rejects_reuse(auth_app_client) -> None:
+    client, password = auth_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    response = client.put(
+        "/api/v1/auth/password",
+        json={"current_password": password, "new_password": password},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "password_reuse"
+
+
+def test_change_password_clears_flag_invalidates_session_and_requires_new_login(auth_app_client) -> None:
+    client, password = auth_app_client
+    client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    new_password = "correct horse battery staple"
+
+    response = client.put(
+        "/api/v1/auth/password",
+        json={"current_password": password, "new_password": new_password},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"password_changed": True, "reauth_required": True}
+
+    me_response = client.get("/api/v1/auth/me")
+    assert me_response.status_code == 401
+
+    old_login = client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    assert old_login.status_code == 401
+
+    new_login = client.post("/api/v1/auth/login", json={"username": "admin", "password": new_password})
+    assert new_login.status_code == 200
+    assert new_login.json()["password_change_required"] is False
 
 
 def test_audit_has_login_event(auth_app_client, temp_db_path: str) -> None:

@@ -7,7 +7,14 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "re
 
 import { apiClient, ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/context";
-import type { AuthMeResponse, DomainsResponse, UpdateProfileBody, UserRole } from "@/lib/api/types";
+import type {
+  AuthMeResponse,
+  DomainsResponse,
+  UpdatePasswordBody,
+  UpdatePasswordResponse,
+  UpdateProfileBody,
+  UserRole,
+} from "@/lib/api/types";
 
 type AppShellProps = {
   title: ReactNode;
@@ -36,11 +43,14 @@ const navItems: NavItem[] = [
 export function AppShell({ title, description, children, actions }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { allDomains, domainIds, logout, refresh, user } = useAuth();
+  const { allDomains, clearAuth, domainIds, logout, refresh, user } = useAuth();
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   async function handleLogout() {
     await logout();
@@ -54,6 +64,9 @@ export function AppShell({ title, description, children, actions }: AppShellProp
 
     setFullName(user?.full_name ?? "");
     setEmail(user?.email ?? "");
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -84,6 +97,15 @@ export function AppShell({ title, description, children, actions }: AppShellProp
     },
   });
 
+  const updatePassword = useMutation({
+    mutationFn: (body: UpdatePasswordBody) => apiClient.put<UpdatePasswordResponse>("/api/v1/auth/password", body),
+    onSuccess: () => {
+      clearAuth();
+      setIsProfileOpen(false);
+      router.replace("/login?passwordChanged=1");
+    },
+  });
+
   const visibleDomainNames = useMemo(() => {
     if (allDomains) {
       return [];
@@ -103,9 +125,31 @@ export function AppShell({ title, description, children, actions }: AppShellProp
     });
   }
 
+  async function handlePasswordSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (newPassword.length < 12) {
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      return;
+    }
+    await updatePassword.mutateAsync({
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+  }
+
   const visibleItems = navItems.filter((item) => !item.roles || (user && item.roles.includes(user.role)));
   const profileName = user?.full_name?.trim() || user?.username || "Account";
   const profileError = updateProfile.error instanceof ApiError ? updateProfile.error.message : null;
+  const passwordError =
+    newPassword && confirmPassword && newPassword !== confirmPassword
+      ? "Passwords do not match"
+      : updatePassword.error instanceof ApiError
+        ? updatePassword.error.message
+        : newPassword && newPassword.length > 0 && newPassword.length < 12
+          ? "Password must be at least 12 characters"
+          : null;
 
   return (
     <main className="app-frame app-frame-app app-shell-layout">
@@ -183,59 +227,117 @@ export function AppShell({ title, description, children, actions }: AppShellProp
                 ×
               </button>
             </div>
-            <form className="stack" onSubmit={handleProfileSave}>
-              <div className="detail-grid">
-                <label className="field-label detail-card detail-card-wide">
-                  Full name
-                  <input className="field-input" onChange={(event) => setFullName(event.target.value)} value={fullName} />
-                </label>
-                <label className="field-label detail-card detail-card-wide">
-                  Email
-                  <input className="field-input" onChange={(event) => setEmail(event.target.value)} type="email" value={email} />
-                </label>
-                <article className="detail-card">
-                  <p className="stat-label">Role</p>
-                  <strong>{user.role}</strong>
-                </article>
-                <article className="detail-card">
-                  <p className="stat-label">Username</p>
-                  <strong>@{user.username}</strong>
-                </article>
-                {!allDomains ? (
-                  <article className="detail-card detail-card-wide">
-                    <p className="stat-label">Domains</p>
-                    {profileDomainsQuery.isLoading ? <span className="status-text">Loading domains...</span> : null}
-                    {profileDomainsQuery.error ? (
-                      <span className="error-text">
-                        {profileDomainsQuery.error instanceof Error ? profileDomainsQuery.error.message : "Failed to load domains"}
-                      </span>
-                    ) : null}
-                    {!profileDomainsQuery.isLoading && !profileDomainsQuery.error ? (
-                      visibleDomainNames.length ? (
-                        <div className="pill-row profile-domain-list">
-                          {visibleDomainNames.map((domainName) => (
-                            <span className="pill" key={domainName}>
-                              {domainName}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="status-text">No domains assigned.</span>
-                      )
-                    ) : null}
+            <div className="stack">
+              <form className="stack" onSubmit={handleProfileSave}>
+                <div className="detail-grid">
+                  <label className="field-label detail-card detail-card-wide">
+                    Full name
+                    <input className="field-input" onChange={(event) => setFullName(event.target.value)} value={fullName} />
+                  </label>
+                  <label className="field-label detail-card detail-card-wide">
+                    Email
+                    <input className="field-input" onChange={(event) => setEmail(event.target.value)} type="email" value={email} />
+                  </label>
+                  <article className="detail-card">
+                    <p className="stat-label">Role</p>
+                    <strong>{user.role}</strong>
                   </article>
-                ) : null}
-              </div>
-              {profileError ? <p className="error-text">{profileError}</p> : null}
-              <div className="dialog-actions">
-                <button className="button-secondary" onClick={() => setIsProfileOpen(false)} type="button">
-                  Cancel
-                </button>
-                <button className="button-primary" disabled={updateProfile.isPending} type="submit">
-                  {updateProfile.isPending ? "Saving..." : "Save profile"}
-                </button>
-              </div>
-            </form>
+                  <article className="detail-card">
+                    <p className="stat-label">Username</p>
+                    <strong>@{user.username}</strong>
+                  </article>
+                  {!allDomains ? (
+                    <article className="detail-card detail-card-wide">
+                      <p className="stat-label">Domains</p>
+                      {profileDomainsQuery.isLoading ? <span className="status-text">Loading domains...</span> : null}
+                      {profileDomainsQuery.error ? (
+                        <span className="error-text">
+                          {profileDomainsQuery.error instanceof Error ? profileDomainsQuery.error.message : "Failed to load domains"}
+                        </span>
+                      ) : null}
+                      {!profileDomainsQuery.isLoading && !profileDomainsQuery.error ? (
+                        visibleDomainNames.length ? (
+                          <div className="pill-row profile-domain-list">
+                            {visibleDomainNames.map((domainName) => (
+                              <span className="pill" key={domainName}>
+                                {domainName}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="status-text">No domains assigned.</span>
+                        )
+                      ) : null}
+                    </article>
+                  ) : null}
+                </div>
+                {profileError ? <p className="error-text">{profileError}</p> : null}
+                <div className="dialog-actions">
+                  <button className="button-secondary" onClick={() => setIsProfileOpen(false)} type="button">
+                    Cancel
+                  </button>
+                  <button className="button-primary" disabled={updateProfile.isPending} type="submit">
+                    {updateProfile.isPending ? "Saving..." : "Save profile"}
+                  </button>
+                </div>
+              </form>
+              <form className="stack" onSubmit={handlePasswordSave}>
+                <div className="modal-header" style={{ padding: 0, border: 0 }}>
+                  <div className="stack" style={{ gap: 8 }}>
+                    <p className="eyebrow">Password</p>
+                    <h3 style={{ margin: 0 }}>Change password</h3>
+                    <p className="status-text" style={{ margin: 0 }}>
+                      Saving a new password signs this account out everywhere and requires a fresh login.
+                    </p>
+                  </div>
+                </div>
+                <div className="detail-grid">
+                  <label className="field-label detail-card detail-card-wide">
+                    Current password
+                    <input
+                      className="field-input"
+                      onChange={(event) => setCurrentPassword(event.target.value)}
+                      type="password"
+                      value={currentPassword}
+                    />
+                  </label>
+                  <label className="field-label detail-card detail-card-wide">
+                    New password
+                    <input
+                      className="field-input"
+                      onChange={(event) => setNewPassword(event.target.value)}
+                      type="password"
+                      value={newPassword}
+                    />
+                  </label>
+                  <label className="field-label detail-card detail-card-wide">
+                    Confirm new password
+                    <input
+                      className="field-input"
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      type="password"
+                      value={confirmPassword}
+                    />
+                  </label>
+                </div>
+                {passwordError ? <p className="error-text">{passwordError}</p> : null}
+                <div className="dialog-actions">
+                  <button
+                    className="button-primary"
+                    disabled={
+                      updatePassword.isPending ||
+                      !currentPassword ||
+                      !newPassword ||
+                      !confirmPassword ||
+                      Boolean(passwordError)
+                    }
+                    type="submit"
+                  >
+                    {updatePassword.isPending ? "Updating..." : "Change password"}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       ) : null}

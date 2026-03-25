@@ -31,8 +31,11 @@ def ensure_bootstrap_admin(database_path: str) -> str | None:
         # SQLite datetime: ISO 8601
         created_at = datetime.now(timezone.utc).isoformat()
         conn.execute(
-            """INSERT INTO users (id, username, password_hash, role, created_at, created_by_user_id, last_login_at, disabled_at)
-               VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)""",
+            """INSERT INTO users (
+                   id, username, password_hash, role, created_at, created_by_user_id, last_login_at, disabled_at,
+                   must_change_password, password_changed_at
+               )
+               VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, 1, NULL)""",
             (user_id, BOOTSTRAP_USERNAME, password_hash, ROLE_SUPER_ADMIN, created_at),
         )
         conn.commit()

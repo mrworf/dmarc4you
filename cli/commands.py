@@ -11,7 +11,10 @@ from typing import Optional, Union
 from backend.config import load_config
 from backend.storage.sqlite import run_migrations, get_connection
 from backend.auth.bootstrap import BOOTSTRAP_USERNAME
+from datetime import datetime, timezone
+
 from backend.auth.password import hash_password, generate_random_password
+from backend.auth.session import invalidate_user_sessions
 from backend.ingest.compression import GZIP_MAGIC, ZIP_MAGIC
 
 
@@ -137,13 +140,17 @@ def reset_admin_password(config_path: Optional[Union[str, Path]] = None) -> Opti
         if not row:
             print("Admin user not found.", file=sys.stderr)
             return None
+        user_id = row[0]
         password = generate_random_password()
         password_hash = hash_password(password)
         conn.execute(
-            "UPDATE users SET password_hash = ? WHERE username = ?",
-            (password_hash, BOOTSTRAP_USERNAME),
+            """UPDATE users
+               SET password_hash = ?, must_change_password = 1, password_changed_at = ?
+               WHERE username = ?""",
+            (password_hash, datetime.now(timezone.utc).isoformat(), BOOTSTRAP_USERNAME),
         )
         conn.commit()
+        invalidate_user_sessions(config.database_path, user_id)
         print(password)
         return password
     finally:

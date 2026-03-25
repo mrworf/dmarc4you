@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,7 +17,8 @@ type LoginValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, status } = useAuth();
+  const searchParams = useSearchParams();
+  const { login, passwordChangeRequired, status } = useAuth();
   const {
     formState: { errors, isSubmitting },
     handleSubmit,
@@ -30,10 +32,17 @@ export default function LoginPage() {
     },
   });
 
+  useEffect(() => {
+    if (status !== "authenticated") {
+      return;
+    }
+    router.replace(passwordChangeRequired ? "/change-password" : "/domains");
+  }, [passwordChangeRequired, router, status]);
+
   async function onSubmit(values: LoginValues) {
     try {
-      await login(values);
-      router.replace("/domains");
+      const data = await login(values);
+      router.replace(data.password_change_required ? "/change-password" : "/domains");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Login failed";
       setError("root", { message });
@@ -68,6 +77,9 @@ export default function LoginPage() {
           <p className="eyebrow">Sign In</p>
           <h2 style={{ margin: "0 0 8px" }}>Welcome back</h2>
           <p className="status-text">Use your local account to sign in to DMARCWatch.</p>
+          {searchParams.get("passwordChanged") === "1" ? (
+            <p className="status-text">Password updated. Sign in again with your new password.</p>
+          ) : null}
         </div>
         <form className="stack" onSubmit={handleSubmit(onSubmit)}>
           <label className="field-label">

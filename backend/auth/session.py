@@ -52,3 +52,13 @@ def invalidate_session(database_path: str, session_id: str) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def invalidate_user_sessions(database_path: str, user_id: str) -> None:
+    """Remove every active session for a user."""
+    conn = get_connection(database_path)
+    try:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()

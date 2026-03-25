@@ -8,14 +8,18 @@ User auth:
 
 - local username/password only
 - bootstrap `admin` account is created on first startup
-- no self-service password reset or password change flow
+- self-service password change flow for the signed-in user
 - password resets are admin operations
+- generated passwords are temporary and force a password change at next sign-in
+- password changes invalidate all active sessions for that user
+- minimum password length is 12 characters; passphrases are allowed and composition rules are not required
 
 Break-glass recovery:
 
 - `python -m cli reset-admin-password [config.yaml]`
 - local-only workflow
 - prints a newly generated password
+- next sign-in requires choosing a new password
 
 Browser session protections:
 
@@ -49,6 +53,7 @@ The system records audit entries for security-relevant actions including:
 
 - login attempts
 - logout
+- self-service password change
 - user create, update, delete, and password reset
 - role or domain-assignment changes
 - API key create, update, and delete

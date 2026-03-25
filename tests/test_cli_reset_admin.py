@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from backend.config import load_config
+from backend.storage.sqlite import get_connection
 from backend.storage.sqlite import run_migrations
 from backend.auth.bootstrap import ensure_bootstrap_admin
 from backend.services.auth_service import login as auth_login
@@ -44,6 +45,11 @@ def test_reset_admin_password_success_and_login(temp_db_path: str, temp_config_p
     new_password = reset_admin_password(Path(temp_config_path))
     assert new_password is not None
     assert new_password != old_password
+    conn = get_connection(temp_db_path)
+    row = conn.execute("SELECT must_change_password FROM users WHERE username = 'admin'").fetchone()
+    conn.close()
+    assert row is not None
+    assert row[0] == 1
     user, _ = auth_login(config, "admin", new_password)
     assert user is not None
     user_old, _ = auth_login(config, "admin", old_password)

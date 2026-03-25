@@ -516,7 +516,7 @@ export function UsersContent() {
       </SlideOverPanel>
 
       <CredentialDialog
-        description={`Copy the password for ${createdNotice?.username ?? "this user"} now. It will not be shown again.`}
+        description={`Copy the password for ${createdNotice?.username ?? "this user"} now. It will not be shown again, and the user must change it at first sign-in.`}
         label="Temporary password"
         onClose={() => setCreatedNotice(null)}
         open={Boolean(createdNotice)}
@@ -525,7 +525,7 @@ export function UsersContent() {
       />
 
       <CredentialDialog
-        description={`Copy the new password for ${resetNotice?.username ?? "this user"} now. It will not be shown again.`}
+        description={`Copy the new password for ${resetNotice?.username ?? "this user"} now. It will not be shown again, and the user must change it at next sign-in.`}
         label="Temporary password"
         onClose={() => setResetNotice(null)}
         open={Boolean(resetNotice)}

@@ -287,6 +287,10 @@ class TestCreateUser:
         assert "password" in data
         assert len(data["password"]) > 10
 
+        login_response = client.post("/api/v1/auth/login", json={"username": "new_admin", "password": data["password"]})
+        assert login_response.status_code == 200
+        assert login_response.json()["password_change_required"] is True
+
     def test_super_admin_creates_super_admin(self, user_app_client):
         client, password = user_app_client
         client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
@@ -436,6 +440,16 @@ class TestResetPassword:
         assert response.status_code == 200
         new_password = response.json()["password"]
         assert len(new_password) > 10
+        conn = get_connection(temp_db_path)
+        try:
+            row = conn.execute(
+                "SELECT must_change_password FROM users WHERE id = ?",
+                ("usr_target",),
+            ).fetchone()
+            assert row is not None
+            assert row[0] == 1
+        finally:
+            conn.close()
 
     def test_reset_password_old_password_fails(self, user_app_client, temp_db_path: str):
         client, password = user_app_client
@@ -448,6 +462,22 @@ class TestResetPassword:
         assert old_login.status_code == 401
         new_login = client.post("/api/v1/auth/login", json={"username": "target_user", "password": new_password})
         assert new_login.status_code == 200
+        assert new_login.json()["password_change_required"] is True
+
+    def test_reset_password_invalidates_existing_target_sessions(self, user_app_client, temp_db_path: str):
+        client, password = user_app_client
+        _create_test_user(temp_db_path, "usr_target", "target_user", "viewer", password="oldpass")
+
+        target_client = wrap_client_with_csrf(TestClient(app))
+        target_login = target_client.post("/api/v1/auth/login", json={"username": "target_user", "password": "oldpass"})
+        assert target_login.status_code == 200
+
+        client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+        reset_resp = client.post("/api/v1/users/usr_target/reset-password")
+        assert reset_resp.status_code == 200
+
+        me_response = target_client.get("/api/v1/auth/me")
+        assert me_response.status_code == 401
 
     def test_admin_cannot_reset_admin_password(self, user_app_client, temp_db_path: str):
         client, _ = user_app_client

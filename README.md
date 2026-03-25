@@ -51,7 +51,7 @@ cd frontend
 npm run dev
 ```
 
-The backend listens on `http://127.0.0.1:8000` by default and the frontend on `http://127.0.0.1:3000`. On first startup, the bootstrap `admin` password is printed once to the backend console.
+The backend listens on `http://127.0.0.1:8000` by default and the frontend on `http://127.0.0.1:3000`. On first startup, the bootstrap `admin` password is printed once to the backend console and must be changed after the first sign-in.
 
 For contributor and test tooling, also install:
 

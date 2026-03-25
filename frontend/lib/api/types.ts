@@ -17,6 +17,7 @@ export type AuthMeResponse = {
   user: UserSummary;
   all_domains: boolean;
   domain_ids: string[];
+  password_change_required: boolean;
 };
 
 export type AuthLoginBody = {
@@ -26,6 +27,17 @@ export type AuthLoginBody = {
 
 export type AuthLoginResponse = {
   user: UserSummary;
+  password_change_required: boolean;
+};
+
+export type UpdatePasswordBody = {
+  current_password: string;
+  new_password: string;
+};
+
+export type UpdatePasswordResponse = {
+  password_changed: boolean;
+  reauth_required: boolean;
 };
 
 export type DomainSummary = {

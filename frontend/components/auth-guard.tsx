@@ -14,17 +14,21 @@ export function AuthGuard({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { status, user } = useAuth();
+  const { passwordChangeRequired, status, user } = useAuth();
 
   useEffect(() => {
     if (status === "anonymous") {
       router.replace("/login");
       return;
     }
+    if (status === "authenticated" && passwordChangeRequired) {
+      router.replace("/change-password");
+      return;
+    }
     if (status === "authenticated" && allowedRoles && user && !allowedRoles.includes(user.role)) {
       router.replace("/domains");
     }
-  }, [allowedRoles, router, status, user]);
+  }, [allowedRoles, passwordChangeRequired, router, status, user]);
 
   if (status === "loading") {
     return (
@@ -37,6 +41,10 @@ export function AuthGuard({
   }
 
   if (status !== "authenticated") {
+    return null;
+  }
+
+  if (passwordChangeRequired) {
     return null;
   }
 

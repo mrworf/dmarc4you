@@ -1,13 +1,20 @@
-"""Auth endpoints: POST login, POST logout, GET me."""
+"""Auth endpoints: POST login, POST logout, GET me, PUT me, PUT password."""
 
 from fastapi import APIRouter, Depends, Request, Response, HTTPException, status
 
 from backend.api.errors import api_http_exception
-from backend.api.v1.schemas.auth import AuthLoginResponse, AuthMeResponse, LoginBody, UpdateProfileBody
+from backend.api.v1.schemas.auth import (
+    AuthLoginResponse,
+    AuthMeResponse,
+    LoginBody,
+    UpdatePasswordBody,
+    UpdatePasswordResponse,
+    UpdateProfileBody,
+)
 from backend.api.v1.schemas.common import EmptyResponse, ErrorResponse
 from backend.config.schema import Config
 from backend.api.v1.deps import get_config, get_current_user
-from backend.services.auth_service import login, logout, me_response_user, update_own_profile
+from backend.services.auth_service import change_own_password, login, logout, me_response_user, update_own_profile
 from backend.auth.csrf import generate_csrf_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -53,7 +60,7 @@ def auth_login(
         samesite=config.csrf_cookie_same_site,
         secure=config.session_cookie_secure,
     )
-    return {"user": user}
+    return {"user": user, "password_change_required": bool(user.get("must_change_password"))}
 
 
 @router.post("/logout", response_model=EmptyResponse, responses=ERROR_RESPONSES)
@@ -88,7 +95,7 @@ def auth_me(
             httponly=False,
             samesite=config.csrf_cookie_same_site,
             secure=config.session_cookie_secure,
-    )
+        )
     return me_response_user(config, current_user)
 
 
@@ -106,6 +113,33 @@ def auth_update_me(
         new_email=body.email,
     )
     return me_response_user(config, updated_user)
+
+
+@router.put("/password", response_model=UpdatePasswordResponse, responses=ERROR_RESPONSES)
+def auth_update_password(
+    request: Request,
+    response: Response,
+    body: UpdatePasswordBody,
+    current_user: dict = Depends(get_current_user),
+    config: Config = Depends(get_config),
+) -> dict:
+    """PUT /api/v1/auth/password: change the signed-in user's password and require re-login."""
+    result = change_own_password(
+        config,
+        current_user,
+        current_password=body.current_password,
+        new_password=body.new_password,
+    )
+    if result == "invalid_current_password":
+        raise api_http_exception(status.HTTP_400_BAD_REQUEST, "invalid_current_password", "Current password is incorrect")
+    if result == "password_reuse":
+        raise api_http_exception(status.HTTP_400_BAD_REQUEST, "password_reuse", "New password must be different from the current password")
+    if result != "ok":
+        raise api_http_exception(status.HTTP_400_BAD_REQUEST, "password_policy_violation", result)
+
+    response.delete_cookie(key=config.session_cookie_name, path="/")
+    response.delete_cookie(key=config.csrf_cookie_name, path="/")
+    return {"password_changed": True, "reauth_required": True}
 
 
 def _unauthorized() -> HTTPException:

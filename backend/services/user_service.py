@@ -7,6 +7,7 @@ from typing import Any
 from backend.config.schema import Config
 from backend.storage.sqlite import get_connection
 from backend.auth.password import hash_password, generate_random_password
+from backend.auth.session import invalidate_user_sessions
 from backend.policies.user_policy import (
     can_manage_users,
     can_create_user_with_role,
@@ -179,8 +180,11 @@ def create_user(
         created_at = datetime.now(timezone.utc).isoformat()
 
         conn.execute(
-            """INSERT INTO users (id, username, password_hash, role, full_name, email, created_at, created_by_user_id, last_login_at, disabled_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)""",
+            """INSERT INTO users (
+                   id, username, password_hash, role, full_name, email, created_at, created_by_user_id, last_login_at,
+                   disabled_at, must_change_password, password_changed_at
+               )
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 1, NULL)""",
             (user_id, username, password_hash_val, role, full_name, email, created_at, actor["id"]),
         )
         conn.commit()
@@ -322,8 +326,14 @@ def reset_password(
 
     conn = get_connection(config.database_path)
     try:
-        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, target_user_id))
+        conn.execute(
+            """UPDATE users
+               SET password_hash = ?, must_change_password = 1, password_changed_at = ?
+               WHERE id = ?""",
+            (new_hash, datetime.now(timezone.utc).isoformat(), target_user_id),
+        )
         conn.commit()
+        invalidate_user_sessions(config.database_path, target_user_id)
 
         _write_audit_event(
             config.database_path,

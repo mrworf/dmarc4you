@@ -12,9 +12,11 @@ type AuthContextValue = {
   user: UserSummary | null;
   allDomains: boolean;
   domainIds: string[];
+  passwordChangeRequired: boolean;
   refresh: () => Promise<void>;
-  login: (values: AuthLoginBody) => Promise<void>;
+  login: (values: AuthLoginBody) => Promise<AuthLoginResponse>;
   logout: () => Promise<void>;
+  clearAuth: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -24,6 +26,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserSummary | null>(null);
   const [allDomains, setAllDomains] = useState(false);
   const [domainIds, setDomainIds] = useState<string[]>([]);
+  const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
+
+  function clearAuth() {
+    setUser(null);
+    setAllDomains(false);
+    setDomainIds([]);
+    setPasswordChangeRequired(false);
+    setStatus("anonymous");
+  }
 
   async function refresh() {
     try {
@@ -31,13 +42,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(data.user);
       setAllDomains(data.all_domains);
       setDomainIds(data.domain_ids);
+      setPasswordChangeRequired(data.password_change_required);
       setStatus("authenticated");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        setUser(null);
-        setAllDomains(false);
-        setDomainIds([]);
-        setStatus("anonymous");
+        clearAuth();
         return;
       }
       throw error;
@@ -47,17 +56,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function login(values: AuthLoginBody) {
     const data = await apiClient.post<AuthLoginResponse>("/api/v1/auth/login", values, { skipCsrf: true });
     setUser(data.user);
+    setAllDomains(false);
+    setDomainIds([]);
+    setPasswordChangeRequired(data.password_change_required);
     setStatus("authenticated");
+    return data;
   }
 
   async function logout() {
     try {
       await apiClient.post("/api/v1/auth/logout");
     } finally {
-      setUser(null);
-      setAllDomains(false);
-      setDomainIds([]);
-      setStatus("anonymous");
+      clearAuth();
     }
   }
 
@@ -73,11 +83,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       allDomains,
       domainIds,
+      passwordChangeRequired,
       refresh,
       login,
       logout,
+      clearAuth,
     }),
-    [allDomains, domainIds, status, user],
+    [allDomains, domainIds, passwordChangeRequired, status, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
