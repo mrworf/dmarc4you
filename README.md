@@ -2,6 +2,10 @@
 
 DMARCWatch is a self-hosted DMARC analysis platform with a FastAPI backend, a Next.js frontend, SQLite storage in v1, asynchronous ingest jobs, domain-scoped RBAC, and audit logging.
 
+> ℹ️ **NOTE** 
+>
+> This project is entirely created using AI as an experiement. Take it for what you want, as usual, no disclaimers or warranty provided. But seems to work pretty good.
+
 ## Core capabilities
 
 - Ingest DMARC aggregate and forensic reports from API, CLI, browser upload, XML files, ZIP/GZIP payloads, and MIME email messages.
