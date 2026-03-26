@@ -53,6 +53,84 @@ def test_login_wrong_password_returns_401(auth_app_client) -> None:
     assert "dmarc_session" not in response.cookies or not response.cookies.get("dmarc_session")
 
 
+def test_login_throttles_after_five_failed_attempts(auth_app_client) -> None:
+    client, _ = auth_app_client
+    for _ in range(5):
+        response = client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
+        assert response.status_code == 401
+
+    throttled_response = client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
+    assert throttled_response.status_code == 429
+    assert throttled_response.json()["error"]["code"] == "login_throttled"
+    assert throttled_response.json()["error"]["details"][0]["retry_after_seconds"] > 0
+
+
+def test_login_success_clears_throttle_state(auth_app_client, temp_db_path: str) -> None:
+    client, password = auth_app_client
+    for _ in range(3):
+        response = client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
+        assert response.status_code == 401
+
+    success_response = client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    assert success_response.status_code == 200
+
+    conn = get_connection(temp_db_path)
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM auth_login_throttle WHERE username = ? AND source_ip = ?",
+            ("admin", "testclient"),
+        ).fetchone()
+        assert row is None
+    finally:
+        conn.close()
+
+
+def test_login_throttle_is_scoped_per_username(auth_app_client) -> None:
+    client, password = auth_app_client
+    for _ in range(5):
+        response = client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
+        assert response.status_code == 401
+
+    other_user_response = client.post("/api/v1/auth/login", json={"username": "missing_user", "password": "wrong"})
+    assert other_user_response.status_code == 401
+
+    throttled_response = client.post("/api/v1/auth/login", json={"username": "admin", "password": password})
+    assert throttled_response.status_code == 429
+
+
+def test_login_throttle_is_scoped_per_source_ip(auth_app_client) -> None:
+    client, _ = auth_app_client
+    for _ in range(5):
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "wrong"},
+            headers={"x-forwarded-for": "203.0.113.10"},
+        )
+        assert response.status_code == 401
+
+    alternate_ip_response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "wrong"},
+        headers={"x-forwarded-for": "203.0.113.11"},
+    )
+    assert alternate_ip_response.status_code == 401
+
+
+def test_audit_has_throttled_login_event(auth_app_client, temp_db_path: str) -> None:
+    client, _ = auth_app_client
+    for _ in range(6):
+        client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
+
+    conn = get_connection(temp_db_path)
+    try:
+        rows = conn.execute(
+            "SELECT action_type, summary FROM audit_log WHERE action_type IN ('login_failure', 'login_throttled') ORDER BY timestamp"
+        ).fetchall()
+        assert any(row[0] == "login_throttled" and row[1] == "login_throttled" for row in rows)
+    finally:
+        conn.close()
+
+
 def test_login_invalid_username_returns_401(auth_app_client) -> None:
     client, password = auth_app_client
     response = client.post(

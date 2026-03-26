@@ -51,6 +51,13 @@ Example login response fields now include:
 - `user`
 - `password_change_required`
 
+Login throttling:
+
+- keyed by normalized username plus source IP
+- after 5 failed attempts in 15 minutes, the next login is blocked for 15 minutes
+- blocked responses return `429` with error code `login_throttled`
+- error details include `retry_after_seconds`
+
 Password change request:
 
 ```json
@@ -165,9 +172,14 @@ Grouped search uses `grouping` and `path`. Time-series search uses `y_axis`.
 | `DELETE` | `/apikeys/{key_id}` | Revoke an API key |
 | `GET` | `/audit` | List audit log entries |
 
+User-management responses now include:
+
+- `must_change_password` on listed and detailed users so the UI can show pending password rotation
+
 ## Common response notes
 
 - `401` indicates missing or invalid authentication.
+- `429` on `/auth/login` indicates temporary login throttling after repeated failed attempts.
 - `403` indicates the caller is authenticated but not authorized.
 - `404` is also used to avoid leaking ownership or visibility details.
 - Ingest creation returns a queued job immediately; report acceptance happens asynchronously.

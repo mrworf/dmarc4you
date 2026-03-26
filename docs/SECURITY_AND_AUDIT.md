@@ -13,6 +13,7 @@ User auth:
 - generated passwords are temporary and force a password change at next sign-in
 - password changes invalidate all active sessions for that user
 - minimum password length is 12 characters; passphrases are allowed and composition rules are not required
+- login throttling is enforced per username plus source IP
 
 Break-glass recovery:
 
@@ -26,6 +27,7 @@ Browser session protections:
 - HttpOnly session cookie
 - CSRF cookie and backend CSRF enforcement on write requests
 - configurable `Secure` and `SameSite` cookie settings
+- login throttling blocks the next attempt after 5 failed logins in 15 minutes and extends the block to 15 minutes from the latest blocked attempt
 
 ## Authorization rules
 
@@ -52,6 +54,7 @@ For ingest automation, the relevant scope is:
 The system records audit entries for security-relevant actions including:
 
 - login attempts
+- login throttling events
 - logout
 - self-service password change
 - user create, update, delete, and password reset

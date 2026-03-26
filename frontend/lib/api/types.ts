@@ -316,6 +316,7 @@ export type ListedUserSummary = UserSummary & {
   created_at?: string;
   created_by_user_id?: string;
   domain_ids?: string[];
+  must_change_password?: boolean;
 };
 
 export type UsersResponse = {

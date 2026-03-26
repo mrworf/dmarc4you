@@ -247,6 +247,8 @@ class TestListUsers:
         assert "admin" in usernames
         assert "viewer1" in usernames
         assert "admin2" in usernames
+        admin_entry = next(user for user in response.json()["users"] if user["username"] == "admin")
+        assert admin_entry["must_change_password"] is True
 
     def test_list_users_as_admin_returns_domain_scoped(self, user_app_client, temp_db_path: str):
         client, password = user_app_client
@@ -284,6 +286,7 @@ class TestCreateUser:
         data = response.json()
         assert data["user"]["username"] == "new_admin"
         assert data["user"]["role"] == "admin"
+        assert data["user"]["must_change_password"] is True
         assert "password" in data
         assert len(data["password"]) > 10
 

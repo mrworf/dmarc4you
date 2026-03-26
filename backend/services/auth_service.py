@@ -6,6 +6,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend.config.schema import Config
+from backend.auth.login_throttle import (
+    clear_login_failures,
+    extend_login_block,
+    get_login_retry_after_seconds,
+    record_failed_login,
+)
 from backend.auth.password import hash_password, validate_new_password, verify_password
 from backend.auth.session import create_session, get_session_user_id, invalidate_session, invalidate_user_sessions
 from backend.auth.user_lookup import get_user_by_id, get_user_by_username
@@ -13,6 +19,7 @@ from backend.auth.audit import (
     write_login_event,
     ACTION_LOGIN_SUCCESS,
     ACTION_LOGIN_FAILURE,
+    ACTION_LOGIN_THROTTLED,
     OUTCOME_SUCCESS,
     OUTCOME_FAILURE,
 )
@@ -55,10 +62,11 @@ def login(
     *,
     source_ip: str | None = None,
     user_agent: str | None = None,
-) -> tuple[dict[str, Any] | None, str | None]:
+) -> tuple[dict[str, Any] | None, str | None, int | None]:
     """
-    Validate username, verify password, create session, audit. Return (user_dict, session_id) on success;
-    (None, None) on failure. User dict has id, username, role. Do not leak failure reason to caller.
+    Validate username, verify password, create session, audit.
+    Return (user_dict, session_id, retry_after_seconds) on success/failure.
+    Do not leak password-check failure reason to caller.
     """
     if not validate_username(username):
         write_login_event(
@@ -70,9 +78,23 @@ def login(
             user_agent=user_agent,
             summary="invalid_username",
         )
-        return None, None
+        return None, None, None
+    retry_after_seconds = get_login_retry_after_seconds(config.database_path, username, source_ip)
+    if retry_after_seconds is not None:
+        retry_after_seconds = extend_login_block(config.database_path, username, source_ip)
+        write_login_event(
+            config.database_path,
+            action_type=ACTION_LOGIN_THROTTLED,
+            outcome=OUTCOME_FAILURE,
+            actor_user_id=None,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            summary="login_throttled",
+        )
+        return None, None, retry_after_seconds
     user = get_user_by_username(config.database_path, username)
     if not user or not verify_password(password, user["password_hash"]):
+        record_failed_login(config.database_path, username, source_ip)
         write_login_event(
             config.database_path,
             action_type=ACTION_LOGIN_FAILURE,
@@ -82,7 +104,8 @@ def login(
             user_agent=user_agent,
             summary="invalid_credentials",
         )
-        return None, None
+        return None, None, None
+    clear_login_failures(config.database_path, username, source_ip)
     session_id = create_session(
         config.database_path,
         user["id"],
@@ -104,7 +127,7 @@ def login(
         "full_name": user.get("full_name"),
         "email": user.get("email"),
         "must_change_password": bool(user.get("must_change_password")),
-    }, session_id
+    }, session_id, None
 
 
 def logout(config: Config, session_id: str | None) -> None:

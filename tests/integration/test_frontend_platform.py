@@ -53,7 +53,7 @@ def _build_request() -> Request:
 
 
 def test_auth_errors_use_standardized_envelope(monkeypatch, temp_db_path: str) -> None:
-    monkeypatch.setattr("backend.api.v1.handlers.auth.login", lambda *args, **kwargs: (None, None))
+    monkeypatch.setattr("backend.api.v1.handlers.auth.login", lambda *args, **kwargs: (None, None, None))
     _make_client(temp_db_path)
     request = _build_request()
     response = Response()
@@ -86,6 +86,7 @@ def test_auth_cookie_policy_comes_from_config(monkeypatch, temp_db_path: str) ->
                 "email": None,
             },
             "session_test",
+            None,
         ),
     )
     _make_client(

@@ -23,6 +23,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 ERROR_RESPONSES = {
     401: {"model": ErrorResponse},
     403: {"model": ErrorResponse},
+    429: {"model": ErrorResponse},
     422: {"model": ErrorResponse},
 }
 
@@ -37,10 +38,20 @@ def auth_login(
     """POST /api/v1/auth/login: body { username, password }. Returns { user }; sets session and CSRF cookies."""
     username = (body.username or "").strip()
     password = body.password or ""
-    source_ip = request.client.host if request.client else None
+    source_ip = _get_source_ip(request)
     user_agent = request.headers.get("user-agent")
-    user, session_id = login(config, username, password, source_ip=source_ip, user_agent=user_agent)
+    user, session_id, retry_after_seconds = login(config, username, password, source_ip=source_ip, user_agent=user_agent)
     if not user:
+        if retry_after_seconds is not None:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "code": "login_throttled",
+                    "message": "Too many login attempts. Try again later.",
+                    "details": [{"retry_after_seconds": retry_after_seconds}],
+                },
+                headers={"Retry-After": str(retry_after_seconds)},
+            )
         raise _unauthorized()
     response.set_cookie(
         key=config.session_cookie_name,
@@ -144,3 +155,12 @@ def auth_update_password(
 
 def _unauthorized() -> HTTPException:
     return api_http_exception(status.HTTP_401_UNAUTHORIZED, "invalid_credentials", "Invalid credentials")
+
+
+def _get_source_ip(request: Request) -> str | None:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        first_hop = forwarded_for.split(",", 1)[0].strip()
+        if first_hop:
+            return first_hop
+    return request.client.host if request.client else None

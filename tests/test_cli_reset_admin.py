@@ -50,9 +50,9 @@ def test_reset_admin_password_success_and_login(temp_db_path: str, temp_config_p
     conn.close()
     assert row is not None
     assert row[0] == 1
-    user, _ = auth_login(config, "admin", new_password)
+    user, _, _ = auth_login(config, "admin", new_password)
     assert user is not None
-    user_old, _ = auth_login(config, "admin", old_password)
+    user_old, _, _ = auth_login(config, "admin", old_password)
     assert user_old is None
 
 

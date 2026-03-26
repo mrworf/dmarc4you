@@ -75,7 +75,7 @@ def list_users(config: Config, actor: dict) -> tuple[str, list[dict[str, Any]]]:
     try:
         if actor.get("role") == ROLE_SUPER_ADMIN:
             cur = conn.execute(
-                """SELECT id, username, role, full_name, email, created_at, created_by_user_id
+                """SELECT id, username, role, full_name, email, created_at, created_by_user_id, must_change_password
                    FROM users WHERE disabled_at IS NULL ORDER BY username"""
             )
             rows = cur.fetchall()
@@ -85,7 +85,8 @@ def list_users(config: Config, actor: dict) -> tuple[str, list[dict[str, Any]]]:
                 return "ok", []
             placeholders = ",".join("?" for _ in actor_domains)
             cur = conn.execute(
-                f"""SELECT DISTINCT u.id, u.username, u.role, u.full_name, u.email, u.created_at, u.created_by_user_id
+                f"""SELECT DISTINCT u.id, u.username, u.role, u.full_name, u.email, u.created_at, u.created_by_user_id,
+                           u.must_change_password
                     FROM users u
                     INNER JOIN user_domain_assignments uda ON uda.user_id = u.id
                     WHERE u.disabled_at IS NULL AND uda.domain_id IN ({placeholders})
@@ -110,6 +111,7 @@ def list_users(config: Config, actor: dict) -> tuple[str, list[dict[str, Any]]]:
                 "email": r[4],
                 "created_at": r[5],
                 "created_by_user_id": r[6],
+                "must_change_password": bool(r[7]),
                 "domain_ids": domain_ids,
             })
         return "ok", users
@@ -122,7 +124,8 @@ def get_user_by_id(config: Config, user_id: str) -> dict[str, Any] | None:
     conn = get_connection(config.database_path)
     try:
         cur = conn.execute(
-            "SELECT id, username, role, full_name, email, created_at, created_by_user_id FROM users WHERE id = ? AND disabled_at IS NULL",
+            """SELECT id, username, role, full_name, email, created_at, created_by_user_id, must_change_password
+               FROM users WHERE id = ? AND disabled_at IS NULL""",
             (user_id,),
         )
         row = cur.fetchone()
@@ -136,6 +139,7 @@ def get_user_by_id(config: Config, user_id: str) -> dict[str, Any] | None:
             "email": row[4],
             "created_at": row[5],
             "created_by_user_id": row[6],
+            "must_change_password": bool(row[7]),
         }
     finally:
         conn.close()
@@ -206,6 +210,7 @@ def create_user(
                 "email": email,
                 "created_at": created_at,
                 "created_by_user_id": actor["id"],
+                "must_change_password": True,
                 "domain_ids": [],
             },
             "password": password,

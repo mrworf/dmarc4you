@@ -8,6 +8,7 @@ from backend.storage.sqlite import get_connection
 ACTOR_TYPE_USER = "user"
 ACTION_LOGIN_SUCCESS = "login_success"
 ACTION_LOGIN_FAILURE = "login_failure"
+ACTION_LOGIN_THROTTLED = "login_throttled"
 OUTCOME_SUCCESS = "success"
 OUTCOME_FAILURE = "failure"
 

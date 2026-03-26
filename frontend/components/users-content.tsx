@@ -232,6 +232,7 @@ export function UsersContent() {
     managers: users.filter((entry) => entry.role === "manager").length,
     viewers: users.filter((entry) => entry.role === "viewer").length,
   };
+  const pendingRotationCount = users.filter((entry) => entry.must_change_password).length;
 
   return (
     <AppShell
@@ -278,6 +279,10 @@ export function UsersContent() {
           <p className="stat-label">Viewers</p>
           <p className="stat-value">{userCountByRole.viewers}</p>
         </article>
+        <article className="stat-card">
+          <p className="stat-label">Pending rotation</p>
+          <p className="stat-value">{pendingRotationCount}</p>
+        </article>
       </section>
 
       <section className="surface-card stack">
@@ -306,6 +311,7 @@ export function UsersContent() {
                   <th>Role</th>
                   <th>Full name</th>
                   <th>Email</th>
+                  <th>Password status</th>
                   <th>Domains</th>
                   <th>Actions</th>
                 </tr>
@@ -321,6 +327,11 @@ export function UsersContent() {
                       <td>{entry.role}</td>
                       <td>{entry.full_name || "n/a"}</td>
                       <td>{entry.email || "n/a"}</td>
+                      <td>
+                        <span className="pill">
+                          {entry.must_change_password ? "Password change required" : "Up to date"}
+                        </span>
+                      </td>
                       <td>{formatDomainList(entry.domain_ids, visibleDomains)}</td>
                       <td>
                         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
