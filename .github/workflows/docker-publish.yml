@@ -64,6 +64,19 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Docker metadata for imap collector
+        id: imap-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/dmarc4you-imap
+          flavor: |
+            latest=false
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
       - name: Build backend image
         uses: docker/build-push-action@v6
         with:
@@ -89,3 +102,15 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend-image
           build-args: |
             NEXT_PUBLIC_API_BASE_URL=
+
+      - name: Build imap collector image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.imap
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.imap-meta.outputs.tags }}
+          labels: ${{ steps.imap-meta.outputs.labels }}
+          cache-from: type=gha,scope=imap-image
+          cache-to: type=gha,mode=max,scope=imap-image

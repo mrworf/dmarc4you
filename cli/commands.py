@@ -1,10 +1,6 @@
 """CLI commands: reset-admin-password (break-glass), ingest (submit reports via API key)."""
 
-import base64
-import json
 import sys
-import urllib.request
-import urllib.error
 from pathlib import Path
 from typing import Optional, Union
 
@@ -16,6 +12,7 @@ from datetime import datetime, timezone
 from backend.auth.password import hash_password, generate_random_password
 from backend.auth.session import invalidate_user_sessions
 from backend.ingest.compression import GZIP_MAGIC, ZIP_MAGIC
+from cli.ingest_api import IngestApiClient, IngestApiError
 
 
 def detect_content_type(path: Path, content: bytes) -> str:
@@ -58,7 +55,7 @@ def ingest_files(
         print("No files specified.", file=sys.stderr)
         return False
 
-    url = base_url.rstrip("/") + "/api/v1/reports/ingest"
+    client = IngestApiClient(api_key=api_key, base_url=base_url)
     all_ok = True
 
     for path in paths:
@@ -76,48 +73,16 @@ def ingest_files(
 
         content_type = detect_content_type(path, content)
         content_encoding = detect_content_encoding(path, content)
-        encoded = base64.b64encode(content).decode("ascii")
-
-        payload = {
-            "source": "cli",
-            "reports": [
-                {
-                    "content_type": content_type,
-                    "content_encoding": content_encoding,
-                    "content_transfer_encoding": "base64",
-                    "content": encoded,
-                }
-            ],
-        }
-
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            method="POST",
-        )
-
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                job_id = data.get("job_id", "unknown")
-                print(f"{path.name}: submitted (job_id={job_id})")
-        except urllib.error.HTTPError as e:
-            body = ""
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                pass
-            print(f"{path.name}: failed ({e.code} {e.reason}) {body}", file=sys.stderr)
-            all_ok = False
-        except urllib.error.URLError as e:
-            print(f"{path.name}: connection error ({e.reason})", file=sys.stderr)
-            all_ok = False
-        except Exception as e:
-            print(f"{path.name}: error ({e})", file=sys.stderr)
+            job_id = client.submit_report_bytes(
+                source="cli",
+                content=content,
+                content_type=content_type,
+                content_encoding=content_encoding,
+            )
+            print(f"{path.name}: submitted (job_id={job_id})")
+        except IngestApiError as exc:
+            print(f"{path.name}: failed ({exc})", file=sys.stderr)
             all_ok = False
 
     return all_ok

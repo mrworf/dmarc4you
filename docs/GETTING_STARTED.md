@@ -55,6 +55,7 @@ Prebuilt images are published to GitHub Container Registry:
 
 - `ghcr.io/mrworf/dmarc4you-backend`
 - `ghcr.io/mrworf/dmarc4you-frontend`
+- `ghcr.io/mrworf/dmarc4you-imap`
 
 Start from the repository root:
 
@@ -67,6 +68,12 @@ Default Docker URLs:
 
 - Frontend: `http://127.0.0.1:3000`
 - Backend API: `http://127.0.0.1:8000`
+
+Optional IMAP collector:
+
+- add the IMAP settings in `compose.env`
+- start it with `docker compose --env-file compose.env --profile imap up -d`
+- for a remote-only deployment, use `docker compose --env-file compose.env -f compose.imap.yaml up -d`
 
 The compose stack uses:
 
@@ -120,6 +127,22 @@ For container deployments, `compose.env` is usually enough and `config.yaml` can
 | `geoip.provider` | `DMARC_GEOIP_PROVIDER` | `none` | `none`, `dbip-lite-country`, `maxmind-geolite2-country` |
 | `geoip.database_path` | `DMARC_GEOIP_DATABASE_PATH` | `null` | Local MMDB file, typically under `data/` |
 
+IMAP collector env vars used by `python -m cli imap-watch` or the optional Docker service:
+
+- `DMARC_IMAP_API_URL`
+- `DMARC_IMAP_API_KEY`
+- `DMARC_IMAP_HOST`
+- `DMARC_IMAP_PORT`
+- `DMARC_IMAP_USERNAME`
+- `DMARC_IMAP_PASSWORD`
+- `DMARC_IMAP_MAILBOX`
+- `DMARC_IMAP_POLL_SECONDS`
+- `DMARC_IMAP_RESTART_ON_START`
+- `DMARC_IMAP_DELETE_AFTER_DAYS`
+- `DMARC_IMAP_STATE_PATH`
+- `DMARC_IMAP_CONNECT_TIMEOUT_SECONDS`
+- `DMARC_IMAP_JOB_TIMEOUT_SECONDS`
+
 Recommended local GeoIP path examples:
 
 - `data/dbip-country-lite.mmdb`
@@ -166,7 +189,8 @@ Access rules that matter operationally:
 2. Create at least one API key with the `reports:ingest` scope.
 3. Create any additional users and assign domains as needed.
 4. Configure report submission using the API, CLI, or browser upload flow.
-5. Create dashboards for the teams that need access.
+5. If reports arrive by mailbox, configure the optional IMAP collector with an API key that has `reports:ingest`.
+6. Create dashboards for the teams that need access.
 
 ## Useful URLs
 

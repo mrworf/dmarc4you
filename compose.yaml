@@ -59,6 +59,39 @@ services:
       retries: 5
       start_period: 10s
 
+  imap:
+    image: ghcr.io/${GHCR_OWNER:-ha}/dmarc4you-imap:${DMARC_IMAGE_TAG:-main}
+    restart: unless-stopped
+    profiles:
+      - imap
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - compose.env
+    environment:
+      DMARC_IMAP_API_URL: ${DMARC_IMAP_API_URL:-http://api:8000}
+      DMARC_IMAP_API_KEY: ${DMARC_IMAP_API_KEY:-}
+      DMARC_IMAP_HOST: ${DMARC_IMAP_HOST:-}
+      DMARC_IMAP_PORT: ${DMARC_IMAP_PORT:-993}
+      DMARC_IMAP_USERNAME: ${DMARC_IMAP_USERNAME:-}
+      DMARC_IMAP_PASSWORD: ${DMARC_IMAP_PASSWORD:-}
+      DMARC_IMAP_MAILBOX: ${DMARC_IMAP_MAILBOX:-INBOX}
+      DMARC_IMAP_POLL_SECONDS: ${DMARC_IMAP_POLL_SECONDS:-60}
+      DMARC_IMAP_RESTART_ON_START: ${DMARC_IMAP_RESTART_ON_START:-false}
+      DMARC_IMAP_DELETE_AFTER_DAYS: ${DMARC_IMAP_DELETE_AFTER_DAYS:--1}
+      DMARC_IMAP_STATE_PATH: /app/state/imap-watch-state.db
+      DMARC_IMAP_CONNECT_TIMEOUT_SECONDS: ${DMARC_IMAP_CONNECT_TIMEOUT_SECONDS:-30}
+      DMARC_IMAP_JOB_TIMEOUT_SECONDS: ${DMARC_IMAP_JOB_TIMEOUT_SECONDS:-300}
+    command:
+      - python
+      - -m
+      - cli
+      - imap-watch
+    volumes:
+      - dmarc_imap_state:/app/state
+
 volumes:
   dmarc_data:
   dmarc_archive:
+  dmarc_imap_state:

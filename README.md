@@ -65,6 +65,7 @@ Prebuilt images are published to GitHub Container Registry:
 
 - `ghcr.io/mrworf/dmarc4you-backend`
 - `ghcr.io/mrworf/dmarc4you-frontend`
+- `ghcr.io/mrworf/dmarc4you-imap`
 
 To run the stack with Docker Compose:
 
@@ -85,6 +86,8 @@ Important notes:
 - SQLite data persists in the `dmarc_data` volume. Optional raw artifact archival persists in the `dmarc_archive` volume.
 - If you prefer bind mounts, `compose.yaml` includes commented examples for `./data:/app/data` and `./archive:/app/archive`.
 - Optional offline GeoIP databases can be mounted from `./data/geoip` into `/app/geoip`.
+- The optional IMAP collector joins the stack with `docker compose --env-file compose.env --profile imap up -d`; it uploads unread RFC822 messages from a mailbox through the existing ingest API.
+- To run the collector on a different host from DMARCWatch, use `docker compose --env-file compose.env -f compose.imap.yaml up -d` and point `DMARC_IMAP_API_URL` at the remote API.
 - For HTTPS or a friendlier public entrypoint, start the optional Caddy layer with `docker compose --env-file compose.env -f compose.yaml -f compose.override.proxy.yaml up -d` and set `DMARC_FRONTEND_HOST` / `DMARC_API_HOST` in `compose.env`.
 
 ## Verification
@@ -130,6 +133,7 @@ Notes:
 
 ```bash
 python -m cli ingest --api-key YOUR_KEY report.xml report.xml.gz report.zip report.eml
+python -m cli imap-watch --api-key YOUR_KEY --api-url http://localhost:8000 --host imap.example.com --username reports@example.com --password secret
 python -m cli reset-admin-password [config.yaml]
 python -m cli seed-e2e [config.e2e.yaml] [--cleanup]
 ```

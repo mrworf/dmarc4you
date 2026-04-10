@@ -117,7 +117,7 @@ class TestIngestFiles:
         existing.write_bytes(b"<feedback></feedback>")
         missing = tmp_path / "missing.xml"
 
-        with mock.patch("cli.commands.urllib.request.urlopen") as mock_urlopen:
+        with mock.patch("cli.ingest_api.urllib.request.urlopen") as mock_urlopen:
             mock_resp = mock.MagicMock()
             mock_resp.read.return_value = b'{"job_id": "job_123"}'
             mock_resp.__enter__ = mock.MagicMock(return_value=mock_resp)
@@ -136,7 +136,7 @@ class TestIngestFiles:
         f = tmp_path / "report.xml"
         f.write_bytes(b"<feedback></feedback>")
 
-        with mock.patch("cli.commands.urllib.request.urlopen") as mock_urlopen:
+        with mock.patch("cli.ingest_api.urllib.request.urlopen") as mock_urlopen:
             mock_resp = mock.MagicMock()
             mock_resp.read.return_value = b'{"job_id": "job_abc123"}'
             mock_resp.__enter__ = mock.MagicMock(return_value=mock_resp)
@@ -169,7 +169,7 @@ class TestIngestFiles:
             archive.writestr("report.xml", b"<feedback></feedback>")
         f.write_bytes(buf.getvalue())
 
-        with mock.patch("cli.commands.urllib.request.urlopen") as mock_urlopen:
+        with mock.patch("cli.ingest_api.urllib.request.urlopen") as mock_urlopen:
             mock_resp = mock.MagicMock()
             mock_resp.read.return_value = b'{"job_id": "job_zip123"}'
             mock_resp.__enter__ = mock.MagicMock(return_value=mock_resp)
@@ -189,7 +189,7 @@ class TestIngestFiles:
         f = tmp_path / "report.xml"
         f.write_bytes(b"<feedback></feedback>")
 
-        with mock.patch("cli.commands.urllib.request.urlopen") as mock_urlopen:
+        with mock.patch("cli.ingest_api.urllib.request.urlopen") as mock_urlopen:
             import urllib.error
 
             mock_urlopen.side_effect = urllib.error.HTTPError(
@@ -200,7 +200,8 @@ class TestIngestFiles:
 
         assert result is False
         captured = capsys.readouterr()
-        assert "report.xml: failed (403 Forbidden)" in captured.err
+        assert "report.xml: failed (" in captured.err
+        assert "403 Forbidden" in captured.err
         assert "Invalid API key" in captured.err
 
     def test_url_construction(self, tmp_path: Path) -> None:
@@ -208,7 +209,7 @@ class TestIngestFiles:
         f = tmp_path / "r.xml"
         f.write_bytes(b"<feedback/>")
 
-        with mock.patch("cli.commands.urllib.request.urlopen") as mock_urlopen:
+        with mock.patch("cli.ingest_api.urllib.request.urlopen") as mock_urlopen:
             mock_resp = mock.MagicMock()
             mock_resp.read.return_value = b'{"job_id": "j1"}'
             mock_resp.__enter__ = mock.MagicMock(return_value=mock_resp)
@@ -228,7 +229,7 @@ class TestIngestFiles:
             f.write_bytes(f"<feedback>{i}</feedback>".encode())
             files.append(f)
 
-        with mock.patch("cli.commands.urllib.request.urlopen") as mock_urlopen:
+        with mock.patch("cli.ingest_api.urllib.request.urlopen") as mock_urlopen:
             mock_resp = mock.MagicMock()
             mock_resp.read.return_value = b'{"job_id": "jx"}'
             mock_resp.__enter__ = mock.MagicMock(return_value=mock_resp)
@@ -314,3 +315,63 @@ class TestMainArgParsing:
         )
         assert api_key == "eq_key"
         assert url == "http://eq:1234"
+
+    def test_imap_watch_env_defaults(self, monkeypatch) -> None:
+        monkeypatch.setenv("DMARC_IMAP_API_KEY", "imap-key")
+        monkeypatch.setenv("DMARC_IMAP_HOST", "imap.example.com")
+        monkeypatch.setenv("DMARC_IMAP_USERNAME", "user@example.com")
+        monkeypatch.setenv("DMARC_IMAP_PASSWORD", "secret")
+        monkeypatch.setenv("DMARC_IMAP_RESTART_ON_START", "true")
+        monkeypatch.setenv("DMARC_IMAP_DELETE_AFTER_DAYS", "7")
+
+        from cli.__main__ import parse_imap_watch_args
+
+        config = parse_imap_watch_args([])
+        assert config.api_url == "http://localhost:8000"
+        assert config.api_key == "imap-key"
+        assert config.host == "imap.example.com"
+        assert config.port == 993
+        assert config.username == "user@example.com"
+        assert config.password == "secret"
+        assert config.restart_on_start is True
+        assert config.delete_after_days == 7
+        assert config.mailbox == "INBOX"
+
+    def test_imap_watch_flags_override_env(self, monkeypatch) -> None:
+        monkeypatch.setenv("DMARC_IMAP_API_KEY", "env-key")
+        monkeypatch.setenv("DMARC_IMAP_HOST", "env-host")
+        monkeypatch.setenv("DMARC_IMAP_USERNAME", "env-user")
+        monkeypatch.setenv("DMARC_IMAP_PASSWORD", "env-pass")
+
+        from cli.__main__ import parse_imap_watch_args
+
+        config = parse_imap_watch_args(
+            [
+                "--api-url=http://api:9000",
+                "--api-key=flag-key",
+                "--host=imap.flag.test",
+                "--port=1993",
+                "--username=flag-user",
+                "--password=flag-pass",
+                "--mailbox=Reports",
+                "--poll-seconds=30",
+                "--delete-after-days=0",
+                "--state-path=/tmp/imap.db",
+                "--connect-timeout-seconds=12.5",
+                "--job-timeout-seconds=45",
+                "--restart-on-start",
+            ]
+        )
+        assert config.api_url == "http://api:9000"
+        assert config.api_key == "flag-key"
+        assert config.host == "imap.flag.test"
+        assert config.port == 1993
+        assert config.username == "flag-user"
+        assert config.password == "flag-pass"
+        assert config.mailbox == "Reports"
+        assert config.poll_seconds == 30
+        assert config.delete_after_days == 0
+        assert config.state_path == "/tmp/imap.db"
+        assert config.connect_timeout_seconds == 12.5
+        assert config.job_timeout_seconds == 45.0
+        assert config.restart_on_start is True

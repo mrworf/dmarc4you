@@ -1,6 +1,6 @@
 # Submitting DMARC Reports
 
-DMARCWatch accepts asynchronous report submission through the REST API, the local CLI, and the browser upload screen.
+DMARCWatch accepts asynchronous report submission through the REST API, the local CLI, the optional IMAP collector service, and the browser upload screen.
 
 ## What the ingest pipeline accepts
 
@@ -94,6 +94,36 @@ Exit behavior:
 
 - `0` when all files were submitted successfully
 - `1` when any file failed
+
+## IMAP collector service
+
+Use the optional `python -m cli imap-watch` service or the `ghcr.io/mrworf/dmarc4you-imap` image when DMARC reports arrive in a mailbox.
+
+Behavior:
+
+- polls an IMAP mailbox for unread messages
+- fetches the full RFC822 message without marking it seen
+- uploads the message to `POST /api/v1/reports/ingest` with an API key that has the `reports:ingest` scope
+- waits for the ingest job to finish before treating the message as successfully processed
+- marks successful uploads seen and can optionally hard-delete them from IMAP after `0` or more days based on the IMAP internal date
+
+Important settings:
+
+- `DMARC_IMAP_API_URL`
+- `DMARC_IMAP_API_KEY`
+- `DMARC_IMAP_HOST`
+- `DMARC_IMAP_PORT`
+- `DMARC_IMAP_USERNAME`
+- `DMARC_IMAP_PASSWORD`
+- `DMARC_IMAP_MAILBOX`
+- `DMARC_IMAP_POLL_SECONDS`
+- `DMARC_IMAP_RESTART_ON_START`
+- `DMARC_IMAP_DELETE_AFTER_DAYS`
+- `DMARC_IMAP_STATE_PATH`
+- `DMARC_IMAP_CONNECT_TIMEOUT_SECONDS`
+- `DMARC_IMAP_JOB_TIMEOUT_SECONDS`
+
+`DMARC_IMAP_RESTART_ON_START=true` clears the collector's local state and marks the whole mailbox unread on startup so every message is uploaded again.
 
 ## Browser upload
 
