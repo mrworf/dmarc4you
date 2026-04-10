@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -16,8 +16,20 @@ const loginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
-  const router = useRouter();
+  return (
+    <Suspense fallback={<LoginPageContent passwordChanged={false} />}>
+      <LoginPageWithSearchParams />
+    </Suspense>
+  );
+}
+
+function LoginPageWithSearchParams() {
   const searchParams = useSearchParams();
+  return <LoginPageContent passwordChanged={searchParams.get("passwordChanged") === "1"} />;
+}
+
+function LoginPageContent({ passwordChanged }: { passwordChanged: boolean }) {
+  const router = useRouter();
   const { login, passwordChangeRequired, status } = useAuth();
   const {
     formState: { errors, isSubmitting },
@@ -77,7 +89,7 @@ export default function LoginPage() {
           <p className="eyebrow">Sign In</p>
           <h2 style={{ margin: "0 0 8px" }}>Welcome back</h2>
           <p className="status-text">Use your local account to sign in to DMARCWatch.</p>
-          {searchParams.get("passwordChanged") === "1" ? (
+          {passwordChanged ? (
             <p className="status-text">Password updated. Sign in again with your new password.</p>
           ) : null}
         </div>

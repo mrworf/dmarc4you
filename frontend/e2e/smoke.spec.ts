@@ -10,6 +10,13 @@ test.describe("frontend smoke", () => {
     await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
   });
 
+  test("login route renders password-changed banner from query params", async ({ page }) => {
+    await page.goto("/login?passwordChanged=1");
+
+    await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+    await expect(page.getByText("Password updated. Sign in again with your new password.")).toBeVisible();
+  });
+
   test("login renders the migrated domains page", async ({ page }) => {
     await loginAsSuperAdmin(page);
 
