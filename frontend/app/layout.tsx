@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "@/app/providers";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "DMARCWatch",
   description: "DMARC monitoring for domains, dashboards, ingest, search, and admin workflows.",
