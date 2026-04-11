@@ -20,14 +20,7 @@ services:
     healthcheck:
       test:
         - CMD
-        - python
-        - -c
-        - |
-          import json
-          import urllib.request
-          response = urllib.request.urlopen("http://127.0.0.1:8000/api/v1/health/ready", timeout=5)
-          payload = json.load(response)
-          raise SystemExit(0 if payload.get("status") == "ok" else 1)
+        - /app/scripts/healthchecks/backend_ready.py
       interval: 15s
       timeout: 5s
       retries: 5
@@ -48,12 +41,7 @@ services:
     healthcheck:
       test:
         - CMD
-        - node
-        - -e
-        - |
-          fetch("http://127.0.0.1:3000/api/ready", { cache: "no-store" })
-            .then((response) => response.ok ? process.exit(0) : process.exit(1))
-            .catch(() => process.exit(1))
+        - /app/scripts/healthchecks/frontend_ready.mjs
       interval: 15s
       timeout: 5s
       retries: 5

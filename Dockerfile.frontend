@@ -29,6 +29,9 @@ RUN addgroup --system dmarc && adduser --system --ingroup dmarc --home /app dmar
 
 COPY --from=builder --chown=dmarc:dmarc /app/frontend/.next/standalone ./
 COPY --from=builder --chown=dmarc:dmarc /app/frontend/.next/static ./.next/static
+COPY --chown=dmarc:dmarc scripts/healthchecks/frontend_ready.mjs ./scripts/healthchecks/frontend_ready.mjs
+
+RUN chmod 755 /app/scripts/healthchecks/frontend_ready.mjs
 
 USER dmarc
 

@@ -15,8 +15,10 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY backend ./backend
 COPY cli ./cli
 COPY config.example.yaml ./config.example.yaml
+COPY scripts/healthchecks/backend_ready.py ./scripts/healthchecks/backend_ready.py
 
 RUN mkdir -p /app/data /app/archive /app/geoip \
+    && chmod 755 /app/scripts/healthchecks/backend_ready.py \
     && chown -R dmarc:dmarc /app
 
 USER dmarc

@@ -5,6 +5,18 @@ from pathlib import Path
 import yaml
 
 
+def test_base_compose_healthchecks_use_in_container_probe_scripts() -> None:
+    compose = yaml.safe_load(Path("compose.yaml").read_text())
+
+    api_service = compose["services"]["api"]
+    web_service = compose["services"]["web"]
+
+    assert api_service["healthcheck"]["test"] == ["CMD", "/app/scripts/healthchecks/backend_ready.py"]
+    assert web_service["healthcheck"]["test"] == ["CMD", "/app/scripts/healthchecks/frontend_ready.mjs"]
+    assert "-c" not in api_service["healthcheck"]["test"]
+    assert "-e" not in web_service["healthcheck"]["test"]
+
+
 def test_base_compose_contains_imap_profile_service() -> None:
     compose = yaml.safe_load(Path("compose.yaml").read_text())
 
