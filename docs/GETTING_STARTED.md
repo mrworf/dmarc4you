@@ -87,6 +87,9 @@ Before exposing the stack beyond local testing:
 - set `DMARC_SESSION_SECRET` in `compose.env`
 - set `DMARC_FRONTEND_PUBLIC_ORIGIN`, `DMARC_CORS_ALLOWED_ORIGINS`, and `DMARC_API_PUBLIC_URL` to public URLs
 - set `DMARC_SESSION_COOKIE_SECURE=true` when running behind HTTPS
+- set `DMARC_COOKIE_DOMAIN` to a shared parent domain when the frontend and API are served from sibling subdomains, for example `example.com` for `dmarcwatch.example.com` and `dmarcwatch-api.example.com`
+
+Do not set `DMARC_SESSION_COOKIE_SECURE=true` for plain `http://` deployments. Browsers reject Secure cookies over HTTP, which allows the login response to return successfully while the next authenticated request fails.
 
 If you want a bundled reverse proxy for local HTTPS or a cleaner public edge, use:
 
@@ -114,6 +117,7 @@ For container deployments, `compose.env` is usually enough and `config.yaml` can
 | `auth.session_secret` | `DMARC_SESSION_SECRET` | `change-me-in-production` | Must be changed outside dev |
 | `auth.session_cookie_name` | `DMARC_SESSION_COOKIE` | `dmarc_session` | Session cookie name |
 | `auth.session_max_age_days` | `DMARC_SESSION_MAX_AGE_DAYS` | `7` | Session lifetime |
+| `auth.cookie_domain` | `DMARC_COOKIE_DOMAIN` | `null` | Optional parent domain for session and CSRF cookies across sibling subdomains |
 | `auth.session_cookie_secure` | `DMARC_SESSION_COOKIE_SECURE` | `false` | Set true behind HTTPS |
 | `auth.session_cookie_same_site` | `DMARC_SESSION_COOKIE_SAME_SITE` | `lax` | Browser session cookie policy |
 | `auth.csrf_cookie_same_site` | `DMARC_CSRF_COOKIE_SAME_SITE` | `strict` | Browser CSRF cookie policy |

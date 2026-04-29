@@ -83,6 +83,8 @@ Important notes:
 
 - Set a real `DMARC_SESSION_SECRET` in `compose.env` before exposing the stack outside local development.
 - The frontend image reads `NEXT_PUBLIC_API_BASE_URL` at runtime so the same GHCR image can be reused across environments.
+- Split-subdomain deployments such as `app.example.com` plus `api.example.com` should set `DMARC_COOKIE_DOMAIN=example.com` so browser CSRF protection works across the frontend/API origins.
+- Keep `DMARC_SESSION_COOKIE_SECURE=false` when serving plain `http://` URLs; switch it to `true` only when browsers reach the app over HTTPS.
 - SQLite data persists in the `dmarc_data` volume. Optional raw artifact archival persists in the `dmarc_archive` volume.
 - If you prefer bind mounts, `compose.yaml` includes commented examples for `./data:/app/data` and `./archive:/app/archive`.
 - Optional offline GeoIP databases can be mounted from `./data/geoip` into `/app/geoip`.

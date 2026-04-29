@@ -58,6 +58,7 @@ def auth_login(
         value=session_id,
         max_age=config.session_max_age_days * 24 * 3600,
         path="/",
+        domain=config.cookie_domain,
         httponly=True,
         samesite=config.session_cookie_same_site,
         secure=config.session_cookie_secure,
@@ -67,6 +68,7 @@ def auth_login(
         value=generate_csrf_token(),
         max_age=config.session_max_age_days * 24 * 3600,
         path="/",
+        domain=config.cookie_domain,
         httponly=False,
         samesite=config.csrf_cookie_same_site,
         secure=config.session_cookie_secure,
@@ -83,8 +85,8 @@ def auth_logout(
     """POST /api/v1/auth/logout: invalidate session and clear session/CSRF cookies."""
     session_id = request.cookies.get(config.session_cookie_name)
     logout(config, session_id)
-    response.delete_cookie(key=config.session_cookie_name, path="/")
-    response.delete_cookie(key=config.csrf_cookie_name, path="/")
+    response.delete_cookie(key=config.session_cookie_name, path="/", domain=config.cookie_domain)
+    response.delete_cookie(key=config.csrf_cookie_name, path="/", domain=config.cookie_domain)
     return {}
 
 
@@ -103,6 +105,7 @@ def auth_me(
             value=generate_csrf_token(),
             max_age=config.session_max_age_days * 24 * 3600,
             path="/",
+            domain=config.cookie_domain,
             httponly=False,
             samesite=config.csrf_cookie_same_site,
             secure=config.session_cookie_secure,
@@ -148,8 +151,8 @@ def auth_update_password(
     if result != "ok":
         raise api_http_exception(status.HTTP_400_BAD_REQUEST, "password_policy_violation", result)
 
-    response.delete_cookie(key=config.session_cookie_name, path="/")
-    response.delete_cookie(key=config.csrf_cookie_name, path="/")
+    response.delete_cookie(key=config.session_cookie_name, path="/", domain=config.cookie_domain)
+    response.delete_cookie(key=config.csrf_cookie_name, path="/", domain=config.cookie_domain)
     return {"password_changed": True, "reauth_required": True}
 
 

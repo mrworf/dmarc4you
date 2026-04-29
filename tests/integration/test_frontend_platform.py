@@ -93,6 +93,7 @@ def test_auth_cookie_policy_comes_from_config(monkeypatch, temp_db_path: str) ->
     )
     _make_client(
         temp_db_path,
+        cookie_domain="example.com",
         session_cookie_secure=True,
         session_cookie_same_site="none",
         csrf_cookie_same_site="lax",
@@ -103,6 +104,7 @@ def test_auth_cookie_policy_comes_from_config(monkeypatch, temp_db_path: str) ->
     payload = auth_login(request, response, LoginBody(username="admin", password="ignored"), app.state.config)
     assert payload["user"]["id"] == "usr_test"
     set_cookie_headers = response.headers.getlist("set-cookie")
+    assert any("domain=example.com" in header.lower() for header in set_cookie_headers)
     assert any("samesite=none" in header.lower() for header in set_cookie_headers)
     assert any("secure" in header.lower() for header in set_cookie_headers)
 
@@ -120,6 +122,7 @@ def test_load_config_parses_split_origin_settings(monkeypatch) -> None:
     monkeypatch.setenv("DMARC_CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
     monkeypatch.setenv("DMARC_SERVER_HOST", "127.0.0.1")
     monkeypatch.setenv("DMARC_SERVER_PORT", "8001")
+    monkeypatch.setenv("DMARC_COOKIE_DOMAIN", "localhost")
     monkeypatch.setenv("DMARC_SESSION_COOKIE_SECURE", "true")
     monkeypatch.setenv("DMARC_SESSION_COOKIE_SAME_SITE", "none")
     monkeypatch.setenv("DMARC_CSRF_COOKIE_SAME_SITE", "lax")
@@ -127,6 +130,7 @@ def test_load_config_parses_split_origin_settings(monkeypatch) -> None:
     assert config.frontend_public_origin == "http://localhost:3000"
     assert config.server_host == "127.0.0.1"
     assert config.server_port == 8001
+    assert config.cookie_domain == "localhost"
     assert config.session_cookie_secure is True
     assert config.session_cookie_same_site == "none"
     assert config.csrf_cookie_same_site == "lax"

@@ -19,6 +19,7 @@ class Config:
     session_max_age_days: int
     server_host: str = "0.0.0.0"
     server_port: int = 8000
+    cookie_domain: str | None = None
     csrf_cookie_name: str = "dmarc_csrf"
     session_cookie_secure: bool = False
     session_cookie_same_site: SameSitePolicy = "lax"

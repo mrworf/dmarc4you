@@ -27,6 +27,12 @@ auth:
   # Env: DMARC_SESSION_MAX_AGE_DAYS
   session_max_age_days: 7
 
+  # Optional parent domain for session and CSRF cookies in split-subdomain deployments.
+  # Example: frontend dmarcwatch.example.com and API dmarcwatch-api.example.com
+  # can use cookie_domain: example.com so the frontend can read the CSRF cookie.
+  # Env: DMARC_COOKIE_DOMAIN
+  cookie_domain: null
+
   # Mark session and CSRF cookies Secure when running behind HTTPS.
   # Env: DMARC_SESSION_COOKIE_SECURE
   session_cookie_secure: false
