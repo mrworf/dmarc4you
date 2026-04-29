@@ -8,6 +8,7 @@
     "start": "next start",
     "contracts:check": "node ./scripts/check-api-contracts.mjs",
     "cutover:routes": "node ./scripts/check-cutover-routes.mjs",
+    "test:unit": "node --test --experimental-strip-types --experimental-specifier-resolution=node ./test/**/*.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:list": "playwright test --list",
     "test:e2e:seeded": "bash ../scripts/run_seeded_e2e.sh"

@@ -1,9 +1,11 @@
 """Tests for the frontend migration platform slice."""
 
 import anyio
+from pathlib import Path
 from fastapi import Response
 from fastapi.testclient import TestClient
 from starlette.requests import Request
+import yaml
 
 from backend.app import app
 from backend.api.errors import http_exception_handler
@@ -135,3 +137,35 @@ def test_load_config_defaults_server_bind_settings() -> None:
     config = load_config(config_path="/tmp/does-not-exist.yaml")
     assert config.server_host == "0.0.0.0"
     assert config.server_port == 8000
+
+
+def test_load_config_allows_env_to_override_file_endpoint_settings(tmp_path: Path, monkeypatch) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "database": {"path": str(tmp_path / "test.db")},
+                "log": {"level": "INFO"},
+                "auth": {"session_secret": "file-secret"},
+                "server": {"host": "0.0.0.0", "port": 8000},
+                "frontend": {"public_origin": "http://file-frontend:3000"},
+                "api": {"public_url": "http://file-api:8000"},
+                "cors": {"allowed_origins": ["http://file-frontend:3000"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("DMARC_SERVER_HOST", "127.0.0.1")
+    monkeypatch.setenv("DMARC_SERVER_PORT", "8111")
+    monkeypatch.setenv("DMARC_FRONTEND_PUBLIC_ORIGIN", "http://127.0.0.1:3111")
+    monkeypatch.setenv("DMARC_API_PUBLIC_URL", "http://127.0.0.1:8111")
+    monkeypatch.setenv("DMARC_CORS_ALLOWED_ORIGINS", "http://127.0.0.1:3111")
+
+    config = load_config(config_path=config_path)
+
+    assert config.server_host == "127.0.0.1"
+    assert config.server_port == 8111
+    assert config.frontend_public_origin == "http://127.0.0.1:3111"
+    assert config.api_public_url == "http://127.0.0.1:8111"
+    assert config.cors_allowed_origins == ("http://127.0.0.1:3111",)

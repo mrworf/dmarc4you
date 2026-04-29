@@ -3,7 +3,7 @@ import {
   getRuntimeApiBaseUrl,
   getRuntimeCsrfCookieName,
   getRuntimeRequestIdHeaderName,
-} from "@/lib/runtime-config";
+} from "../runtime-config.ts";
 
 type RequestOptions = RequestInit & {
   skipCsrf?: boolean;
@@ -48,6 +48,10 @@ function getCookieValue(name: string): string {
 
 function getApiBaseUrl(): string {
   return getRuntimeApiBaseUrl();
+}
+
+export function buildApiRequestUrl(path: string, apiBaseUrl: string = getApiBaseUrl()): string {
+  return `${apiBaseUrl}${path}`;
 }
 
 function getRequestIdHeaderName(): string {
@@ -96,7 +100,7 @@ async function performRequest(path: string, options: RequestOptions = {}): Promi
   }
 
   try {
-    const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    const response = await fetch(buildApiRequestUrl(path), {
       ...init,
       credentials: "include",
       headers: requestHeaders,

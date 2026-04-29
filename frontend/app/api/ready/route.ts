@@ -1,29 +1,11 @@
 import { NextResponse } from "next/server";
+import { buildFrontendReadyPayload } from "@/lib/runtime-env";
 
 export const dynamic = "force-dynamic";
 
-function getApiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
-}
-
 export async function GET() {
   return NextResponse.json(
-    {
-      status: "ok",
-      service: "frontend",
-      frontend: {
-        mode: getApiBaseUrl() ? "split-origin" : "same-origin",
-      },
-      backend: {
-        apiBaseUrl: getApiBaseUrl() || "same-origin",
-        readinessPath: "/api/v1/health/ready",
-        sourceOfTruth: "fastapi",
-      },
-      operations: {
-        webRole: "Next.js frontend",
-        workerRole: "FastAPI background jobs and workers",
-      },
-    },
+    buildFrontendReadyPayload(),
     {
       headers: {
         "Cache-Control": "no-store",

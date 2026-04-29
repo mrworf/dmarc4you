@@ -1,0 +1,14 @@
+services:
+  api:
+    image: dmarc4you-backend:local
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+
+  web:
+    image: dmarc4you-frontend:local
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${LOCAL_WEB_BUILD_NEXT_PUBLIC_API_BASE_URL:-http://build-time.invalid:65535}

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import "./globals.css";
 import { Providers } from "@/app/providers";
+import { buildRuntimeConfigScript, buildServerRuntimeConfig } from "@/lib/runtime-env";
 
 export const dynamic = "force-dynamic";
 
@@ -15,18 +16,14 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const runtimeConfig = {
-    apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL ?? "",
-    csrfCookieName: process.env.NEXT_PUBLIC_CSRF_COOKIE_NAME ?? "dmarc_csrf",
-    requestIdHeaderName: process.env.NEXT_PUBLIC_REQUEST_ID_HEADER_NAME ?? "X-Request-ID",
-  };
+  const runtimeConfig = buildServerRuntimeConfig();
 
   return (
     <html lang="en">
       <body>
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.__DMARC_RUNTIME_CONFIG__ = ${JSON.stringify(runtimeConfig)};`,
+            __html: buildRuntimeConfigScript(runtimeConfig),
           }}
         />
         <Providers>{children}</Providers>

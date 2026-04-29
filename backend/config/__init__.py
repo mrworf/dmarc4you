@@ -11,6 +11,13 @@ _GEOIP_PROVIDERS: set[str] = {"none", "dbip-lite-country", "maxmind-geolite2-cou
 _DEFAULT_DB = "data/dmarc.db"
 
 
+def _env_override(value: object, env_name: str) -> object:
+    env_value = os.environ.get(env_name)
+    if env_value is not None:
+        return env_value
+    return value
+
+
 def _parse_bool(value: object, default: bool) -> bool:
     if value is None:
         return default
@@ -72,28 +79,28 @@ def load_config(config_path: str | Path | None = None) -> Config:
     else:
         data = {}
 
-    database_path = data.get("database", {}).get("path") or os.environ.get("DMARC_DATABASE_PATH") or _DEFAULT_DB
-    log_level_raw = (data.get("log", {}) or {}).get("level") or os.environ.get("DMARC_LOG_LEVEL") or "INFO"
+    database_path = _env_override(data.get("database", {}).get("path"), "DMARC_DATABASE_PATH") or _DEFAULT_DB
+    log_level_raw = _env_override((data.get("log", {}) or {}).get("level"), "DMARC_LOG_LEVEL") or "INFO"
     log_level = log_level_raw.upper()
     if log_level not in _LOG_LEVELS:
         raise ValueError(f"Invalid log_level: {log_level_raw}. Must be one of {sorted(_LOG_LEVELS)}")
 
     auth = data.get("auth") or data.get("session") or {}
-    session_secret = auth.get("session_secret") or os.environ.get("DMARC_SESSION_SECRET") or "change-me-in-production"
-    session_cookie_name = auth.get("session_cookie_name") or os.environ.get("DMARC_SESSION_COOKIE") or "dmarc_session"
-    session_max_age_days = int(auth.get("session_max_age_days") or os.environ.get("DMARC_SESSION_MAX_AGE_DAYS") or 7)
+    session_secret = _env_override(auth.get("session_secret"), "DMARC_SESSION_SECRET") or "change-me-in-production"
+    session_cookie_name = _env_override(auth.get("session_cookie_name"), "DMARC_SESSION_COOKIE") or "dmarc_session"
+    session_max_age_days = int(_env_override(auth.get("session_max_age_days"), "DMARC_SESSION_MAX_AGE_DAYS") or 7)
     server = data.get("server") or {}
-    server_host = str(server.get("host") or os.environ.get("DMARC_SERVER_HOST") or "0.0.0.0")
-    server_port = _parse_int(server.get("port") or os.environ.get("DMARC_SERVER_PORT"), 8000)
+    server_host = str(_env_override(server.get("host"), "DMARC_SERVER_HOST") or "0.0.0.0")
+    server_port = _parse_int(_env_override(server.get("port"), "DMARC_SERVER_PORT"), 8000)
     session_cookie_secure = _parse_bool(
-        auth.get("session_cookie_secure") or os.environ.get("DMARC_SESSION_COOKIE_SECURE"),
+        _env_override(auth.get("session_cookie_secure"), "DMARC_SESSION_COOKIE_SECURE"),
         False,
     )
     session_cookie_same_site = str(
-        auth.get("session_cookie_same_site") or os.environ.get("DMARC_SESSION_COOKIE_SAME_SITE") or "lax"
+        _env_override(auth.get("session_cookie_same_site"), "DMARC_SESSION_COOKIE_SAME_SITE") or "lax"
     ).lower()
     csrf_cookie_same_site = str(
-        auth.get("csrf_cookie_same_site") or os.environ.get("DMARC_CSRF_COOKIE_SAME_SITE") or "strict"
+        _env_override(auth.get("csrf_cookie_same_site"), "DMARC_CSRF_COOKIE_SAME_SITE") or "strict"
     ).lower()
     if session_cookie_same_site not in _SAME_SITE_POLICIES:
         raise ValueError(
@@ -107,34 +114,34 @@ def load_config(config_path: str | Path | None = None) -> Config:
         )
 
     frontend_public_origin = (
-        data.get("frontend", {}).get("public_origin")
-        or os.environ.get("DMARC_FRONTEND_PUBLIC_ORIGIN")
+        _env_override(data.get("frontend", {}).get("public_origin"), "DMARC_FRONTEND_PUBLIC_ORIGIN")
         or None
     )
-    api_public_url = data.get("api", {}).get("public_url") or os.environ.get("DMARC_API_PUBLIC_URL") or None
+    api_public_url = _env_override(data.get("api", {}).get("public_url"), "DMARC_API_PUBLIC_URL") or None
     cors_allowed_origins = _parse_origins(
-        data.get("cors", {}).get("allowed_origins") or os.environ.get("DMARC_CORS_ALLOWED_ORIGINS")
+        _env_override(data.get("cors", {}).get("allowed_origins"), "DMARC_CORS_ALLOWED_ORIGINS")
     )
     if frontend_public_origin and frontend_public_origin not in cors_allowed_origins:
         cors_allowed_origins = cors_allowed_origins + (frontend_public_origin,)
 
-    archive_storage_path = data.get("archive", {}).get("storage_path") or os.environ.get("DMARC_ARCHIVE_STORAGE_PATH") or None
+    archive_storage_path = _env_override(data.get("archive", {}).get("storage_path"), "DMARC_ARCHIVE_STORAGE_PATH") or None
     dns_nameservers = _parse_origins(
-        data.get("dns", {}).get("nameservers") or os.environ.get("DMARC_DNS_NAMESERVERS")
+        _env_override(data.get("dns", {}).get("nameservers"), "DMARC_DNS_NAMESERVERS")
     )
     dns_timeout_seconds = _parse_float(
-        data.get("dns", {}).get("timeout_seconds") or os.environ.get("DMARC_DNS_TIMEOUT_SECONDS"),
+        _env_override(data.get("dns", {}).get("timeout_seconds"), "DMARC_DNS_TIMEOUT_SECONDS"),
         5.0,
     )
     dns_monitor_default_interval_seconds = _parse_int(
-        data.get("dns", {}).get("monitor_default_interval_seconds")
-        or os.environ.get("DMARC_DNS_MONITOR_DEFAULT_INTERVAL_SECONDS"),
+        _env_override(
+            data.get("dns", {}).get("monitor_default_interval_seconds"),
+            "DMARC_DNS_MONITOR_DEFAULT_INTERVAL_SECONDS",
+        ),
         300,
     )
     dns_monitor_default_interval_seconds = min(max(60, dns_monitor_default_interval_seconds), 3600)
     geoip_provider_raw = (
-        data.get("geoip", {}).get("provider")
-        or os.environ.get("DMARC_GEOIP_PROVIDER")
+        _env_override(data.get("geoip", {}).get("provider"), "DMARC_GEOIP_PROVIDER")
         or "none"
     )
     geoip_provider = str(geoip_provider_raw).strip().lower()
@@ -143,8 +150,7 @@ def load_config(config_path: str | Path | None = None) -> Config:
             f"Invalid geoip.provider: {geoip_provider_raw}. Must be one of {sorted(_GEOIP_PROVIDERS)}"
         )
     geoip_database_path = (
-        data.get("geoip", {}).get("database_path")
-        or os.environ.get("DMARC_GEOIP_DATABASE_PATH")
+        _env_override(data.get("geoip", {}).get("database_path"), "DMARC_GEOIP_DATABASE_PATH")
         or None
     )
 

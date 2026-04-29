@@ -1,3 +1,5 @@
+import { normalizeApiBaseUrl } from "./runtime-env.ts";
+
 declare global {
   interface Window {
     __DMARC_RUNTIME_CONFIG__?: {
@@ -16,7 +18,7 @@ function readWindowConfig(): Window["__DMARC_RUNTIME_CONFIG__"] | undefined {
 }
 
 export function getRuntimeApiBaseUrl(): string {
-  return readWindowConfig()?.apiBaseUrl?.replace(/\/$/, "") ?? process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
+  return normalizeApiBaseUrl(readWindowConfig()?.apiBaseUrl) || normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
 }
 
 export function getRuntimeCsrfCookieName(): string {
